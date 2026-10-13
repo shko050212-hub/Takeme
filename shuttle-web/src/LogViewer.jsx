@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { API_BASE_URL } from './config';
 
 const getDaysInMonth = (year, month) => {
   return new Date(year, month + 1, 0).getDate();
@@ -55,7 +56,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
   const fetchAbsences = async () => {
     try {
-      const res = await fetch(`http://localhost:3000/routing/absences${selectedBusId ? `?vehicleId=${selectedBusId}` : ''}`);
+      const res = await fetch(`${API_BASE_URL}/routing/absences${selectedBusId ? `?vehicleId=${selectedBusId}` : ''}`);
       const data = await res.json();
       setAbsences(data || []);
     } catch (e) {
@@ -65,7 +66,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
   const fetchHolidays = async () => {
     try {
-      const res = await fetch(`http://localhost:3000/routing/holidays`);
+      const res = await fetch(`${API_BASE_URL}/routing/holidays`);
       const data = await res.json();
       setHolidays(data || []);
     } catch (e) {
@@ -83,7 +84,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
           const day = String(selectedDate.getDate()).padStart(2, '0');
           const dateStr = `${year}-${month}-${day}`;
           
-          const res = await fetch(`http://localhost:3000/routing/daily-logs?date=${dateStr}&vehicleId=${selectedBusId}`);
+          const res = await fetch(`${API_BASE_URL}/routing/daily-logs?date=${dateStr}&vehicleId=${selectedBusId}`);
           const data = await res.json();
           setLogs(Array.isArray(data) ? data : []);
         } catch (e) {
@@ -150,7 +151,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       : startStr;
       
     try {
-      await fetch('http://localhost:3000/routing/absence', {
+      await fetch(`${API_BASE_URL}/routing/absence`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -168,7 +169,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
   const deleteAbsence = async (id) => {
     try {
-      await fetch(`http://localhost:3000/routing/absence/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/routing/absence/${id}`, { method: 'DELETE' });
       fetchAbsences();
     } catch (e) {
       console.error(e);
@@ -184,7 +185,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       : startStr;
       
     try {
-      await fetch('http://localhost:3000/routing/holiday', {
+      await fetch(`${API_BASE_URL}/routing/holiday`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

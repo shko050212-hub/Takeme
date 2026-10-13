@@ -53,7 +53,7 @@ export class Student {
   @Column({ default: 'WAITING' })
   boardStatus: string; // 'WAITING' | 'BOARDED' | 'ABSENT'
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   actualBoardTime: Date;
 
   @Column({ type: 'text', nullable: true })

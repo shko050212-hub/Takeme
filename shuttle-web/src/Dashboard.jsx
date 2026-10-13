@@ -1,7 +1,6 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import * as turf from '@turf/turf';
 import * as XLSX from 'xlsx';
@@ -9,6 +8,7 @@ import { useRef } from 'react';
 import io from 'socket.io-client';
 import LogViewer from './LogViewer';
 import MessagePanel from './MessagePanel';
+import { API_BASE_URL } from './config';
 
 // Fix Leaflet default icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -24,18 +24,6 @@ const getRandomColor = () => {
   const randomHue = hues[Math.floor(Math.random() * hues.length)];
   return `hsl(${randomHue}, 70%, 50%)`;
 };
-
-// Dummy data for initial demonstration
-const dummyBusData = [
-  {
-    id: 1, name: '1호차', color: '#3b82f6',
-    points: [ [37.5665, 126.9780], [37.5700, 126.9800], [37.5650, 126.9850], [37.5620, 126.9750] ]
-  },
-  {
-    id: 2, name: '2호차', color: '#ef4444',
-    points: [ [37.5600, 126.9700], [37.5620, 126.9600], [37.5550, 126.9650] ]
-  }
-];
 
 function MapBoundsFit({ buses, academy }) {
   const map = useMap();
@@ -117,13 +105,8 @@ export default function Dashboard() {
     }
   };
   
-  // Load academy from localStorage if it exists
-  const [academy, setAcademy] = useState(() => {
-    const saved = localStorage.getItem('takeme_academy');
-    return saved ? JSON.parse(saved) : null;
-  });
-  
-  const [showAcademyModal, setShowAcademyModal] = useState(!localStorage.getItem('takeme_academy'));
+  const [academy, setAcademy] = useState(null);
+  const [showAcademyModal, setShowAcademyModal] = useState(false);
   const [setupStep, setSetupStep] = useState(1);
   const [isInitializing, setIsInitializing] = useState(true);
   const [academyForm, setAcademyForm] = useState({ name: '', address: '' });
@@ -153,7 +136,7 @@ export default function Dashboard() {
   const [busLocations, setBusLocations] = useState({});
 
   useEffect(() => {
-    const socket = io('http://localhost:3000');
+    const socket = io(API_BASE_URL);
     socket.on('locationUpdated', (data) => {
       setBusLocations(prev => ({ ...prev, [data.vehicleId]: data }));
     });
@@ -164,7 +147,7 @@ export default function Dashboard() {
     if (!window.confirm('새로운 학원 인증코드를 발급하시겠습니까? 기존 코드는 사용할 수 없게 됩니다.')) return;
     try {
       setIsProcessing(true);
-      const res = await fetch('http://localhost:3000/routing/generate-auth-code', { method: 'POST' });
+      const res = await fetch(`${API_BASE_URL}/routing/generate-auth-code`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.authCode) {
         setAcademy(prev => {
@@ -186,7 +169,7 @@ export default function Dashboard() {
 
   const handleApproveStudent = async (studentId) => {
     try {
-      const res = await fetch('http://localhost:3000/routing/approve-student', {
+      const res = await fetch(`${API_BASE_URL}/routing/approve-student`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId })
@@ -203,7 +186,7 @@ export default function Dashboard() {
   const handleRevokeStudent = async (studentId, isPending = false) => {
     if (!window.confirm(isPending ? '가입 승인을 거절하시겠습니까?' : '이 학생의 앱 접근 권한을 해제(탈퇴)하시겠습니까?')) return;
     try {
-      const res = await fetch('http://localhost:3000/routing/revoke-student', {
+      const res = await fetch(`${API_BASE_URL}/routing/revoke-student`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId })
@@ -219,7 +202,7 @@ export default function Dashboard() {
 
   const handleApproveStaff = async (vehicleId, role) => {
     try {
-      const res = await fetch('http://localhost:3000/routing/approve-staff', {
+      const res = await fetch(`${API_BASE_URL}/routing/approve-staff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicleId, role })
@@ -239,7 +222,7 @@ export default function Dashboard() {
   const handleRevokeStaff = async (vehicleId, role, isPending = false) => {
     if (!window.confirm(isPending ? '가입 승인을 거절하시겠습니까?' : '이 직원의 앱 접근 권한을 해제(탈퇴)하시겠습니까?')) return;
     try {
-      const res = await fetch('http://localhost:3000/routing/revoke-staff', {
+      const res = await fetch(`${API_BASE_URL}/routing/revoke-staff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicleId, role })
@@ -262,7 +245,7 @@ export default function Dashboard() {
     if (!window.confirm('정말 학원 계정을 탈퇴(삭제)하시겠습니까?\n학생 명단, 배차 정보 등 모든 데이터가 영구적으로 삭제됩니다.')) return;
     try {
       setIsProcessing(true);
-      const res = await fetch('http://localhost:3000/routing/delete-academy', { method: 'POST' });
+      const res = await fetch(`${API_BASE_URL}/routing/delete-academy`, { method: 'POST' });
       if (res.ok) {
         localStorage.removeItem('takeme_academy');
         localStorage.removeItem('takeme_buses');
@@ -294,7 +277,7 @@ export default function Dashboard() {
     
     setIsProcessing(true);
     try {
-      const res = await fetch('http://localhost:3000/routing/pickup-point', {
+      const res = await fetch(`${API_BASE_URL}/routing/pickup-point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, latitude: latlng[0], longitude: latlng[1] })
@@ -316,7 +299,7 @@ export default function Dashboard() {
   const handleDeletePickupPoint = async (id) => {
     if (!window.confirm('이 탑승지를 삭제하시겠습니까?')) return;
     try {
-      const res = await fetch(`http://localhost:3000/routing/pickup-point/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/routing/pickup-point/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setPickupPoints(pickupPoints.filter(p => p.id !== id));
       }
@@ -328,7 +311,7 @@ export default function Dashboard() {
     if (!editingBus) return;
     setIsProcessing(true);
     try {
-      const res = await fetch(`http://localhost:3000/routing/vehicle/${editingBus.id}`, {
+      const res = await fetch(`${API_BASE_URL}/routing/vehicle/${editingBus.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -395,13 +378,12 @@ export default function Dashboard() {
   useEffect(() => {
     const loadInitialState = async () => {
       try {
-        const res = await fetch('http://localhost:3000/routing/initial-state');
+        const res = await fetch(`${API_BASE_URL}/routing/initial-state`);
         const data = await res.json();
         
-        let foundBuses = false;
-        
-        if (data.academy) {
+        if (data.academy && data.academy.name && data.academy.roadAddress && !isNaN(parseFloat(data.academy.latitude))) {
           const formattedAcademy = {
+            id: data.academy.id,
             name: data.academy.name,
             address: data.academy.roadAddress,
             lat: parseFloat(data.academy.latitude),
@@ -409,62 +391,39 @@ export default function Dashboard() {
             authCode: data.academy.authCode
           };
           setAcademy(formattedAcademy);
-          setShowAcademyModal(false);
-          localStorage.setItem('takeme_academy', JSON.stringify(formattedAcademy));
+          setAcademyForm({
+            name: formattedAcademy.name,
+            address: formattedAcademy.address
+          });
         } else {
-          const savedAcademy = localStorage.getItem('takeme_academy');
-          if (savedAcademy) {
-            try {
-              setAcademy(JSON.parse(savedAcademy));
-              setShowAcademyModal(false);
-            } catch(e) {
-              setAcademy(null);
-              setShowAcademyModal(true);
-            }
-          } else {
-            setAcademy(null);
-            setShowAcademyModal(true);
-          }
+          setAcademy(null);
         }
         
         if (data.buses && data.buses.length > 0) {
           setBuses(computePolygons(data.buses));
-          localStorage.setItem('takeme_buses', JSON.stringify(data.buses));
-          foundBuses = true;
-          setShowAcademyModal(false); // Force hide setup wizard if zones already exist
-        } 
+          setShowAcademyModal(false);
+        } else if (location.state && location.state.buses && location.state.buses.length > 0) {
+          setBuses(computePolygons(location.state.buses));
+          setShowAcademyModal(false);
+        } else {
+          setBuses([]);
+          setShowAcademyModal(true);
+          setSetupStep(1);
+        }
         
         if (data.students && data.students.length > 0) {
           setStudents(data.students);
+        } else {
+          setStudents([]);
         }
         
         try {
-          const ptRes = await fetch('http://localhost:3000/routing/pickup-points');
+          const ptRes = await fetch(`${API_BASE_URL}/routing/pickup-points`);
           if (ptRes.ok) {
             setPickupPoints(await ptRes.json());
           }
         } catch (e) {
           console.error('Failed to fetch pickup points', e);
-        }
-        
-        if (!foundBuses) {
-          let rawBusData = dummyBusData;
-          if (location.state && location.state.buses) {
-            rawBusData = location.state.buses;
-            localStorage.setItem('takeme_buses', JSON.stringify(rawBusData));
-            setShowAcademyModal(false);
-          } else {
-            const saved = localStorage.getItem('takeme_buses');
-            if (saved) { 
-              try { 
-                rawBusData = JSON.parse(saved); 
-                if (rawBusData.length > 0 && rawBusData !== dummyBusData) {
-                  setShowAcademyModal(false);
-                }
-              } catch(e){} 
-            }
-          }
-          setBuses(computePolygons(rawBusData));
         }
       } catch (err) {
         console.error('Failed to load initial state', err);
@@ -482,7 +441,7 @@ export default function Dashboard() {
 
     setIsProcessing(true);
     try {
-      const res = await fetch('http://localhost:3000/routing/geocode-bulk', {
+      const res = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addresses: [academyForm.address] })
@@ -499,7 +458,7 @@ export default function Dashboard() {
         
         // Save to backend
         try {
-          await fetch('http://localhost:3000/routing/setup-academy', {
+          await fetch(`${API_BASE_URL}/routing/setup-academy`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newAcademy)
@@ -528,7 +487,7 @@ export default function Dashboard() {
 
     setIsProcessing(true);
     try {
-      const res = await fetch('http://localhost:3000/routing/geocode-bulk', {
+      const res = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addresses: [academyChangeForm.address] })
@@ -544,7 +503,7 @@ export default function Dashboard() {
         };
         
         try {
-          await fetch('http://localhost:3000/routing/setup-academy', {
+          await fetch(`${API_BASE_URL}/routing/setup-academy`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newAcademy)
@@ -588,7 +547,7 @@ export default function Dashboard() {
       })).filter(item => item.address);
 
       try {
-        const res = await fetch('http://localhost:3000/routing/geocode-bulk', {
+        const res = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ addresses: addressMap.map(a => a.address) })
@@ -642,7 +601,7 @@ export default function Dashboard() {
         
         // Save to backend
         try {
-          await fetch('http://localhost:3000/routing/save-students', {
+          await fetch(`${API_BASE_URL}/routing/save-students`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newStudents)
@@ -695,7 +654,7 @@ export default function Dashboard() {
       }));
 
       try {
-        const res = await fetch('http://localhost:3000/routing/init-zones', {
+        const res = await fetch(`${API_BASE_URL}/routing/init-zones`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ vehicles, parsedData: data })
@@ -786,7 +745,7 @@ export default function Dashboard() {
     if (!editingZoneBusId) return;
     try {
       setIsProcessing(true);
-      const res = await fetch(`http://localhost:3000/routing/vehicle/${editingZoneBusId}`, {
+      const res = await fetch(`${API_BASE_URL}/routing/vehicle/${editingZoneBusId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ polygonCoordinates: editingPolygon })
@@ -822,7 +781,7 @@ export default function Dashboard() {
   const handleExportExcel = async () => {
     try {
       setIsProcessing(true);
-      const res = await fetch('http://localhost:3000/routing/export-excel');
+      const res = await fetch(`${API_BASE_URL}/routing/export-excel`);
       if (!res.ok) throw new Error('다운로드 실패');
       
       const blob = await res.blob();

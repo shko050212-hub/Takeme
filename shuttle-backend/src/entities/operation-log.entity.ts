@@ -12,10 +12,10 @@ export class OperationLog {
   @Column({ type: 'date' })
   dateString: string; // YYYY-MM-DD
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   startTime: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   endTime: Date;
 
   @Column({ type: 'simple-json', nullable: true })

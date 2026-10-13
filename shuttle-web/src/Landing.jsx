@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from './config';
 
 export default function Landing() {
   const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'otp' | 'otp-setup'
@@ -24,7 +25,7 @@ export default function Landing() {
     if (!email.includes('@')) return alert('유효한 이메일을 입력해주세요.');
     setIsEmailSending(true);
     try {
-      const res = await fetch('http://localhost:3000/auth/email/send', {
+      const res = await fetch(`${API_BASE_URL}/auth/email/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -44,7 +45,7 @@ export default function Landing() {
   };
 
   const handleVerifyEmail = async () => {
-    const res = await fetch('http://localhost:3000/auth/email/verify', {
+    const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code: emailCode })
@@ -67,7 +68,7 @@ export default function Landing() {
     if (!role) return alert('역할을 선택해주세요.');
     if (!validatePassword(password)) return alert('비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다.');
 
-    const res = await fetch('http://localhost:3000/auth/register', {
+    const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name, role })
@@ -84,7 +85,7 @@ export default function Landing() {
 
   const handleOtpSetup = async (e) => {
     e.preventDefault();
-    const res = await fetch('http://localhost:3000/auth/otp/verify', {
+    const res = await fetch(`${API_BASE_URL}/auth/otp/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, token: otpToken })
@@ -101,7 +102,7 @@ export default function Landing() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const res = await fetch('http://localhost:3000/auth/login', {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, otpToken: mode === 'otp' ? otpToken : undefined })
@@ -116,6 +117,8 @@ export default function Landing() {
         setQrCodeUrl(data.qrCodeUrl);
         setMode('otp-setup');
       } else {
+        localStorage.removeItem('takeme_academy');
+        localStorage.removeItem('takeme_buses');
         localStorage.setItem('takeme_user', JSON.stringify(data.user));
         navigate('/dashboard');
       }

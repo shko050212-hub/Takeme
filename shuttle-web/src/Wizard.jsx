@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { API_BASE_URL } from './config';
 
 export default function Wizard() {
   const [step, setStep] = useState(1);
@@ -88,7 +89,7 @@ export default function Wizard() {
     if (!isFormValid()) return alert('모든 차량 정보를 올바르게 입력해주세요.');
     
     try {
-      const res = await fetch('http://localhost:3000/routing/init-zones', {
+      const res = await fetch(`${API_BASE_URL}/routing/init-zones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicles, parsedData })

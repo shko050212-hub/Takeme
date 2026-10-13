@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { RoutingModule } from './routing/routing.module';
 import { User } from './entities/user.entity';
@@ -26,11 +26,36 @@ import { ApprovalModule } from './approval/approval.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    TypeOrmModule.forRoot({
-      type: 'better-sqlite3',
-      database: 'shuttle_db.sqlite',
-      entities: [User, Academy, Vehicle, Student, StudentSchedule, ScheduleOverride, Notification, OperationLog, ParentMessage, AcademyHoliday, PickupPoint, ChatRoom, ChatRoomMember, ChatMessage, ApprovalRequest],
-      synchronize: true,
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        type: 'postgres',
+        host: config.get<string>('DB_HOST', 'database-1.cl0cmogqigis.ap-southeast-2.rds.amazonaws.com'),
+        port: parseInt(config.get<string>('DB_PORT', '5432'), 10),
+        username: config.get<string>('DB_USERNAME', 'postgres'),
+        password: config.get<string>('DB_PASSWORD', ''),
+        database: config.get<string>('DB_NAME', 'postgres'),
+        entities: [
+          User,
+          Academy,
+          Vehicle,
+          Student,
+          StudentSchedule,
+          ScheduleOverride,
+          Notification,
+          OperationLog,
+          ParentMessage,
+          AcademyHoliday,
+          PickupPoint,
+          ChatRoom,
+          ChatRoomMember,
+          ChatMessage,
+          ApprovalRequest,
+        ],
+        synchronize: true,
+        ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
+      }),
     }),
     AuthModule,
     RoutingModule,

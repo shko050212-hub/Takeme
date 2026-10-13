@@ -234,7 +234,13 @@ export class AuthService {
 
     try {
       // 3. Link User to Entity based on Role
-      if (userRole === UserRole.STUDENT || userRole === UserRole.PARENT) {
+      if (userRole === UserRole.ACADEMY_ADMIN) {
+        const academy = await this.academyRepository.findOne({ where: {} });
+        if (academy) {
+          academy.owner = savedUser;
+          await this.academyRepository.save(academy);
+        }
+      } else if (userRole === UserRole.STUDENT || userRole === UserRole.PARENT) {
         const student = await this.studentRepository.createQueryBuilder('student')
           .leftJoinAndSelect('student.studentUser', 'studentUser')
           .leftJoinAndSelect('student.parentUser', 'parentUser')

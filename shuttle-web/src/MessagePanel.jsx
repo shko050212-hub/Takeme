@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from './config';
 
 export default function MessagePanel({ buses, students, isClosing, msgSelectedBusId, msgTargetDriver, msgTargetTeacher, msgTargetStudents, resetSelections }) {
   const [inboxMessages, setInboxMessages] = useState([]);
@@ -13,7 +14,7 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
 
   const fetchInbox = async () => {
     try {
-      const res = await fetch('http://localhost:3000/routing/admin-messages');
+      const res = await fetch(`${API_BASE_URL}/routing/admin-messages`);
       if (res.ok) {
         const data = await res.json();
         setInboxMessages(data);
@@ -36,7 +37,7 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
 
     setIsSending(true);
     try {
-      const res = await fetch('http://localhost:3000/routing/admin-messages/send', {
+      const res = await fetch(`${API_BASE_URL}/routing/admin-messages/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
