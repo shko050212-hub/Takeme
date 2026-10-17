@@ -22,6 +22,7 @@ import { TeacherModule } from './teacher/teacher.module';
 import { ChatModule } from './chat/chat.module';
 import { ApprovalRequest } from './entities/approval-request.entity';
 import { ApprovalModule } from './approval/approval.module';
+import { DirectionsModule } from './directions/directions.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ApprovalModule } from './approval/approval.module';
     TeacherModule,
     ChatModule,
     ApprovalModule,
+    DirectionsModule,
   ],
 })
 export class AppModule {}

@@ -8,6 +8,7 @@ import { User, UserRole } from '../entities/user.entity';
 import { Academy } from '../entities/academy.entity';
 import { Student } from '../entities/student.entity';
 import { Vehicle } from '../entities/vehicle.entity';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     @InjectRepository(Academy) private academyRepository: Repository<Academy>,
     @InjectRepository(Student) private studentRepository: Repository<Student>,
     @InjectRepository(Vehicle) private vehicleRepository: Repository<Vehicle>,
+    private readonly jwtService: JwtService,
   ) {}
 
   private async getTransporter() {
@@ -241,8 +243,17 @@ export class AuthService {
       }
     }
 
+    // 승인까지 끝난 사용자에게만 토큰 발급 (승인 대기·OTP 미통과는 위에서 이미 return 됨)
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      academyId,
+    });
+
     return {
       success: true,
+      accessToken,
       user: { 
         id: user.id, 
         email: user.email, 
