@@ -66,7 +66,10 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
   const fetchHolidays = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/routing/holidays`);
+      const activeAcademyId = localStorage.getItem('takeme_selected_academy_id') || (() => {
+        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch(e){ return ''; }
+      })();
+      const res = await fetch(`${API_BASE_URL}/routing/holidays${activeAcademyId ? `?academyId=${activeAcademyId}` : ''}`);
       const data = await res.json();
       setHolidays(data || []);
     } catch (e) {
@@ -185,12 +188,16 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       : startStr;
       
     try {
+      const activeAcademyId = localStorage.getItem('takeme_selected_academy_id') || (() => {
+        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch(e){ return undefined; }
+      })();
       await fetch(`${API_BASE_URL}/routing/holiday`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           startDate: startStr,
-          endDate: endStr
+          endDate: endStr,
+          academyId: activeAcademyId ? Number(activeAcademyId) : undefined
         })
       });
       setShowHolidayConfirm(false);

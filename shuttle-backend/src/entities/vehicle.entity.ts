@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn } from 'typeorm';
 import { Academy } from './academy.entity';
 import { User } from './user.entity';
+import { encryptionTransformer } from '../utils/crypto.util';
 
 @Entity('vehicles')
 export class Vehicle {
@@ -13,16 +14,16 @@ export class Vehicle {
   @Column({ nullable: true })
   plateNumber: string;
 
-  @Column()
+  @Column({ default: '미정' })
   driverName: string;
 
-  @Column()
+  @Column({ default: '000-0000-0000', transformer: encryptionTransformer })
   driverPhone: string;
 
-  @Column()
+  @Column({ default: '미정' })
   teacherName: string;
 
-  @Column()
+  @Column({ default: '000-0000-0000', transformer: encryptionTransformer })
   teacherPhone: string;
 
   @Column({ type: 'int', default: 25 })

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Query, Res, Delete } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Query, Res, Delete, Headers } from '@nestjs/common';
 import type { Response } from 'express';
 import { RoutingService } from './routing.service';
 
@@ -6,14 +6,39 @@ import { RoutingService } from './routing.service';
 export class RoutingController {
   constructor(private readonly routingService: RoutingService) {}
 
+  private resolveAcademyContext(headerA?: string, queryA?: string, headerU?: string, queryU?: string) {
+    const a = headerA || queryA;
+    const u = headerU || queryU;
+    return {
+      academyId: a && !isNaN(Number(a)) ? Number(a) : undefined,
+      userId: u && !isNaN(Number(u)) ? Number(u) : undefined,
+    };
+  }
+
+  @Get('academies')
+  async getAllAcademies() {
+    return this.routingService.getAllAcademies();
+  }
+
   @Get('initial-state')
-  async getInitialState() {
-    return this.routingService.getInitialState();
+  async getInitialState(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+    @Query('userId') userIdQuery?: string,
+  ) {
+    const { academyId, userId } = this.resolveAcademyContext(academyIdHeader, academyIdQuery, userIdHeader, userIdQuery);
+    return this.routingService.getInitialState(academyId, userId);
   }
 
   @Get('export-excel')
-  async exportExcel(@Res() res: Response) {
-    const buffer = await this.routingService.generateExcelBuffer();
+  async exportExcel(
+    @Res() res: Response,
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined);
+    const buffer = await this.routingService.generateExcelBuffer(academyId);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="students.xlsx"',
@@ -31,8 +56,13 @@ export class RoutingController {
   }
 
   @Post('generate-auth-code')
-  async generateAuthCode() {
-    return this.routingService.generateAuthCode();
+  async generateAuthCode(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+    @Body('academyId') academyIdBody?: number,
+  ) {
+    const academyId = academyIdBody || (academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined));
+    return this.routingService.generateAuthCode(academyId);
   }
 
   @Post('approve-student')
@@ -56,8 +86,14 @@ export class RoutingController {
   }
 
   @Post('setup-academy')
-  async setupAcademy(@Body() body: { name: string, address: string, lat: number, lng: number }) {
-    return this.routingService.setupAcademy(body);
+  async setupAcademy(
+    @Body() body: { name: string, address: string, lat: number, lng: number, academyId?: number },
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+  ) {
+    const academyId = body.academyId || (academyIdHeader ? Number(academyIdHeader) : undefined);
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.setupAcademy(body, academyId, userId);
   }
 
   @Post('absence')
@@ -76,23 +112,43 @@ export class RoutingController {
   }
 
   @Post('holiday')
-  async createHoliday(@Body() body: { startDate: string, endDate: string, reason?: string }) {
-    return this.routingService.createHoliday(body);
+  async createHoliday(
+    @Body() body: { startDate: string, endDate: string, reason?: string, academyId?: number },
+    @Headers('x-academy-id') academyIdHeader?: string,
+  ) {
+    const academyId = body.academyId || (academyIdHeader ? Number(academyIdHeader) : undefined);
+    return this.routingService.createHoliday(body, academyId);
   }
 
   @Get('holidays')
-  async getHolidays() {
-    return this.routingService.getHolidays();
+  async getHolidays(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined);
+    return this.routingService.getHolidays(academyId);
   }
 
   @Post('delete-academy')
-  async deleteAcademy() {
-    return this.routingService.deleteAcademy();
+  async deleteAcademy(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Body('academyId') academyIdBody?: number,
+  ) {
+    const academyId = academyIdBody || (academyIdHeader ? Number(academyIdHeader) : undefined);
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.deleteAcademy(academyId, userId);
   }
 
   @Post('init-zones')
-  async initZones(@Body() body: { vehicles: any[], parsedData: any[] }) {
-    return this.routingService.initializeZones(body.vehicles, body.parsedData);
+  async initZones(
+    @Body() body: { vehicles: any[], parsedData: any[], academyId?: number },
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+  ) {
+    const academyId = body.academyId || (academyIdHeader ? Number(academyIdHeader) : undefined);
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.initializeZones(body.vehicles, body.parsedData, academyId, userId);
   }
 
   @Post('vehicle/:id/zone')
@@ -104,18 +160,34 @@ export class RoutingController {
   }
 
   @Post('save-students')
-  async saveStudents(@Body() body: any[]) {
-    return this.routingService.saveStudents(body);
+  async saveStudents(
+    @Body() body: any,
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+  ) {
+    const students = Array.isArray(body) ? body : (body.students || []);
+    const academyId = (body && body.academyId) || (academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined));
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.saveStudents(students, academyId, userId);
   }
 
   @Post('pickup-point')
-  async createPickupPoint(@Body() body: { name: string, latitude: number, longitude: number }) {
-    return this.routingService.createPickupPoint(body);
+  async createPickupPoint(
+    @Body() body: { name: string, latitude: number, longitude: number, academyId?: number },
+    @Headers('x-academy-id') academyIdHeader?: string,
+  ) {
+    const academyId = body.academyId || (academyIdHeader ? Number(academyIdHeader) : undefined);
+    return this.routingService.createPickupPoint(body, academyId);
   }
 
   @Get('pickup-points')
-  async getPickupPoints() {
-    return this.routingService.getPickupPoints();
+  async getPickupPoints(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined);
+    return this.routingService.getPickupPoints(academyId);
   }
 
   @Delete('pickup-point/:id')

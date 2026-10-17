@@ -135,31 +135,82 @@ export class RoutingService {
     return color;
   }
 
-  async initializeZones(vehicles: any[], parsedData: any[]) {
-    // 1. Reset Database Data (Cascade Delete)
-    await this.studentRepository.clear();
-    await this.vehicleRepository.clear();
+  async getAcademy(academyId?: number, userId?: number): Promise<Academy | null> {
+    if (academyId && !isNaN(Number(academyId))) {
+      return this.academyRepository.findOne({ where: { id: Number(academyId) } });
+    }
+    if (userId && !isNaN(Number(userId))) {
+      return this.academyRepository.findOne({ where: { owner: { id: Number(userId) } } });
+    }
+    return this.academyRepository.findOne({ where: {} });
+  }
+
+  async getAllAcademies() {
+    const academies = await this.academyRepository.find({
+      relations: { owner: true },
+      order: { id: 'ASC' }
+    });
+    const results = [];
+    for (const ac of academies) {
+      const vehicleCount = await this.vehicleRepository.count({ where: { academy: { id: ac.id } } });
+      const studentCount = await this.studentRepository.count({ where: { academy: { id: ac.id } } });
+      results.push({
+        id: ac.id,
+        name: ac.name,
+        roadAddress: ac.roadAddress,
+        latitude: ac.latitude,
+        longitude: ac.longitude,
+        authCode: ac.authCode,
+        vehicleCount,
+        studentCount,
+        ownerId: ac.owner?.id,
+        ownerEmail: ac.owner?.email,
+        ownerName: ac.owner?.name,
+        createdAt: ac.createdAt
+      });
+    }
+    return results;
+  }
+
+  async initializeZones(vehicles: any[], parsedData: any[], academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+
+    // 1. Reset Database Data FOR THIS ACADEMY ONLY (Isolated)
+    await this.studentRepository.query(
+      `DELETE FROM student_schedules WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.query(
+      `DELETE FROM operation_logs WHERE "vehicleId" IN (SELECT id FROM vehicles WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.query(
+      `DELETE FROM pickup_point WHERE "academy_id" = $1`,
+      [academy.id]
+    ).catch(() => {});
+    
+    // Delete students and vehicles belonging to this academy
+    await this.studentRepository.delete({ academy: { id: academy.id } });
+    await this.vehicleRepository.delete({ academy: { id: academy.id } });
+
+    academy.vehicleCount = vehicles.length;
+    await this.academyRepository.save(academy);
 
     const savedVehicles: any[] = [];
     const vehiclePointsMap: Record<string, any> = {};
 
-    const academy = await this.academyRepository.findOne({ where: {} });
-    if (academy) {
-      academy.vehicleCount = vehicles.length;
-      await this.academyRepository.save(academy);
-    }
-
     // 2. Save Vehicles and Assign Colors
     for (const v of vehicles) {
       const newVehicle = this.vehicleRepository.create({
-        busNumber: v.busNumber,
-        plateNumber: v.plateNumber,
-        driverName: v.driverName,
-        driverPhone: v.driverPhone,
-        teacherName: v.teacherName,
-        teacherPhone: v.teacherPhone,
-        capacity: v.capacity,
-        academy: academy || undefined,
+        busNumber: v.busNumber || `${savedVehicles.length + 1}호차`,
+        plateNumber: v.plateNumber || '',
+        driverName: v.driverName || '미정',
+        driverPhone: v.driverPhone || '000-0000-0000',
+        teacherName: v.teacherName || '미정',
+        teacherPhone: v.teacherPhone || '000-0000-0000',
+        capacity: Number(v.capacity) || 25,
+        academy: academy,
       });
       const saved = await this.vehicleRepository.save(newVehicle);
       
@@ -172,29 +223,53 @@ export class RoutingService {
       vehiclePointsMap[v.busNumber] = savedVehicles[savedVehicles.length - 1];
     }
 
-    // 3. Geocode Addresses and Associate with Vehicles
+    // 3. Geocode Addresses and Associate with Vehicles (with caching & deduplication)
+    const geocodeCache = new Map<string, { lat: number, lng: number } | null>();
+    const geocodeWithCache = async (addr: string) => {
+      const cleanAddr = addr.trim();
+      if (!cleanAddr) return null;
+      if (geocodeCache.has(cleanAddr)) return geocodeCache.get(cleanAddr);
+      const res = await this.geocodeAddress(cleanAddr);
+      geocodeCache.set(cleanAddr, res);
+      return res;
+    };
+
+    const findTargetVehicle = (busName: string | null) => {
+      if (!busName) return null;
+      if (vehiclePointsMap[busName]) return vehiclePointsMap[busName];
+      const numOnly = busName.replace(/[^0-9]/g, '');
+      for (const key of Object.keys(vehiclePointsMap)) {
+        if (key === busName || (numOnly && key.replace(/[^0-9]/g, '') === numOnly)) {
+          return vehiclePointsMap[key];
+        }
+      }
+      return null;
+    };
+
     for (const row of parsedData) {
-      const inBusRaw = row['등원차량'];
+      const inBusRaw = row['등원차량'] || row['차량'] || row['호차'] || row['등원_차량'];
       const inBusName = inBusRaw ? inBusRaw.toString().trim() : null;
-      const inLocation = row['등원지'] || row['탑승지'];
+      const inLocation = row['등원지'] || row['탑승지'] || row['승차지'] || row['승차지(주소)'] || row['주소'] || row['도로명주소'];
 
-      const outBusRaw = row['하원차량'];
+      const outBusRaw = row['하원차량'] || row['차량'] || row['호차'] || row['하원_차량'];
       const outBusName = outBusRaw ? outBusRaw.toString().trim() : null;
-      const outLocation = row['하원지'] || row['하차지'];
+      const outLocation = row['하원지'] || row['하차지'] || row['하차지(주소)'] || row['주소'] || row['도로명주소'];
 
-      if (inBusName && inLocation && vehiclePointsMap[inBusName]) {
-        console.log(`Processing inbound for bus ${inBusName} at ${inLocation}`);
-        const coords = await this.geocodeAddress(inLocation);
+      const inTarget = inBusName ? findTargetVehicle(inBusName) : null;
+      if (inTarget && inLocation) {
+        const coords = await geocodeWithCache(inLocation.toString());
         if (coords) {
-          vehiclePointsMap[inBusName].points.push([coords.lat, coords.lng]);
+          const exists = inTarget.points.some((p: any) => p[0] === coords.lat && p[1] === coords.lng);
+          if (!exists) inTarget.points.push([coords.lat, coords.lng]);
         }
       }
 
-      if (outBusName && outLocation && vehiclePointsMap[outBusName]) {
-        console.log(`Processing outbound for bus ${outBusName} at ${outLocation}`);
-        const coords = await this.geocodeAddress(outLocation);
+      const outTarget = outBusName ? findTargetVehicle(outBusName) : null;
+      if (outTarget && outLocation) {
+        const coords = await geocodeWithCache(outLocation.toString());
         if (coords) {
-          vehiclePointsMap[outBusName].points.push([coords.lat, coords.lng]);
+          const exists = outTarget.points.some((p: any) => p[0] === coords.lat && p[1] === coords.lng);
+          if (!exists) outTarget.points.push([coords.lat, coords.lng]);
         }
       }
     }
@@ -212,9 +287,15 @@ export class RoutingService {
     return savedVehicles;
   }
 
-  async getInitialState() {
-    const academy = await this.academyRepository.findOne({ where: {} });
-    const vehicles = await this.vehicleRepository.find({ relations: { driverUser: true, teacherUser: true } });
+  async getInitialState(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) {
+      return { academy: null, buses: [], students: [] };
+    }
+    const vehicles = await this.vehicleRepository.find({ 
+      where: { academy: { id: academy.id } },
+      relations: { driverUser: true, teacherUser: true } 
+    });
     const formattedVehicles = vehicles.map(v => {
       let parsedPoints = [];
       try {
@@ -240,7 +321,10 @@ export class RoutingService {
       };
     });
     
-    const dbStudents = await this.studentRepository.find({ relations: { assignedVehicle: true, studentUser: true, parentUser: true, schedules: { assignedVehicle: true } } });
+    const dbStudents = await this.studentRepository.find({ 
+      where: { academy: { id: academy.id } },
+      relations: { assignedVehicle: true, studentUser: true, parentUser: true, schedules: { assignedVehicle: true } } 
+    });
     const formattedStudents = dbStudents.map(st => {
       let parsedRaw = {};
       try {
@@ -267,14 +351,17 @@ export class RoutingService {
     return { academy, buses: formattedVehicles, students: formattedStudents };
   }
 
-  async generateAuthCode() {
-    const academy = await this.academyRepository.findOne({ where: {} });
+  async generateAuthCode(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
     if (!academy) {
       throw new BadRequestException('학원 정보가 설정되지 않았습니다.');
     }
     
     // Generate a random 6-character alphanumeric code
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    let code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    while (await this.academyRepository.findOne({ where: { authCode: code } })) {
+      code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
     academy.authCode = code;
     await this.academyRepository.save(academy);
     
@@ -346,10 +433,13 @@ export class RoutingService {
     return { success: true };
   }
 
-  async setupAcademy(data: { name: string, address: string, lat: number, lng: number }) {
-    let academy = await this.academyRepository.findOne({ where: {} });
+  async setupAcademy(data: { name: string, address: string, lat: number, lng: number }, academyId?: number, userId?: number) {
+    let academy = await this.getAcademy(academyId, userId);
     if (!academy) {
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      let code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      while (await this.academyRepository.findOne({ where: { authCode: code } })) {
+        code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
       academy = this.academyRepository.create({
         name: data.name,
         roadAddress: data.address,
@@ -363,7 +453,11 @@ export class RoutingService {
       academy.latitude = data.lat.toString();
       academy.longitude = data.lng.toString();
       if (!academy.authCode) {
-        academy.authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        let code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        while (await this.academyRepository.findOne({ where: { authCode: code } })) {
+          code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+        academy.authCode = code;
       }
     }
     return await this.academyRepository.save(academy);
@@ -406,21 +500,48 @@ export class RoutingService {
     return { success: true };
   }
 
-  async deleteAcademy() {
-    await this.studentRepository.createQueryBuilder().delete().execute();
-    await this.vehicleRepository.createQueryBuilder().delete().execute();
-    await this.academyRepository.createQueryBuilder().delete().execute();
-    await this.userRepository.createQueryBuilder().delete().execute();
+  async deleteAcademy(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) return { success: true };
+
+    await this.studentRepository.query(
+      `DELETE FROM student_schedules WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.query(
+      `DELETE FROM operation_logs WHERE "vehicleId" IN (SELECT id FROM vehicles WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.query(
+      `DELETE FROM pickup_point WHERE "academy_id" = $1`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.delete({ academy: { id: academy.id } });
+    await this.vehicleRepository.delete({ academy: { id: academy.id } });
+    await this.academyRepository.delete(academy.id);
     return { success: true };
   }
 
-  async saveStudents(students: any[]) {
-    await this.studentRepository.clear();
-    
-    const academies = await this.academyRepository.find();
-    const academy = academies.length > 0 ? academies[0] : null;
+  async saveStudents(students: any[], academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
 
-    const vehicles = await this.vehicleRepository.find();
+    // Only clear student records for THIS academy
+    await this.studentRepository.query(
+      `DELETE FROM student_schedules WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.query(
+      `DELETE FROM schedule_overrides WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.query(
+      `DELETE FROM parent_messages WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
+      [academy.id]
+    ).catch(() => {});
+    await this.studentRepository.delete({ academy: { id: academy.id } });
+
+    const vehicles = await this.vehicleRepository.find({ where: { academy: { id: academy.id } } });
     const vehicleMap = new Map();
     vehicles.forEach(v => vehicleMap.set(v.id, v));
 
@@ -450,11 +571,12 @@ export class RoutingService {
         name: st.name,
         adminDisplayName,
         address: st.address,
-        latitude: st.lat,
-        longitude: st.lng,
+        boardingLocation: st.boardingLocation || st.address,
+        latitude: st.lat !== undefined && st.lat !== null ? parseFloat(st.lat) : undefined,
+        longitude: st.lng !== undefined && st.lng !== null ? parseFloat(st.lng) : undefined,
         raw: st.raw,
         assignedVehicle: vehicle || undefined,
-        academy: academy || undefined
+        academy: academy
       });
     });
 
@@ -463,10 +585,21 @@ export class RoutingService {
   }
 
   async geocodeBulk(addresses: string[]) {
-    // Sequentially geocode to avoid hitting Kakao API rate limits too hard
+    const cache = new Map<string, { lat: number, lng: number } | null>();
     const results = [];
     for (const address of addresses) {
-      const coords = await this.geocodeAddress(address);
+      if (!address) {
+        results.push({ address, coords: null });
+        continue;
+      }
+      const trimmed = address.trim();
+      let coords;
+      if (cache.has(trimmed)) {
+        coords = cache.get(trimmed);
+      } else {
+        coords = await this.geocodeAddress(trimmed);
+        cache.set(trimmed, coords);
+      }
       results.push({ address, coords });
     }
     return results;
@@ -559,8 +692,12 @@ export class RoutingService {
     return logs;
   }
 
-  async generateExcelBuffer(): Promise<Buffer> {
-    const students = await this.studentRepository.find({ relations: { schedules: { assignedVehicle: true } } });
+  async generateExcelBuffer(academyId?: number, userId?: number): Promise<Buffer> {
+    const academy = await this.getAcademy(academyId, userId);
+    const students = await this.studentRepository.find({ 
+      where: academy ? { academy: { id: academy.id } } : {},
+      relations: { schedules: { assignedVehicle: true } } 
+    });
     const workbook = new ExcelJS.Workbook();
     
     const days = ['월', '화', '수', '목', '금', '토', '일'];
@@ -651,8 +788,12 @@ export class RoutingService {
     return { success: true };
   }
 
-  async createHoliday(body: { startDate: string, endDate: string, reason?: string }) {
-    const holiday = this.academyHolidayRepository.create(body);
+  async createHoliday(body: { startDate: string, endDate: string, reason?: string }, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    const holiday = this.academyHolidayRepository.create({
+      ...body,
+      academy: academy || undefined
+    });
     await this.academyHolidayRepository.save(holiday);
 
     // Notify system (broadcast)
@@ -665,8 +806,13 @@ export class RoutingService {
     return holiday;
   }
 
-  async getHolidays() {
-    return this.academyHolidayRepository.find({ order: { startDate: 'DESC' } });
+  async getHolidays(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) return this.academyHolidayRepository.find({ order: { startDate: 'DESC' } });
+    return this.academyHolidayRepository.find({ 
+      where: { academy: { id: academy.id } },
+      order: { startDate: 'DESC' } 
+    });
   }
 
   async getAdminMessages() {
@@ -703,22 +849,22 @@ export class RoutingService {
     return { success: true, message: 'Message sent successfully.' };
   }
 
-  async createPickupPoint(body: { name: string, latitude: number, longitude: number }) {
-    const academies = await this.academyRepository.find();
-    if (academies.length === 0) throw new BadRequestException('Academy not set up');
+  async createPickupPoint(body: { name: string, latitude: number, longitude: number }, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) throw new BadRequestException('Academy not set up');
     const point = this.pickupPointRepository.create({
       name: body.name,
       latitude: body.latitude,
       longitude: body.longitude,
-      academy: academies[0]
+      academy: academy
     });
     return this.pickupPointRepository.save(point);
   }
 
-  async getPickupPoints() {
-    const academies = await this.academyRepository.find();
-    if (academies.length === 0) return [];
-    return this.pickupPointRepository.find({ where: { academy: { id: academies[0].id } } });
+  async getPickupPoints(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) return [];
+    return this.pickupPointRepository.find({ where: { academy: { id: academy.id } } });
   }
 
   async deletePickupPoint(id: number) {

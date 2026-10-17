@@ -8,7 +8,11 @@ import { useRef } from 'react';
 import io from 'socket.io-client';
 import LogViewer from './LogViewer';
 import MessagePanel from './MessagePanel';
+import DocumentManager from './documents/DocumentManager';
+import DocumentSidebar from './documents/DocumentSidebar';
+import { getOverallExpirySummary } from './documents/documentStorage';
 import { API_BASE_URL } from './config';
+
 
 // Fix Leaflet default icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -72,12 +76,28 @@ export default function Dashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+
+  // Multi-tenant User Context
+  const currentUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('takeme_user') || '{}');
+    } catch (e) {
+      return {};
+    }
+  })();
+  const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
+  const [allAcademies, setAllAcademies] = useState([]);
+  const [selectedAcademyId, setSelectedAcademyId] = useState(
+    Number(localStorage.getItem('takeme_selected_academy_id')) || currentUser.academyId || null
+  );
+
   const [buses, setBuses] = useState([]);
   const [students, setStudents] = useState([]); // Array of { name, address, lat, lng, assignedBusId, color }
   const [selectedBusId, setSelectedBusId] = useState(null);
-  const [activeTab, setActiveTab] = useState('status'); // 'status', 'students', 'settings', 'log', 'messages'
+  const [activeTab, setActiveTab] = useState('status'); // 'status', 'students', 'settings', 'log', 'messages', 'documents'
   const [isLogClosing, setIsLogClosing] = useState(false);
   const [isMessageClosing, setIsMessageClosing] = useState(false);
+  const [isDocumentsClosing, setIsDocumentsClosing] = useState(false);
   const [editingBus, setEditingBus] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -86,6 +106,24 @@ export default function Dashboard() {
   const [msgTargetDriver, setMsgTargetDriver] = useState(false);
   const [msgTargetTeacher, setMsgTargetTeacher] = useState(false);
   const [msgTargetStudents, setMsgTargetStudents] = useState([]); // array of student IDs
+
+  // Legal Expiry Urgent Count State
+  const [urgentExpiryCount, setUrgentExpiryCount] = useState(0);
+
+  useEffect(() => {
+    const updateExpiryStatus = () => {
+      try {
+        const summary = getOverallExpirySummary(buses);
+        setUrgentExpiryCount(summary.urgentCount);
+      } catch (e) {
+        console.error('만료 현황 확인 실패:', e);
+      }
+    };
+    updateExpiryStatus();
+    window.addEventListener('takeme_expiry_changed', updateExpiryStatus);
+    return () => window.removeEventListener('takeme_expiry_changed', updateExpiryStatus);
+  }, [buses]);
+
 
   const handleTabChange = (newTab) => {
     if (activeTab === 'log' && newTab !== 'log') {
@@ -98,6 +136,12 @@ export default function Dashboard() {
       setIsMessageClosing(true);
       setTimeout(() => {
         setIsMessageClosing(false);
+        setActiveTab(newTab);
+      }, 300);
+    } else if (activeTab === 'documents' && newTab !== 'documents') {
+      setIsDocumentsClosing(true);
+      setTimeout(() => {
+        setIsDocumentsClosing(false);
         setActiveTab(newTab);
       }, 300);
     } else {
@@ -143,11 +187,49 @@ export default function Dashboard() {
     return () => socket.disconnect();
   }, []);
 
+  const handleLogout = () => {
+    if (window.confirm('로그아웃 하시겠습니까?')) {
+      localStorage.removeItem('takeme_user');
+      localStorage.removeItem('takeme_selected_academy_id');
+      localStorage.removeItem('takeme_academy');
+      localStorage.removeItem('takeme_buses');
+      navigate('/');
+    }
+  };
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetch(`${API_BASE_URL}/routing/academies`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            setAllAcademies(data);
+            if (!selectedAcademyId) {
+              setSelectedAcademyId(data[0].id);
+              localStorage.setItem('takeme_selected_academy_id', String(data[0].id));
+            }
+          }
+        })
+        .catch(err => console.error('Failed to load academies', err));
+    }
+  }, [isSuperAdmin]);
+
+  const handleSwitchAcademy = (newAcademyId) => {
+    setSelectedAcademyId(newAcademyId);
+    localStorage.setItem('takeme_selected_academy_id', String(newAcademyId));
+    loadInitialState(newAcademyId);
+  };
+
   const handleGenerateAuthCode = async () => {
     if (!window.confirm('새로운 학원 인증코드를 발급하시겠습니까? 기존 코드는 사용할 수 없게 됩니다.')) return;
     try {
       setIsProcessing(true);
-      const res = await fetch(`${API_BASE_URL}/routing/generate-auth-code`, { method: 'POST' });
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+      const res = await fetch(`${API_BASE_URL}/routing/generate-auth-code`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ academyId: targetAcademyId })
+      });
       const data = await res.json();
       if (res.ok && data.authCode) {
         setAcademy(prev => {
@@ -245,7 +327,12 @@ export default function Dashboard() {
     if (!window.confirm('정말 학원 계정을 탈퇴(삭제)하시겠습니까?\n학생 명단, 배차 정보 등 모든 데이터가 영구적으로 삭제됩니다.')) return;
     try {
       setIsProcessing(true);
-      const res = await fetch(`${API_BASE_URL}/routing/delete-academy`, { method: 'POST' });
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+      const res = await fetch(`${API_BASE_URL}/routing/delete-academy`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ academyId: targetAcademyId })
+      });
       if (res.ok) {
         localStorage.removeItem('takeme_academy');
         localStorage.removeItem('takeme_buses');
@@ -277,10 +364,11 @@ export default function Dashboard() {
     
     setIsProcessing(true);
     try {
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
       const res = await fetch(`${API_BASE_URL}/routing/pickup-point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, latitude: latlng[0], longitude: latlng[1] })
+        body: JSON.stringify({ name, latitude: latlng[0], longitude: latlng[1], academyId: targetAcademyId })
       });
       if (res.ok) {
         const newPoint = await res.json();
@@ -351,6 +439,11 @@ export default function Dashboard() {
     return `${onlyNums.slice(0, 3)}-${onlyNums.slice(3, 7)}-${onlyNums.slice(7, 11)}`;
   };
 
+  const maskPhoneNumber = (value) => {
+    if (!value || typeof value !== 'string') return '';
+    return value.replace(/(\d{2,3})[-.]?(\d{3,4})[-.]?(\d{4})/, '$1-****-$3');
+  };
+
   // Custom icon for Academy
   const academyIcon = L.divIcon({
     html: '<div style="font-size: 36px; line-height: 1; text-align: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));">🏫</div>',
@@ -375,63 +468,68 @@ export default function Dashboard() {
     });
   };
 
-  useEffect(() => {
-    const loadInitialState = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/routing/initial-state`);
-        const data = await res.json();
-        
-        if (data.academy && data.academy.name && data.academy.roadAddress && !isNaN(parseFloat(data.academy.latitude))) {
-          const formattedAcademy = {
-            id: data.academy.id,
-            name: data.academy.name,
-            address: data.academy.roadAddress,
-            lat: parseFloat(data.academy.latitude),
-            lng: parseFloat(data.academy.longitude),
-            authCode: data.academy.authCode
-          };
-          setAcademy(formattedAcademy);
-          setAcademyForm({
-            name: formattedAcademy.name,
-            address: formattedAcademy.address
-          });
-        } else {
-          setAcademy(null);
-        }
-        
-        if (data.buses && data.buses.length > 0) {
-          setBuses(computePolygons(data.buses));
-          setShowAcademyModal(false);
-        } else if (location.state && location.state.buses && location.state.buses.length > 0) {
-          setBuses(computePolygons(location.state.buses));
-          setShowAcademyModal(false);
-        } else {
-          setBuses([]);
-          setShowAcademyModal(true);
-          setSetupStep(1);
-        }
-        
-        if (data.students && data.students.length > 0) {
-          setStudents(data.students);
-        } else {
-          setStudents([]);
-        }
-        
-        try {
-          const ptRes = await fetch(`${API_BASE_URL}/routing/pickup-points`);
-          if (ptRes.ok) {
-            setPickupPoints(await ptRes.json());
-          }
-        } catch (e) {
-          console.error('Failed to fetch pickup points', e);
-        }
-      } catch (err) {
-        console.error('Failed to load initial state', err);
-      } finally {
-        setIsInitializing(false);
+  const loadInitialState = async (overrideAcademyId) => {
+    try {
+      setIsInitializing(true);
+      const targetAcademyId = overrideAcademyId !== undefined ? overrideAcademyId : (selectedAcademyId || currentUser.academyId);
+      const url = targetAcademyId 
+        ? `${API_BASE_URL}/routing/initial-state?academyId=${targetAcademyId}`
+        : `${API_BASE_URL}/routing/initial-state`;
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (data.academy && data.academy.name && data.academy.roadAddress && !isNaN(parseFloat(data.academy.latitude))) {
+        const formattedAcademy = {
+          id: data.academy.id,
+          name: data.academy.name,
+          address: data.academy.roadAddress,
+          lat: parseFloat(data.academy.latitude),
+          lng: parseFloat(data.academy.longitude),
+          authCode: data.academy.authCode
+        };
+        setAcademy(formattedAcademy);
+        setAcademyForm({
+          name: formattedAcademy.name,
+          address: formattedAcademy.address
+        });
+      } else {
+        setAcademy(null);
       }
-    };
-    
+      
+      if (data.buses && data.buses.length > 0) {
+        setBuses(computePolygons(data.buses));
+        setShowAcademyModal(false);
+      } else if (location.state && location.state.buses && location.state.buses.length > 0) {
+        setBuses(computePolygons(location.state.buses));
+        setShowAcademyModal(false);
+      } else {
+        setBuses([]);
+        setShowAcademyModal(true);
+        setSetupStep(1);
+      }
+      
+      if (data.students && data.students.length > 0) {
+        setStudents(data.students);
+      } else {
+        setStudents([]);
+      }
+      
+      try {
+        const ptRes = await fetch(`${API_BASE_URL}/routing/pickup-points`);
+        if (ptRes.ok) {
+          setPickupPoints(await ptRes.json());
+        }
+      } catch (e) {
+        console.error('Failed to fetch pickup points', e);
+      }
+    } catch (err) {
+      console.error('Failed to load initial state', err);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  useEffect(() => {
     loadInitialState();
   }, [location.state]);
 
@@ -458,10 +556,11 @@ export default function Dashboard() {
         
         // Save to backend
         try {
+          const targetAcademyId = selectedAcademyId || currentUser.academyId;
           await fetch(`${API_BASE_URL}/routing/setup-academy`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newAcademy)
+            body: JSON.stringify({ ...newAcademy, academyId: targetAcademyId })
           });
         } catch (e) {
           console.error('Failed to save academy to backend', e);
@@ -503,10 +602,11 @@ export default function Dashboard() {
         };
         
         try {
+          const targetAcademyId = selectedAcademyId || currentUser.academyId;
           await fetch(`${API_BASE_URL}/routing/setup-academy`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newAcademy)
+            body: JSON.stringify({ ...newAcademy, academyId: targetAcademyId })
           });
         } catch (err) {
           console.error('Failed to save academy to backend', err);
@@ -534,24 +634,61 @@ export default function Dashboard() {
     setIsProcessing(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws);
-      
-      // Assuming '학생이름/영문이름' and '주소' columns exist
-      const addressMap = data.map(row => ({
-        name: row['학생이름/영문이름'] || row['이름'] || row['원생명'] || '익명',
-        address: row['주소'] || row['승차지'] || row['탑승지'] || row['실탑승지'] || '',
-        raw: row
-      })).filter(item => item.address);
-
       try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        
+        let data = [];
+        wb.SheetNames.forEach(sheetName => {
+          const sheet = wb.Sheets[sheetName];
+          const sheetData = XLSX.utils.sheet_to_json(sheet);
+          if (Array.isArray(sheetData) && sheetData.length > 0) {
+            const hasRelevantColumns = sheetData.some(r => 
+              r['학생이름/영문이름'] || r['이름'] || r['원생명'] || r['학생명'] || r['원생이름'] || r['주소'] || r['등원지'] || r['탑승지'] || r['승차지']
+            );
+            if (hasRelevantColumns) {
+              data = data.concat(sheetData);
+            }
+          }
+        });
+
+        if (data.length === 0 && wb.SheetNames.length > 0) {
+          data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) || [];
+        }
+
+        if (data.length === 0) {
+          alert('엑셀 파일에서 유효한 학원생 명단 데이터를 찾을 수 없습니다.');
+          setIsProcessing(false);
+          return;
+        }
+
+        const addressMap = data.map((row, idx) => {
+          const name = row['학생이름/영문이름'] || row['이름'] || row['원생명'] || row['학생명'] || row['원생이름'] || `원생${idx + 1}`;
+          const address = row['등원지'] || row['탑승지'] || row['승차지'] || row['승차지(주소)'] || row['주소'] || row['도로명주소'] || row['실탑승지'] || '';
+          const boardingLocation = row['등원지'] || row['탑승지'] || row['승차지'] || address;
+          return {
+            name: name.toString().trim(),
+            address: address.toString().trim(),
+            boardingLocation: boardingLocation.toString().trim(),
+            raw: row
+          };
+        }).filter(item => item.address);
+
+        if (addressMap.length === 0) {
+          alert('유효한 주소(등원지, 탑승지, 주소 등)가 입력된 학생 행을 찾을 수 없습니다.');
+          setIsProcessing(false);
+          return;
+        }
+
         const res = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ addresses: addressMap.map(a => a.address) })
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || '지오코딩 처리 실패');
+        }
         const geocoded = await res.json();
         
         // Point-in-Polygon Assignment
@@ -586,9 +723,10 @@ export default function Dashboard() {
           }
 
           newStudents.push({
-            id: idx,
+            id: idx + 1,
             name: addressMap[idx].name,
             address: item.address,
+            boardingLocation: addressMap[idx].boardingLocation,
             lat: item.coords.lat,
             lng: item.coords.lng,
             assignedBusId: assignedBus ? assignedBus.id : null,
@@ -597,25 +735,38 @@ export default function Dashboard() {
           });
         });
 
-        setStudents(newStudents);
-        
         // Save to backend
-        try {
-          await fetch(`${API_BASE_URL}/routing/save-students`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newStudents)
-          });
-        } catch (e) {
-          console.error('Failed to save students to backend', e);
+        const targetAcademyId = selectedAcademyId || currentUser.academyId;
+        const saveRes = await fetch(`${API_BASE_URL}/routing/save-students`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ students: newStudents, academyId: targetAcademyId })
+        });
+        if (!saveRes.ok) {
+          const errData = await saveRes.json().catch(() => ({}));
+          throw new Error(errData.message || '원생 데이터 저장 실패');
+        }
+
+        // Refresh initial state so DB-assigned IDs and relations are fresh
+        const stateRes = await fetch(`${API_BASE_URL}/routing/initial-state?academyId=${targetAcademyId}`);
+        if (stateRes.ok) {
+          const stateData = await stateRes.json();
+          if (Array.isArray(stateData.students)) {
+            setStudents(stateData.students);
+          } else {
+            setStudents(newStudents);
+          }
+        } else {
+          setStudents(newStudents);
         }
         
-        alert(`총 ${newStudents.length}명의 원생 배차가 완료되었습니다!`);
+        alert(`총 ${newStudents.length}명의 원생 등록 및 구역 배차가 완료되었습니다!`);
       } catch (err) {
-        alert('지오코딩 중 에러가 발생했습니다.');
+        alert(`원생 명단 처리 중 에러가 발생했습니다: ${err.message}`);
         console.error(err);
       } finally {
         setIsProcessing(false);
+        if (e.target) e.target.value = '';
       }
     };
     reader.readAsBinaryString(file);
@@ -630,8 +781,31 @@ export default function Dashboard() {
     reader.onload = async (evt) => {
       const bstr = evt.target.result;
       const wb = XLSX.read(bstr, { type: 'binary' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws);
+      
+      // Multi-sheet support: extract data across sheets or first non-empty sheet
+      let data = [];
+      wb.SheetNames.forEach(sheetName => {
+        const sheet = wb.Sheets[sheetName];
+        const sheetData = XLSX.utils.sheet_to_json(sheet);
+        if (Array.isArray(sheetData) && sheetData.length > 0) {
+          const hasRelevantColumns = sheetData.some(r => 
+            r['등원차량'] || r['하원차량'] || r['차량'] || r['호차'] || r['등원지'] || r['주소'] || r['승차지'] || r['학생이름/영문이름'] || r['이름']
+          );
+          if (hasRelevantColumns) {
+            data = data.concat(sheetData);
+          }
+        }
+      });
+
+      if (data.length === 0 && wb.SheetNames.length > 0) {
+        data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) || [];
+      }
+
+      if (data.length === 0) {
+        alert('엑셀 파일에서 유효한 학생/배차 데이터 행을 찾을 수 없습니다. 시트에 내용이 입력되어 있는지 확인해주세요.');
+        setIsProcessing(false);
+        return;
+      }
       
       const busSet = new Set();
       data.forEach(row => {
@@ -641,10 +815,16 @@ export default function Dashboard() {
         if (b2) busSet.add(b2.toString().trim());
       });
 
-      const count = busSet.size > 0 ? busSet.size : 1;
+      const busList = Array.from(busSet).sort((a, b) => {
+        const na = parseInt(a.replace(/[^0-9]/g, ''), 10) || 0;
+        const nb = parseInt(b.replace(/[^0-9]/g, ''), 10) || 0;
+        return na - nb;
+      });
+
+      const count = busList.length > 0 ? busList.length : 1;
       const vehicles = Array.from({ length: count }).map((_, i) => ({
         id: i + 1,
-        busNumber: Array.from(busSet)[i] || `${i + 1}호차`,
+        busNumber: busList[i] || `${i + 1}호차`,
         plateNumber: '',
         driverName: '미정',
         driverPhone: '000-0000-0000',
@@ -654,11 +834,16 @@ export default function Dashboard() {
       }));
 
       try {
+        const targetAcademyId = selectedAcademyId || currentUser.academyId;
         const res = await fetch(`${API_BASE_URL}/routing/init-zones`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vehicles, parsedData: data })
+          body: JSON.stringify({ vehicles, parsedData: data, academyId: targetAcademyId })
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || '서버 처리 실패');
+        }
         const geocodedBuses = await res.json();
         
         // Process polygons before updating state
@@ -678,7 +863,7 @@ export default function Dashboard() {
           alert('구역 세팅이 완료되었습니다!');
         }
       } catch (e) {
-        alert('구역 리셋에 실패했습니다.');
+        alert(`구역 리셋에 실패했습니다: ${e.message}`);
         console.error(e);
       } finally {
         setIsProcessing(false);
@@ -781,7 +966,8 @@ export default function Dashboard() {
   const handleExportExcel = async () => {
     try {
       setIsProcessing(true);
-      const res = await fetch(`${API_BASE_URL}/routing/export-excel`);
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+      const res = await fetch(`${API_BASE_URL}/routing/export-excel${targetAcademyId ? `?academyId=${targetAcademyId}` : ''}`);
       if (!res.ok) throw new Error('다운로드 실패');
       
       const blob = await res.blob();
@@ -895,7 +1081,10 @@ export default function Dashboard() {
 
       {/* Bookmark Rail (Left Navigation) */}
       <div className="w-20 bg-blue-700 flex flex-col items-center py-8 gap-6 z-20 shadow-xl">
-        <div className="text-white font-bold text-xs mb-4">Takeme</div>
+        <div className="text-white font-bold text-xs mb-1">Takeme</div>
+        <div className="text-[10px] text-blue-200 text-center truncate max-w-[70px] mb-4 font-medium" title={currentUser.name}>
+          {isSuperAdmin ? '플랫폼관리' : (currentUser.name ? `${currentUser.name} 원장` : '원장')}
+        </div>
         <button onClick={() => handleTabChange('status')} className={`p-4 rounded-2xl transition-all ${activeTab === 'status' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="차량 구역 현황">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
         </button>
@@ -916,6 +1105,17 @@ export default function Dashboard() {
         <button onClick={() => handleTabChange('messages')} className={`p-4 rounded-2xl transition-all ${activeTab === 'messages' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="메세지함">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
         </button>
+        <button onClick={() => handleTabChange('documents')} className={`relative p-4 rounded-2xl transition-all ${activeTab === 'documents' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="행정 및 안전 서류 관리">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          {urgentExpiryCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-blue-700 animate-pulse shadow-sm">
+              {urgentExpiryCount}
+            </span>
+          )}
+        </button>
+
         <button onClick={() => handleTabChange('settings')} className={`p-4 rounded-2xl transition-all mt-auto ${activeTab === 'settings' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="환경설정">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         </button>
@@ -1109,40 +1309,85 @@ export default function Dashboard() {
         )}
 
         {activeTab === 'students' && (
-          <div className="p-6 h-full flex flex-col">
-            <h2 className="text-xl font-bold text-slate-800 mb-2">현 학원생 정보</h2>
-            <div className="mb-4 space-y-2">
-              <p className="text-xs text-slate-500">학부모님들이 학생 앱을 통해 등록한 원생들의 정보가 자동으로 이곳에 모입니다.<br/><b>아래 버튼을 눌러 요일별 엑셀 시트로 정보를 다운로드하세요.</b></p>
+          <div className="p-4 h-full flex flex-col">
+            <h2 className="text-lg font-bold text-slate-800 mb-1 text-center">현 학원생 정보</h2>
+            <p className="text-xs text-slate-500 mb-3 text-center">
+              학원생 명단 엑셀을 업로드하여 구역별로 자동 배차하거나 현재 원생 정보를 다운로드하세요.
+            </p>
+
+            <input 
+              type="file" 
+              accept=".xlsx, .xls" 
+              className="hidden" 
+              ref={fileInputRef} 
+              onChange={handleStudentUpload} 
+            />
+
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+                className="w-full py-2.5 px-2 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm"
+              >
+                {isProcessing ? '처리 중...' : '학원생 엑셀 업로드'}
+              </button>
+              
+              <button 
+                onClick={handleExportExcel}
+                disabled={isProcessing}
+                className="w-full py-2.5 px-2 bg-emerald-600 text-white font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm"
+              >
+                {isProcessing ? '준비 중...' : '엑셀 다운로드'}
+              </button>
             </div>
-            
-            <button 
-              onClick={handleExportExcel}
-              disabled={isProcessing}
-              className="flex items-center justify-center w-full py-3 mb-6 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors disabled:opacity-50"
+
+            <a 
+              href="/학원생_정보_입력_시트.xlsx" 
+              download="학원생_정보_입력_시트.xlsx" 
+              className="w-full py-2 mb-3 bg-white text-slate-600 rounded-lg text-xs font-semibold border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors text-center block"
             >
-              {isProcessing ? '다운로드 준비 중...' : '⬇️ 학원생 엑셀파일 다운로드'}
-            </button>
-            {students.length > 0 && (
-              <div className="mt-6 flex-1 overflow-y-auto">
-                <h3 className="font-bold text-slate-700 text-sm mb-3 border-b pb-2">배차 결과 ({students.length}명)</h3>
-                <div className="space-y-3 pr-2">
+              학원생 등록 양식 다운로드
+            </a>
+
+            {students.length > 0 ? (
+              <div className="mt-1 flex-1 overflow-y-auto">
+                <div className="flex justify-between items-center mb-2 border-b pb-1.5">
+                  <h3 className="font-bold text-slate-700 text-xs">배차 결과</h3>
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    총 {students.length}명
+                  </span>
+                </div>
+                <div className="space-y-2 pr-1">
                   {students.map(st => (
-                    <div key={st.id} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                    <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-center gap-2 mb-1">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: st.color }}></div>
-                        <span className="font-bold text-slate-800 text-sm">{st.name}</span>
-                        <span className="text-xs text-slate-500">{st.raw?.['학교명']} {st.raw?.['학년']}</span>
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color }}></div>
+                        <span className="font-bold text-slate-800 text-xs">{st.name}</span>
+                        <span className="text-[11px] text-slate-400">{st.raw?.['학교명']} {st.raw?.['학년']}</span>
                       </div>
                       <div className="text-xs text-slate-600 truncate mb-1">{st.address}</div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">{st.raw?.['보호자 성함']} {st.raw?.['보호자연락처']}</span>
-                        <span className="font-bold" style={{ color: st.color }}>
+                        <span className="text-slate-400 text-[11px]">{st.raw?.['보호자 성함']} {maskPhoneNumber(st.raw?.['보호자연락처'])}</span>
+                        <span className="font-bold text-[11px]" style={{ color: st.color }}>
                           {st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 실패'}
                         </span>
                       </div>
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : (
+              <div className="mt-2 flex-1 flex flex-col items-center justify-center text-center p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <h4 className="font-bold text-slate-700 text-xs mb-1 text-center">등록된 학원생이 없습니다</h4>
+                <p className="text-[11px] text-slate-500 mb-3 text-center max-w-xs leading-relaxed">
+                  학원생 엑셀 파일을 업로드하시면 구역에 맞추어 자동으로 배차됩니다.
+                </p>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 shadow-sm transition text-center"
+                >
+                  명단 업로드하기
+                </button>
               </div>
             )}
           </div>
@@ -1388,14 +1633,20 @@ export default function Dashboard() {
                 )}
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 mt-auto">
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 mt-auto space-y-2">
                 <h3 className="font-bold text-slate-700 mb-1">계정 관리</h3>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full py-2 bg-white text-slate-700 rounded-lg text-sm font-bold border border-slate-300 shadow-sm hover:bg-slate-100 transition-colors"
+                >
+                  로그아웃
+                </button>
                 <button 
                   onClick={handleDeleteAcademy}
                   disabled={isProcessing}
                   className="w-full py-2 bg-white text-slate-500 rounded-lg text-sm font-bold border border-slate-300 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors"
                 >
-                  {isProcessing ? '처리 중...' : '회원 탈퇴'}
+                  {isProcessing ? '처리 중...' : '학원 데이터 삭제 및 탈퇴'}
                 </button>
               </div>
               </div>
@@ -1416,6 +1667,16 @@ export default function Dashboard() {
                 <button onClick={() => setLogTab('HOLIDAY')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'HOLIDAY' ? 'bg-orange-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🎉 휴업일 설정</button>
               </div>
             </div>
+          )}
+
+          {activeTab === 'documents' && (
+            <DocumentSidebar 
+              academyId={selectedAcademyId} 
+              academyName={academy?.name}
+              currentUser={currentUser}
+              buses={buses}
+              students={students}
+            />
           )}
         </div>
 
@@ -1446,6 +1707,17 @@ export default function Dashboard() {
               setMsgTargetTeacher(false);
               setMsgTargetStudents([]);
             }}
+          />
+        )}
+
+        {activeTab === 'documents' && (
+          <DocumentManager 
+            academyId={selectedAcademyId} 
+            academyName={academy?.name}
+            currentUser={currentUser}
+            isClosing={isDocumentsClosing}
+            buses={buses}
+            students={students}
           />
         )}
 
@@ -1494,26 +1766,53 @@ export default function Dashboard() {
           />
         )}
 
-        {/* Day Filter Controls */}
-        <div className="absolute top-4 right-4 z-[1000] flex bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden text-sm font-bold">
-          {[
-            { id: 'ALL', label: '전체' },
-            { id: 'MON', label: '월' },
-            { id: 'TUE', label: '화' },
-            { id: 'WED', label: '수' },
-            { id: 'THU', label: '목' },
-            { id: 'FRI', label: '금' },
-            { id: 'SAT', label: '토' },
-            { id: 'SUN', label: '일' },
-          ].map(day => (
-            <button
-              key={day.id}
-              onClick={() => setSelectedDay(day.id)}
-              className={`px-3 py-2 transition-colors ${selectedDay === day.id ? 'bg-blue-600 text-white' : 'hover:bg-slate-50 text-slate-700 border-l first:border-l-0 border-slate-200'}`}
-            >
-              {day.label}
-            </button>
-          ))}
+        {/* Top-Right Controls: SuperAdmin Switcher & Day Filter & Logout */}
+        <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2">
+          {isSuperAdmin && (
+            <div className="flex items-center gap-2 bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-lg text-xs font-bold border border-indigo-500">
+              <span className="whitespace-nowrap">🏛️ 학원 선택:</span>
+              <select
+                value={selectedAcademyId || ''}
+                onChange={(e) => handleSwitchAcademy(Number(e.target.value))}
+                className="bg-white text-slate-800 px-2 py-1 rounded font-bold text-xs outline-none cursor-pointer"
+              >
+                {allAcademies.map(ac => (
+                  <option key={ac.id} value={ac.id}>
+                    {ac.name} ({ac.vehicleCount}대 / {ac.studentCount}명)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden text-sm font-bold">
+            {[
+              { id: 'ALL', label: '전체' },
+              { id: 'MON', label: '월' },
+              { id: 'TUE', label: '화' },
+              { id: 'WED', label: '수' },
+              { id: 'THU', label: '목' },
+              { id: 'FRI', label: '금' },
+              { id: 'SAT', label: '토' },
+              { id: 'SUN', label: '일' },
+            ].map(day => (
+              <button
+                key={day.id}
+                onClick={() => setSelectedDay(day.id)}
+                className={`px-3 py-2 transition-colors ${selectedDay === day.id ? 'bg-blue-600 text-white' : 'hover:bg-slate-50 text-slate-700 border-l first:border-l-0 border-slate-200'}`}
+              >
+                {day.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="px-3 py-2 bg-white text-slate-700 hover:text-red-600 rounded-lg shadow-lg border border-slate-200 text-xs font-bold transition-colors whitespace-nowrap"
+            title="로그아웃"
+          >
+            로그아웃
+          </button>
         </div>
 
         <MapContainer 
@@ -1732,7 +2031,7 @@ export default function Dashboard() {
                 
                 <div className="bg-slate-50 p-2 rounded border border-slate-100 text-xs mb-2">
                   <div className="mb-1"><b>주소:</b> {st.address}</div>
-                  <div className="mb-1"><b>학부모:</b> {st.raw?.['보호자 성함']} ({st.raw?.['보호자연락처']})</div>
+                  <div className="mb-1"><b>학부모:</b> {st.raw?.['보호자 성함']} ({maskPhoneNumber(st.raw?.['보호자연락처'])})</div>
                   <div><b>담임:</b> {st.raw?.['담임명']}</div>
                 </div>
                 

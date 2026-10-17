@@ -3,6 +3,7 @@ import { Academy } from './academy.entity';
 import { Vehicle } from './vehicle.entity';
 import { User } from './user.entity';
 import { StudentSchedule } from './student-schedule.entity';
+import { encryptionTransformer } from '../utils/crypto.util';
 
 @Entity('students')
 export class Student {
@@ -33,7 +34,7 @@ export class Student {
   @ManyToOne(() => Vehicle, { nullable: true, onDelete: 'SET NULL' })
   assignedVehicle: Vehicle; // Auto-assigned
 
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: 'text', nullable: true, transformer: encryptionTransformer })
   raw: any;
 
   @OneToOne(() => User, { nullable: true, onDelete: 'SET NULL' })

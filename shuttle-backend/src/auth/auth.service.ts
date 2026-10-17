@@ -191,23 +191,79 @@ export class AuthService {
       }
     }
 
+    let academyId: number | null = null;
+    let academyName: string | null = null;
+    if (user.role === UserRole.SUPER_ADMIN) {
+      academyId = null;
+      academyName = '통합 플랫폼 관리자';
+    } else if (user.role === UserRole.ACADEMY_ADMIN) {
+      let academy = await this.academyRepository.findOne({ where: { owner: { id: user.id } } });
+      if (!academy) {
+        // Find if there is an academy without owner or create a fresh one
+        const unowned = await this.academyRepository.findOne({ where: { owner: undefined } });
+        if (unowned && !unowned.owner) {
+          unowned.owner = user;
+          await this.academyRepository.save(unowned);
+          academy = unowned;
+        } else {
+          let authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+          while (await this.academyRepository.findOne({ where: { authCode } })) {
+            authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+          }
+          academy = this.academyRepository.create({
+            name: user.name ? `${user.name} 학원` : '신규 학원',
+            owner: user,
+            authCode,
+            vehicleCount: 0
+          });
+          await this.academyRepository.save(academy);
+        }
+      }
+      academyId = academy.id;
+      academyName = academy.name;
+    } else if (user.role === UserRole.STUDENT || user.role === UserRole.PARENT) {
+      const student = await this.studentRepository.findOne({
+        where: user.role === UserRole.STUDENT ? { studentUser: { id: user.id } } : { parentUser: { id: user.id } },
+        relations: { academy: true }
+      });
+      if (student?.academy) {
+        academyId = student.academy.id;
+        academyName = student.academy.name;
+      }
+    } else if (user.role === UserRole.DRIVER || user.role === UserRole.TEACHER) {
+      const vehicle = await this.vehicleRepository.findOne({
+        where: user.role === UserRole.DRIVER ? { driverUser: { id: user.id } } : { teacherUser: { id: user.id } },
+        relations: { academy: true }
+      });
+      if (vehicle?.academy) {
+        academyId = vehicle.academy.id;
+        academyName = vehicle.academy.name;
+      }
+    }
+
     return {
       success: true,
-      user: { id: user.id, email: user.email, role: user.role, name: user.name }
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role, 
+        name: user.name,
+        academyId,
+        academyName
+      }
     };
   }
-
-
 
   async register(data: any) {
     const { email, password, name, authCode, role, targetName } = data;
     const searchName = targetName || name;
     
-    // 1. Verify academy auth code (Skip for ACADEMY_ADMIN)
-    if (role !== UserRole.ACADEMY_ADMIN) {
+    // 1. Verify academy auth code (Required for staff & students, skip for admins)
+    let targetAcademy: Academy | null = null;
+    if (role !== UserRole.ACADEMY_ADMIN && role !== UserRole.SUPER_ADMIN) {
       const cleanAuthCode = authCode ? authCode.trim().toUpperCase() : '';
-      const academy = await this.academyRepository.findOne({ where: { authCode: cleanAuthCode } });
-      if (!academy) {
+      targetAcademy = await this.academyRepository.findOne({ where: { authCode: cleanAuthCode } });
+      if (!targetAcademy) {
         throw new BadRequestException('유효하지 않은 학원 인증코드입니다.');
       }
     }
@@ -230,25 +286,32 @@ export class AuthService {
     
     const savedUser = await this.usersRepository.save(user);
 
-
-
     try {
       // 3. Link User to Entity based on Role
       if (userRole === UserRole.ACADEMY_ADMIN) {
-        const academy = await this.academyRepository.findOne({ where: {} });
-        if (academy) {
-          academy.owner = savedUser;
-          await this.academyRepository.save(academy);
+        // Check if an existing academy is unowned or create a dedicated academy for this director
+        let authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        while (await this.academyRepository.findOne({ where: { authCode } })) {
+          authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         }
+        const academy = this.academyRepository.create({
+          name: name ? `${name} 학원` : '신규 학원',
+          owner: savedUser,
+          authCode,
+          vehicleCount: 0,
+        });
+        await this.academyRepository.save(academy);
       } else if (userRole === UserRole.STUDENT || userRole === UserRole.PARENT) {
+        if (!targetAcademy) throw new BadRequestException('소속 학원 정보를 찾을 수 없습니다.');
         const student = await this.studentRepository.createQueryBuilder('student')
           .leftJoinAndSelect('student.studentUser', 'studentUser')
           .leftJoinAndSelect('student.parentUser', 'parentUser')
           .where('TRIM(student.name) = :name', { name: searchName.trim() })
+          .andWhere('student.academyId = :academyId', { academyId: targetAcademy.id })
           .getOne();
           
         if (!student) {
-          throw new BadRequestException('해당 이름의 원생 정보를 찾을 수 없습니다. 원장님께 등록 여부를 확인해주세요.');
+          throw new BadRequestException('해당 학원에서 일치하는 이름의 원생 정보를 찾을 수 없습니다.');
         }
         
         if (userRole === UserRole.STUDENT) {
@@ -263,15 +326,16 @@ export class AuthService {
         await this.studentRepository.save(student);
         
       } else if (userRole === UserRole.DRIVER || userRole === UserRole.TEACHER) {
-        // Find Vehicle by driverName or teacherName
+        if (!targetAcademy) throw new BadRequestException('소속 학원 정보를 찾을 수 없습니다.');
         const vehicle = await this.vehicleRepository.createQueryBuilder('vehicle')
           .leftJoinAndSelect('vehicle.driverUser', 'driverUser')
           .leftJoinAndSelect('vehicle.teacherUser', 'teacherUser')
           .where(userRole === UserRole.DRIVER ? 'TRIM(vehicle.driverName) = :name' : 'TRIM(vehicle.teacherName) = :name', { name: searchName.trim() })
+          .andWhere('vehicle.academyId = :academyId', { academyId: targetAcademy.id })
           .getOne();
           
         if (!vehicle) {
-          throw new BadRequestException('해당 이름으로 등록된 차량 배차 정보가 없습니다. 원장님께 확인해주세요.');
+          throw new BadRequestException('해당 학원에 등록된 배차 차량 정보를 찾을 수 없습니다.');
         }
 
         if (userRole === UserRole.DRIVER) {

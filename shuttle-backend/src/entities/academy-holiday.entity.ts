@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne } from 'typeorm';
+import { Academy } from './academy.entity';
 
 @Entity('academy_holidays')
 export class AcademyHoliday {
@@ -13,6 +14,9 @@ export class AcademyHoliday {
 
   @Column({ type: 'text', nullable: true })
   reason: string;
+
+  @ManyToOne(() => Academy, { nullable: true, onDelete: 'CASCADE' })
+  academy: Academy;
 
   @CreateDateColumn()
   createdAt: Date;
