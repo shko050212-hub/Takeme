@@ -1,14 +1,21 @@
-import { Controller, Post, Get, Body, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, BadRequestException, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthEmail, Roles } from '../auth/auth-user.decorator';
 import { ParentService } from './parent.service';
 import { OverrideType } from '../entities/schedule-override.entity';
 
+@ApiTags('parent')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Roles('PARENT', 'STUDENT')
 @Controller('parent')
 export class ParentController {
   constructor(private readonly parentService: ParentService) {}
 
   @Post('override')
   async createOverride(
-    @Body('email') email: string, 
+    @AuthEmail() email: string, 
     @Body('targetDate') targetDate: string,
     @Body('overrideType') overrideType: string,
     @Body('reason') reason: string
@@ -27,7 +34,7 @@ export class ParentController {
 
   @Post('register-info')
   async registerInfo(
-    @Body('email') email: string,
+    @AuthEmail() email: string,
     @Body() payload: any
   ) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
@@ -35,20 +42,20 @@ export class ParentController {
   }
 
   @Get('notifications')
-  async getNotifications(@Query('email') email: string) {
+  async getNotifications(@AuthEmail() email: string) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
     return this.parentService.getNotifications(email);
   }
 
   @Get('route')
-  async getRoute(@Query('email') email: string) {
+  async getRoute(@AuthEmail() email: string) {
     if (!email) throw new BadRequestException('Email is required');
     return this.parentService.getRoute(email);
   }
 
   @Post('message')
   async createMessage(
-    @Body('email') email: string,
+    @AuthEmail() email: string,
     @Body('targetRoles') targetRoles: string[],
     @Body('message') message: string
   ) {
@@ -58,7 +65,7 @@ export class ParentController {
 
   @Post('read-message')
   async readMessage(
-    @Body('email') email: string,
+    @AuthEmail() email: string,
     @Body('messageId') messageId: number
   ) {
     if (!email || !messageId) throw new BadRequestException('Email and messageId required');
@@ -66,7 +73,7 @@ export class ParentController {
   }
 
   @Get('today-schedule')
-  async getTodaySchedule(@Query('email') email: string) {
+  async getTodaySchedule(@AuthEmail() email: string) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
     return this.parentService.getTodaySchedule(email);
   }
