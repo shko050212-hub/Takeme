@@ -622,10 +622,16 @@ export class RoutingService {
       where: { dateString: date, vehicle: { id: vehicleId } },
     });
 
+    const toSafeIsoString = (val: any) => {
+      if (!val) return new Date().toISOString();
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    };
+
     if (opLog) {
       if (opLog.startTime) {
         logs.push({
-          time: new Date(opLog.startTime).toISOString(),
+          time: toSafeIsoString(opLog.startTime),
           type: 'OPERATION_START',
           message: '운행을 시작했습니다.',
           icon: '🚌'
@@ -638,17 +644,26 @@ export class RoutingService {
       } catch(e){}
       
       boardings.forEach((b: any) => {
+        if (b.action === 'ADMIN_MSG_SENT') {
+          logs.push({
+            time: toSafeIsoString(b.time),
+            type: 'PARENT_MESSAGE',
+            message: `[공지] ${b.message || ''}`,
+            icon: '📢'
+          });
+          return;
+        }
         logs.push({
-          time: new Date(b.boardTime).toISOString(),
+          time: toSafeIsoString(b.boardTime),
           type: 'BOARDING',
-          message: `${b.studentName} 탑승 완료 (${b.method})`,
+          message: `${b.studentName || '원생'} 탑승 완료 (${b.method || '확인'})`,
           icon: '🟢'
         });
       });
 
       if (opLog.endTime) {
         logs.push({
-          time: new Date(opLog.endTime).toISOString(),
+          time: toSafeIsoString(opLog.endTime),
           type: 'OPERATION_END',
           message: '운행을 종료했습니다.',
           icon: '🏁'

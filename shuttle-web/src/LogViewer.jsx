@@ -11,10 +11,25 @@ const getFirstDayOfMonth = (year, month) => {
 
 const monthNames = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 
+const toDateStr = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string') return val.split('T')[0];
+  if (val instanceof Date) {
+    return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
+  }
+  return String(val);
+};
+
 export default function LogViewer({ buses, students, currentTab = 'LOG', isClosing }) {
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedBusId, setSelectedBusId] = useState(buses?.length > 0 ? buses[0].id : null);
+
+  useEffect(() => {
+    if ((!selectedBusId || !buses?.some(b => b.id === selectedBusId)) && buses?.length > 0) {
+      setSelectedBusId(buses[0].id);
+    }
+  }, [buses, selectedBusId]);
   
   // LOG state
   const [logs, setLogs] = useState([]);
@@ -229,22 +244,34 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
   const getBusStudents = () => {
     if (!students || !selectedBusId) return [];
-    return students.filter(s => s.assignedVehicle?.id === selectedBusId);
+    return students.filter(s => 
+      s.assignedBusId === selectedBusId || 
+      s.assignedVehicle?.id === selectedBusId ||
+      s.assignedVehicleId === selectedBusId ||
+      s.schedules?.some(sch => sch.assignedVehicle?.id === selectedBusId || sch.assignedVehicleId === selectedBusId)
+    );
   };
 
   // Rendering calendar dots for absences/holidays
   const renderDots = (dateObj) => {
-    const dots = [];
+    const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
     
     // Holiday check
-    const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-    const isHoliday = holidays.some(h => dateStr >= h.startDate && dateStr <= h.endDate);
+    const isHoliday = holidays.some(h => {
+      const s = toDateStr(h.startDate);
+      const e = toDateStr(h.endDate);
+      return dateStr >= s && dateStr <= e;
+    });
     if (isHoliday) {
       return <div className="absolute bottom-1 flex justify-center w-full"><span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span></div>;
     }
     
     if (currentTab === 'ABSENCE') {
-      const dayAbsences = absences.filter(a => dateStr >= a.startDate && dateStr <= a.endDate);
+      const dayAbsences = absences.filter(a => {
+        const s = toDateStr(a.startDate);
+        const e = toDateStr(a.endDate);
+        return dateStr >= s && dateStr <= e;
+      });
       if (dayAbsences.length > 0) {
         return (
           <div className="absolute bottom-1 flex justify-center w-full gap-0.5 flex-wrap px-1">
@@ -439,7 +466,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
             {currentTab === 'ABSENCE' && (
                 <div className="grid grid-cols-1 gap-4">
                   {getBusStudents().map(student => {
-                    const studentAbsences = absences.filter(a => a.student.id === student.id);
+                    const studentAbsences = absences.filter(a => (a.student?.id || a.studentId) === student.id);
                     const isSelected = selectedStudentForAbsence?.id === student.id;
                     
                     return (

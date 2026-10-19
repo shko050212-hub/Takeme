@@ -121,8 +121,8 @@ export default function DocumentSidebar({
       {/* Header */}
       <div className="p-5 border-b border-slate-100 bg-white">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-            <span>📁</span> 서류 및 문서함
+          <h2 className="text-xl font-black text-slate-800">
+            서류 및 문서함
           </h2>
           <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
             {documents.length}건
@@ -143,7 +143,7 @@ export default function DocumentSidebar({
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
-          📋 서식발급
+          서식발급
         </button>
         <button
           onClick={() => setSidebarTab('expiry')}
@@ -153,7 +153,7 @@ export default function DocumentSidebar({
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
-          <span>🚦 만료일</span>
+          <span>만료일</span>
           {expirySummary.urgentCount > 0 && (
             <span className="bg-red-500 text-white text-[9px] px-1 py-0.2 rounded-full font-black animate-pulse">
               {expirySummary.urgentCount}
@@ -168,7 +168,7 @@ export default function DocumentSidebar({
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
-          📁 서류 ({documents.length})
+          서류 ({documents.length})
         </button>
       </div>
 
@@ -177,8 +177,8 @@ export default function DocumentSidebar({
         {sidebarTab === 'templates' && (
           <div className="p-3.5 bg-gradient-to-br from-blue-50 to-indigo-50/50 border border-blue-200/80 rounded-xl space-y-3 animate-in fade-in">
             <div className="flex items-center justify-between">
-              <div className="text-[11px] font-extrabold text-blue-900 flex items-center gap-1">
-                <span>📋</span> DB 연동 법정 서식 발급
+              <div className="text-[11px] font-extrabold text-blue-900">
+                DB 연동 법정 서식 발급
               </div>
               {activeBus && (
                 <span className="text-[10px] text-blue-600 font-bold">
@@ -221,7 +221,7 @@ export default function DocumentSidebar({
             </div>
 
             <p className="text-[10px] text-slate-400 text-center">
-              💡 호차를 선택하면 차량번호와 원생 명부가 자동 입력됩니다.
+              호차를 선택하면 차량번호와 원생 명부가 자동 입력됩니다.
             </p>
           </div>
         )}
@@ -235,12 +235,12 @@ export default function DocumentSidebar({
                 : 'bg-slate-50 border-slate-200'
             }`}>
               <div className="flex items-center justify-between mb-2">
-                <div className="text-[11px] font-extrabold text-slate-800 flex items-center gap-1.5">
-                  <span>🚦</span> 서류·교육 만료 상태
+                <div className="text-[11px] font-extrabold text-slate-800">
+                  서류·교육 만료 상태
                 </div>
                 {expirySummary.urgentCount > 0 ? (
                   <span className="text-[10px] font-black text-red-600 bg-red-100 px-2 py-0.5 rounded-md animate-pulse">
-                    🚨 긴급 {expirySummary.urgentCount}건
+                    긴급 {expirySummary.urgentCount}건
                   </span>
                 ) : (
                   <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-md">
@@ -251,7 +251,7 @@ export default function DocumentSidebar({
 
               {expirySummary.urgentCount > 0 && expirySummary.urgentItems[0] && (
                 <div className="text-[11px] font-bold text-red-700 bg-white/90 p-2.5 rounded-lg border border-red-100 mb-2.5 leading-tight">
-                  ⚠️ {expirySummary.urgentItems[0].busName} {expirySummary.urgentItems[0].fieldLabel}
+                  {expirySummary.urgentItems[0].busName} {expirySummary.urgentItems[0].fieldLabel}
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-[10px] text-slate-500">{expirySummary.urgentItems[0].dateStr}</span>
                     <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.2 rounded font-extrabold">
@@ -264,21 +264,21 @@ export default function DocumentSidebar({
               {/* Traffic Light Counter */}
               <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
                 <div className="bg-white py-2 px-1 rounded-lg border border-slate-200/70 shadow-2xs">
-                  <span className="text-red-600 font-extrabold text-xs">🔴 {expirySummary.urgentCount}</span>
+                  <span className="text-red-600 font-extrabold text-xs">{expirySummary.urgentCount}</span>
                   <div className="text-slate-400 text-[9px] mt-0.5">긴급/만료</div>
                 </div>
                 <div className="bg-white py-2 px-1 rounded-lg border border-slate-200/70 shadow-2xs">
-                  <span className="text-amber-600 font-extrabold text-xs">🟡 {expirySummary.warningCount}</span>
+                  <span className="text-amber-600 font-extrabold text-xs">{expirySummary.warningCount}</span>
                   <div className="text-slate-400 text-[9px] mt-0.5">갱신주의</div>
                 </div>
                 <div className="bg-white py-2 px-1 rounded-lg border border-slate-200/70 shadow-2xs">
-                  <span className="text-emerald-600 font-extrabold text-xs">🟢 {expirySummary.safeCount}</span>
+                  <span className="text-emerald-600 font-extrabold text-xs">{expirySummary.safeCount}</span>
                   <div className="text-slate-400 text-[9px] mt-0.5">정상</div>
                 </div>
               </div>
 
               <div className="text-[10px] text-slate-400 text-center mt-3 font-medium">
-                💡 오른쪽 대화면 [만료일 알림 현황] 탭에서 호차별 날짜 수정이 가능합니다.
+                오른쪽 대화면 [만료일 알림 현황] 탭에서 호차별 날짜 수정이 가능합니다.
               </div>
             </div>
           </div>

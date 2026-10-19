@@ -1757,15 +1757,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Log Viewer Overlay */}
-        {activeTab === 'log' && (
-          <LogViewer 
-            buses={buses} 
-            students={students}
-            currentTab={logTab} 
-          />
-        )}
-
         {/* Top-Right Controls: SuperAdmin Switcher & Day Filter & Logout */}
         <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2">
           {isSuperAdmin && (

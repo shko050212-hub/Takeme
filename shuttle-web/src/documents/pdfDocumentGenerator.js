@@ -221,7 +221,7 @@ export function openPrintDocument(type, data = {}) {
         <!-- Section: Student Boarding Roster -->
         <div style="margin-top: 15px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: flex-end;">
           <h2 style="font-size: 13px; font-weight: 800; color: #0f172a; margin: 0; display: flex; items-center gap: 4px;">
-            <span>📋</span> ${bus ? `[${bus.name}]` : ''} 탑승 원생 명단 및 승하차 안전 확인부
+            ${bus ? `[${bus.name}]` : ''} 탑승 원생 명단 및 승하차 안전 확인부
           </h2>
           <span style="font-size: 11px; color: #2563eb; font-weight: bold;">
             배정 원생: ${studentCount}명
@@ -489,7 +489,7 @@ export function openPrintDocument(type, data = {}) {
     </head>
     <body>
       <div class="print-btn-bar" onclick="window.print()">
-        🖨️ [PDF로 저장 또는 인쇄하기] 클릭 (여기를 누르면 즉시 인쇄/PDF 저장 창이 열립니다)
+        [PDF로 저장 또는 인쇄하기] 클릭 (여기를 누르면 즉시 인쇄/PDF 저장 창이 열립니다)
       </div>
       ${bodyHtml}
       <script>

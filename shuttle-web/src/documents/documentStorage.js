@@ -134,7 +134,7 @@ function getDateStringOffset(daysOffset) {
  */
 function generateDefaultExpiryRecords() {
   return {
-    // 1호차: 종합보험 만료 D-5 (긴급 🔴)
+    // 1호차: 종합보험 만료 D-5 (긴급)
     '1': {
       busId: '1',
       busName: '1호차',
@@ -144,7 +144,7 @@ function generateDefaultExpiryRecords() {
       companionEduExpiry: getDateStringOffset(120), // D-120 (정상)
       updatedAt: new Date().toISOString(),
     },
-    // 2호차: 정기안전점검 D-18 (주의 🟡)
+    // 2호차: 정기안전점검 D-18 (주의)
     '2': {
       busId: '2',
       busName: '2호차',
@@ -154,7 +154,7 @@ function generateDefaultExpiryRecords() {
       companionEduExpiry: getDateStringOffset(200),
       updatedAt: new Date().toISOString(),
     },
-    // 3호차: 운전자 안전교육 D-25 (주의 🟡)
+    // 3호차: 운전자 안전교육 D-25 (주의)
     '3': {
       busId: '3',
       busName: '3호차',
@@ -164,7 +164,7 @@ function generateDefaultExpiryRecords() {
       companionEduExpiry: getDateStringOffset(75),
       updatedAt: new Date().toISOString(),
     },
-    // 4호차: 동승보호자 안전교육 만료 2일 지남 (만료 🔴)
+    // 4호차: 동승보호자 안전교육 만료 2일 지남 (만료)
     '4': {
       busId: '4',
       busName: '4호차',
@@ -251,7 +251,7 @@ export function calculateDday(dateStr) {
       color: 'text-red-700',
       bg: 'bg-red-100',
       border: 'border-red-300',
-      badge: '🔴 만료',
+      badge: '만료',
     };
   }
   if (diffDays <= 7) {
@@ -262,7 +262,7 @@ export function calculateDday(dateStr) {
       color: 'text-rose-700',
       bg: 'bg-rose-100',
       border: 'border-rose-300',
-      badge: '🔴 긴급 임박',
+      badge: '긴급 임박',
     };
   }
   if (diffDays <= 30) {
@@ -273,7 +273,7 @@ export function calculateDday(dateStr) {
       color: 'text-amber-700',
       bg: 'bg-amber-100',
       border: 'border-amber-300',
-      badge: '🟡 갱신 주의',
+      badge: '갱신 주의',
     };
   }
   return {
@@ -283,7 +283,7 @@ export function calculateDday(dateStr) {
     color: 'text-emerald-700',
     bg: 'bg-emerald-100',
     border: 'border-emerald-300',
-    badge: '🟢 정상',
+    badge: '정상',
   };
 }
 

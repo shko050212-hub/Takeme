@@ -7,19 +7,19 @@ export default defineConfig({
   server: {
     proxy: {
       '/routing': {
-        target: 'http://54.253.50.203:3000',
+        target: 'http://3.25.147.47:3000',
         changeOrigin: true,
       },
       '/auth': {
-        target: 'http://54.253.50.203:3000',
+        target: 'http://3.25.147.47:3000',
         changeOrigin: true,
       },
       '/parent': {
-        target: 'http://54.253.50.203:3000',
+        target: 'http://3.25.147.47:3000',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://54.253.50.203:3000',
+        target: 'http://3.25.147.47:3000',
         ws: true,
         changeOrigin: true,
       },

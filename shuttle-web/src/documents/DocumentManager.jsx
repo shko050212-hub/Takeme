@@ -336,11 +336,10 @@ export default function DocumentManager({
       <div className="bg-white border-b border-slate-200 px-8 py-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <span className="text-2xl">📁</span>
             <h1 className="text-2xl font-black text-slate-800 tracking-tight">행정 및 안전 서류함</h1>
             {expirySummary.urgentCount > 0 && (
               <span className="bg-red-100 text-red-700 text-xs font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1 animate-pulse">
-                <span>🚨</span> 만료 임박 {expirySummary.urgentCount}건
+                만료 임박 {expirySummary.urgentCount}건
               </span>
             )}
           </div>
@@ -378,7 +377,7 @@ export default function DocumentManager({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <span>📋</span> 법정 서식 자동 발급
+            법정 서식 자동 발급
           </button>
           <button
             onClick={() => setActiveSubTab('expiry')}
@@ -388,7 +387,7 @@ export default function DocumentManager({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <span>🚦</span> 만료일 알림 현황
+            만료일 알림 현황
             {expirySummary.urgentCount > 0 ? (
               <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-extrabold animate-pulse">
                 {expirySummary.urgentCount}
@@ -407,7 +406,7 @@ export default function DocumentManager({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <span>📁</span> 등록 서류 보관함
+            등록 서류 보관함
             <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
               {documents.length}
             </span>
@@ -416,9 +415,9 @@ export default function DocumentManager({
 
         {/* 탭 안내 가이드 문구 */}
         <div className="text-xs text-slate-400 font-medium hidden sm:block">
-          {activeSubTab === 'templates' && '💡 호차를 선택하면 차량번호와 탑승 원생 명부가 서식에 자동 완성됩니다.'}
-          {activeSubTab === 'expiry' && '💡 자동차 종합보험, 정기검사, 안전교육 4대 법정 기한을 관리합니다.'}
-          {activeSubTab === 'documents' && '💡 업로드하여 영구 보관 중인 서류들을 검색하고 다운로드할 수 있습니다.'}
+          {activeSubTab === 'templates' && '호차를 선택하면 차량번호와 탑승 원생 명부가 서식에 자동 완성됩니다.'}
+          {activeSubTab === 'expiry' && '자동차 종합보험, 정기검사, 안전교육 4대 법정 기한을 관리합니다.'}
+          {activeSubTab === 'documents' && '업로드하여 영구 보관 중인 서류들을 검색하고 다운로드할 수 있습니다.'}
         </div>
       </div>
 
@@ -426,7 +425,6 @@ export default function DocumentManager({
       {expirySummary.urgentCount > 0 && activeSubTab !== 'expiry' && (
         <div className="bg-gradient-to-r from-red-600 to-rose-600 text-white px-8 py-2.5 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in">
           <div className="flex items-center gap-2.5 font-bold">
-            <span className="text-base animate-bounce">🚨</span>
             <span>
               [긴급 만료 알림] {expirySummary.urgentItems[0]?.busName} {expirySummary.urgentItems[0]?.fieldLabel} ({expirySummary.urgentItems[0]?.dday.label}) 외 {expirySummary.urgentCount}건의 갱신이 필요합니다.
             </span>
@@ -452,13 +450,12 @@ export default function DocumentManager({
       <div className="flex-1 overflow-y-auto p-8 space-y-6">
 
 
-        {/* 🚦 Legal Expiry Traffic-Light Dashboard Section (만료일 탭 선택 시에만 단독 렌더링) */}
+        {/* Legal Expiry Traffic-Light Dashboard Section (만료일 탭 선택 시에만 단독 렌더링) */}
         {activeSubTab === 'expiry' && (
           <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5 animate-in fade-in">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
 
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🚦</span>
               <div>
                 <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
                   법정 의무 서류 및 안전교육 만료일 현황
@@ -492,7 +489,7 @@ export default function DocumentManager({
                     : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
                 }`}
               >
-                🔴 만료/임박 ({expirySummary.urgentCount}건)
+                만료/임박 ({expirySummary.urgentCount}건)
               </button>
               <button
                 onClick={() => setExpiryFilterTab('warning')}
@@ -502,7 +499,7 @@ export default function DocumentManager({
                     : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
                 }`}
               >
-                🟡 주의 ({expirySummary.warningCount}건)
+                주의 ({expirySummary.warningCount}건)
               </button>
               <button
                 onClick={() => setExpiryFilterTab('safe')}
@@ -512,7 +509,7 @@ export default function DocumentManager({
                     : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                 }`}
               >
-                🟢 정상 ({expirySummary.safeCount}건)
+                정상 ({expirySummary.safeCount}건)
               </button>
             </div>
           </div>
@@ -585,7 +582,6 @@ export default function DocumentManager({
                         {/* 1. Insurance */}
                         <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm">🚗</span>
                             <div>
                               <div className="text-[10px] text-slate-400 font-bold">자동차 종합보험</div>
                               <div className="font-semibold text-slate-700 text-[11px]">
@@ -603,7 +599,6 @@ export default function DocumentManager({
                         {/* 2. Inspection / Registration */}
                         <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm">📜</span>
                             <div>
                               <div className="text-[10px] text-slate-400 font-bold">정기검사 / 신고필증</div>
                               <div className="font-semibold text-slate-700 text-[11px]">
@@ -621,7 +616,6 @@ export default function DocumentManager({
                         {/* 3. Driver Edu */}
                         <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm">👨‍✈️</span>
                             <div>
                               <div className="text-[10px] text-slate-400 font-bold">
                                 운전자 안전교육 ({bus.driverName || '기사'})
@@ -641,7 +635,6 @@ export default function DocumentManager({
                         {/* 4. Companion Edu */}
                         <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm">👩‍🏫</span>
                             <div>
                               <div className="text-[10px] text-slate-400 font-bold">
                                 동승자 안전교육 ({bus.teacherName || '교사'})
@@ -682,12 +675,11 @@ export default function DocumentManager({
         </div>
         )}
 
-        {/* 📋 Legal Templates Section (법정 서식 자동 발급 탭 선택 시에만 렌더링) */}
+        {/* Legal Templates Section (법정 서식 자동 발급 탭 선택 시에만 렌더링) */}
         {activeSubTab === 'templates' && (
           <div className="bg-white border border-slate-200/90 rounded-2xl p-7 shadow-xs space-y-6 animate-in fade-in">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">📋</span>
                 <div>
                   <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
                     데이터베이스 연동 법정 서식 자동 발급
@@ -703,8 +695,8 @@ export default function DocumentManager({
 
               {/* Bus Selector */}
               <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                  <span>🚌</span> 호차 선택:
+                <span className="text-xs font-bold text-blue-900">
+                  호차 선택:
                 </span>
                 <select
                   value={selectedBusId}
@@ -751,8 +743,8 @@ export default function DocumentManager({
                 className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
               >
                 <div>
-                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600 flex items-center gap-1.5">
-                    <span>📋</span> 일일 안전점검표 {activeBus ? `(${activeBus.name})` : ''}
+                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
+                    일일 안전점검표 {activeBus ? `(${activeBus.name})` : ''}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
                     {activeBus ? '호차, 차량번호, 기사/동승자 자동 기입' : '기본 양식'}
@@ -768,8 +760,8 @@ export default function DocumentManager({
                 className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
               >
                 <div>
-                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600 flex items-center gap-1.5">
-                    <span>🚌</span> 동승자 탑승일지 및 승하차명부
+                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
+                    동승자 탑승일지 및 승하차명부
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
                     {activeBus ? `원생 명부 (${activeBusStudents.length}명) 자동 포함` : '승하차 안전확인부'}
@@ -785,8 +777,8 @@ export default function DocumentManager({
                 className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
               >
                 <div>
-                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600 flex items-center gap-1.5">
-                    <span>📝</span> 차량이용 및 안전동의서
+                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
+                    차량이용 및 안전동의서
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
                     {activeStudent ? `[${activeStudent.name}] 학생 인적사항 연동` : '보호자 서약 서식'}
@@ -801,8 +793,8 @@ export default function DocumentManager({
             {/* Individual Student Selector for Consent */}
             {availableStudents.length > 0 && (
               <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <span className="text-slate-600 font-bold flex items-center gap-1.5">
-                  <span>👶</span> 동의서 대상 원생 개별 선택:
+                <span className="text-slate-600 font-bold">
+                  동의서 대상 원생 개별 선택:
                 </span>
                 <select
                   value={selectedStudentId}
@@ -820,12 +812,12 @@ export default function DocumentManager({
 
             {/* Print Note */}
             <div className="text-[11px] text-slate-400 bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 leading-relaxed">
-              💡 <strong>작성 안내</strong>: [인쇄 / PDF] 버튼을 누르면 A4 표준 법정 서식으로 자동 조판된 인쇄 미리보기가 열립니다. 날짜(당일)와 호차·원생 정보는 자동 기입되며, 점검 체크란은 법적 효력을 위해 현장 수기 체크용 빈 양식으로 인쇄됩니다.
+              <strong>작성 안내</strong>: [인쇄 / PDF] 버튼을 누르면 A4 표준 법정 서식으로 자동 조판된 인쇄 미리보기가 열립니다. 날짜(당일)와 호차·원생 정보는 자동 기입되며, 점검 체크란은 법적 효력을 위해 현장 수기 체크용 빈 양식으로 인쇄됩니다.
             </div>
           </div>
         )}
 
-        {/* 📁 Registered Documents Vault Section (등록 서류 보관함 탭 선택 시에만 렌더링) */}
+        {/* Registered Documents Vault Section (등록 서류 보관함 탭 선택 시에만 렌더링) */}
         {activeSubTab === 'documents' && (
           <div className="space-y-6 animate-in fade-in">
             {/* Filter and Search Bar */}
@@ -913,7 +905,6 @@ export default function DocumentManager({
           <div className="text-center py-16 text-slate-400 text-sm">서류 목록을 불러오는 중...</div>
         ) : filteredDocs.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
-            <div className="text-4xl mb-3">📄</div>
             <h3 className="text-base font-bold text-slate-700 mb-1">등록된 서류가 없습니다</h3>
             <p className="text-xs text-slate-500 mb-4">
               새로운 서류를 업로드하거나 상단의 필수 법정 서식을 다운로드하여 사용해보세요.
@@ -1010,8 +1001,8 @@ export default function DocumentManager({
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <span>📤</span> 서류 등록하기
+              <h3 className="text-lg font-black text-slate-800">
+                서류 등록하기
               </h3>
               <button
                 onClick={() => setShowUploadModal(false)}
@@ -1095,14 +1086,14 @@ export default function DocumentManager({
         </div>
       )}
 
-      {/* 🚦 Legal Expiry Edit Modal */}
+      {/* Legal Expiry Edit Modal */}
       {editingBusExpiry && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-[2100] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                  <span>🚦</span> {editingBusExpiry.name || editingBusExpiry.busNumber} 만료일 설정
+                <h3 className="text-lg font-black text-slate-800">
+                  {editingBusExpiry.name || editingBusExpiry.busNumber} 만료일 설정
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   차량번호: <strong>{editingBusExpiry.plateNumber || '미등록'}</strong> | 
@@ -1122,8 +1113,8 @@ export default function DocumentManager({
               {/* 1. Automobile Insurance */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                    <span>🚗</span> 자동차 종합보험 만료일 (의무)
+                  <label className="text-xs font-black text-slate-700">
+                    자동차 종합보험 만료일 (의무)
                   </label>
                   {expiryFormData.insuranceExpiry && (
                     <span
@@ -1160,8 +1151,8 @@ export default function DocumentManager({
               {/* 2. Safety Inspection */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                    <span>📜</span> 정기안전검사 / 신고필증 갱신일
+                  <label className="text-xs font-black text-slate-700">
+                    정기안전검사 / 신고필증 갱신일
                   </label>
                   {expiryFormData.inspectionExpiry && (
                     <span
@@ -1205,8 +1196,8 @@ export default function DocumentManager({
               {/* 3. Driver Safety Education */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                    <span>👨‍✈️</span> 운전자 안전교육 만료일 (도로교통공단 2년 주기)
+                  <label className="text-xs font-black text-slate-700">
+                    운전자 안전교육 만료일 (도로교통공단 2년 주기)
                   </label>
                   {expiryFormData.driverEduExpiry && (
                     <span
@@ -1243,8 +1234,8 @@ export default function DocumentManager({
               {/* 4. Companion Safety Education */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                    <span>👩‍🏫</span> 동승보호자 안전교육 만료일 (2년 주기)
+                  <label className="text-xs font-black text-slate-700">
+                    동승보호자 안전교육 만료일 (2년 주기)
                   </label>
                   {expiryFormData.companionEduExpiry && (
                     <span
