@@ -86,7 +86,7 @@ export class TeacherService {
     if (!user) throw new BadRequestException('User not found');
     
     // Find vehicle where teacherUser or driverUser matches this user
-    let vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    let vehicle = await this.findAssignedVehicle(user.id);
     if (!vehicle) {
       vehicle = await this.vehicleRepository.findOne({ where: { driverUser: { id: user.id } } });
     }
@@ -107,13 +107,24 @@ export class TeacherService {
     };
   }
 
+  /**
+   * 로그인한 직원(지도교사 또는 기사)에게 배정된 차량 찾기.
+   * 기존에는 teacherUser 로만 찾아서 기사(DRIVER) 계정은 차량을 못 찾던 문제 수정.
+   */
+  private async findAssignedVehicle(userId: number, relations: any = {}) {
+    return (
+      (await this.vehicleRepository.findOne({ where: { teacherUser: { id: userId } }, relations })) ||
+      (await this.vehicleRepository.findOne({ where: { driverUser: { id: userId } }, relations }))
+    );
+  }
+
   async getStudents(email: string) {
     if (await this.isTodayHoliday()) return [];
 
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (!vehicle) return []; // No assigned vehicle
 
     const students = await this.getTodayStudentsForVehicle(vehicle.id);
@@ -143,7 +154,7 @@ export class TeacherService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } }, relations: { academy: true } });
+    const vehicle = await this.findAssignedVehicle(user.id, { academy: true });
     if (!vehicle) return { stops: [], routePoints: [], academy: null, vehicleId: null };
 
     const students = await this.getTodayStudentsForVehicle(vehicle.id);
@@ -235,7 +246,7 @@ export class TeacherService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
 
     const student = await this.studentRepository.findOne({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Student not found');
@@ -270,7 +281,7 @@ export class TeacherService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
 
     const student = await this.studentRepository.findOne({ 
@@ -314,7 +325,7 @@ export class TeacherService {
     student.boardStatus = 'ABSENT';
     await this.studentRepository.save(student);
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (vehicle) {
       const adminNoti = this.notificationRepository.create({
         vehicle: vehicle,
@@ -330,7 +341,7 @@ export class TeacherService {
   async startOperation(email: string) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (vehicle) {
       const noti = this.notificationRepository.create({
         vehicle: vehicle,
@@ -355,7 +366,7 @@ export class TeacherService {
   async endOperation(email: string) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (vehicle) {
       const noti = this.notificationRepository.create({
         vehicle: vehicle,
@@ -402,7 +413,7 @@ export class TeacherService {
     const teacherUser = await this.userRepository.findOne({ where: { email: teacherEmail } });
     if (!teacherUser) throw new BadRequestException('Teacher user not found');
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: teacherUser.id } } });
+    const vehicle = await this.findAssignedVehicle(teacherUser.id);
     if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
 
     const student = await this.studentRepository.findOne({ 
@@ -458,7 +469,7 @@ export class TeacherService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
 
     let sentCount = 0;
@@ -550,7 +561,7 @@ export class TeacherService {
   async getOperationLogs(email: string, month: string) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
-    const vehicle = await this.vehicleRepository.findOne({ where: { teacherUser: { id: user.id } } });
+    const vehicle = await this.findAssignedVehicle(user.id);
     if (!vehicle) return [];
     
     const logs = await this.operationLogRepository.find({
