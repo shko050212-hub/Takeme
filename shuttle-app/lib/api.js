@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
-// .env 의 EXPO_PUBLIC_SERVER_URL (예: http://192.168.0.10:3000)
-export const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL;
+// .env 의 EXPO_PUBLIC_SERVER_URL (예: http://3.25.147.47:3000)
+export const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || process.env.EXPO_PUBLIC_API_URL || 'http://3.25.147.47:3000';
 
 const TOKEN_KEY = 'takeme_token';
 const USER_KEY = 'takeme_user';

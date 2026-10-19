@@ -3,8 +3,8 @@ import { View, Text, Pressable, TextInput, StyleSheet, ScrollView } from 'react-
 import * as Location from 'expo-location';
 import { io } from 'socket.io-client';
 
-// .env 에 EXPO_PUBLIC_SERVER_URL=http://PC의_IPv4주소:3000 형식으로 넣기 (localhost 아님)
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL;
+// .env 의 EXPO_PUBLIC_SERVER_URL (예: http://3.25.147.47:3000)
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || process.env.EXPO_PUBLIC_API_URL || 'http://3.25.147.47:3000';
 
 export default function GpsTestScreen() {
   const [vehicleId, setVehicleId] = useState('1');
