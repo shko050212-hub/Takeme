@@ -1376,7 +1376,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         <button onClick={() => handleTabChange('buses')} className={`p-4 rounded-2xl transition-all ${activeTab === 'buses' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="버스 정보 관리">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /><path d="M4 15h2v5h12V4H6v5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
         </button>
-        <button onClick={() => handleTabChange('students')} className={`p-4 rounded-2xl transition-all ${activeTab === 'students' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="학원생 정보">
+        <button onClick={() => handleTabChange('students')} className={`p-4 rounded-2xl transition-all ${activeTab === 'students' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="원생 정보">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
         </button>
         <button onClick={() => handleTabChange('auth')} className={`p-4 rounded-2xl transition-all ${activeTab === 'auth' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="인증 관리">
@@ -1608,7 +1608,7 @@ const parseKindergartenExcelSheet = (sheet) => {
               onChange={handleStudentUpload} 
             />
 
-            {/* Primary Action Button: 학원생 추가 */}
+            {/* Primary Action Button: 원생 추가 */}
             <button
               onClick={() => setShowAddStudentModal(true)}
               className="w-full py-2.5 px-3 mb-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-[0.99]"
@@ -1703,16 +1703,16 @@ const parseKindergartenExcelSheet = (sheet) => {
               </div>
             ) : (
               <div className="mt-2 flex-1 flex flex-col items-center justify-center text-center p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                <h4 className="font-bold text-slate-700 text-xs mb-1 text-center">등록된 학원생이 없습니다</h4>
+                <h4 className="font-bold text-slate-700 text-xs mb-1 text-center">등록된 원생이 없습니다</h4>
                 <p className="text-[11px] text-slate-500 mb-3 text-center max-w-xs leading-relaxed">
-                  [학원생 추가] 버튼을 눌러 직접 등록하거나, 엑셀 파일을 업로드하여 구역에 맞추어 자동으로 배차해보세요.
+                  [원생 추가] 버튼을 눌러 직접 등록하거나, 엑셀 파일을 업로드하여 구역에 맞추어 자동으로 배차해보세요.
                 </p>
                 <div className="flex gap-2">
                   <button 
                     onClick={() => setShowAddStudentModal(true)}
                     className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition text-center"
                   >
-                    학원생 추가하기
+                    원생 추가하기
                   </button>
                   <button 
                     onClick={() => fileInputRef.current?.click()}
@@ -1996,7 +1996,7 @@ const parseKindergartenExcelSheet = (sheet) => {
               </div>
               <div className="p-4 flex flex-col gap-3">
                 <button onClick={() => setLogTab('LOG')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'LOG' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>로그보기</button>
-                <button onClick={() => setLogTab('ABSENCE')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'ABSENCE' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>학원생 결석관리</button>
+                <button onClick={() => setLogTab('ABSENCE')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'ABSENCE' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>원생 결석관리</button>
                 <button onClick={() => setLogTab('HOLIDAY')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'HOLIDAY' ? 'bg-orange-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🎉 휴업일 설정</button>
               </div>
             </div>
@@ -2659,7 +2659,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                       <span>등록 중...</span>
                     </>
                   ) : (
-                    <span>학원생 등록하기</span>
+                    <span>원생 등록하기</span>
                   )}
                 </button>
               </div>

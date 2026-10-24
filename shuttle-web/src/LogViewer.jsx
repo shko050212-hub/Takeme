@@ -382,7 +382,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
             {currentTab === 'ABSENCE' && (
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-black text-slate-800">
-                  학원생 결석관리
+                  원생 결석관리
                 </h2>
               </div>
             )}
@@ -472,7 +472,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
                     return (
                       <div key={student.id} className={`bg-white rounded-2xl border p-4 transition-all shadow-sm ${isSelected ? 'ring-2 ring-red-500 border-transparent' : 'hover:border-slate-300'}`}>
                         <div className="flex justify-between items-center">
-                          <div className="font-black text-slate-800 text-lg">{student.name} <span className="text-xs text-slate-400 font-normal ml-2">{student.raw?.['학교명']}</span></div>
+                          <div className="font-black text-slate-800 text-lg">{student.name} <span className="text-xs text-slate-400 font-normal ml-2">{student.raw?.['유치원명'] || student.raw?.['학교명']}</span></div>
                           <button 
                             onClick={() => {
                               setSelectedStudentForAbsence(isSelected ? null : student);
