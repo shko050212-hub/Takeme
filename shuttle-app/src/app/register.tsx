@@ -87,8 +87,8 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!isEmailVerified) return showAlert('오류', '먼저 이메일 인증을 완료해주세요.');
-    if (!authCode) return showAlert('오류', '학원 인증코드를 입력해주세요.');
-    if (!name) return showAlert('오류', role === 'PARENT' || role === 'STUDENT' ? '원생 이름을 입력해주세요.' : '이름을 입력해주세요.');
+    if (!authCode) return showAlert('오류', '원 인증코드를 입력해주세요.');
+    if (!name) return showAlert('오류', role === 'PARENT' || role === 'STUDENT' ? '원아 이름을 입력해주세요.' : '이름을 입력해주세요.');
     if (role === 'PARENT' && !parentName) return showAlert('오류', '학부모 본인 이름을 입력해주세요.');
     if (!validatePassword(password)) return showAlert('오류', '비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다.');
 
@@ -125,9 +125,9 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.infoCard}>
           <Text style={styles.infoEmoji}>🔑</Text>
-          <Text style={styles.infoTitle}>원장님이 발급하신</Text>
-          <Text style={styles.infoTitle}>학원 인증코드가 필요합니다.</Text>
-          <Text style={styles.infoSub}>안전한 관리를 위해 인증된 학부모/학생만 가입할 수 있습니다.</Text>
+          <Text style={styles.infoTitle}>원장선생님이 발급하신</Text>
+          <Text style={styles.infoTitle}>원 인증코드가 필요합니다.</Text>
+          <Text style={styles.infoSub}>안전한 관리를 위해 인증된 학부모만 가입할 수 있습니다.</Text>
         </View>
 
         <View style={styles.formContainer}>
@@ -149,7 +149,7 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>학원 인증코드</Text>
+            <Text style={styles.inputLabel}>원 인증코드</Text>
             <TextInput 
               style={styles.input} 
               placeholder="예: TAKEME123"
@@ -161,11 +161,11 @@ export default function RegisterScreen() {
           
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>
-              {role === 'STUDENT' || role === 'PARENT' ? '원생 이름' : role === 'TEACHER' ? '지도 교사 이름' : '기사님 이름'}
+              {role === 'STUDENT' || role === 'PARENT' ? '원아 이름' : role === 'TEACHER' ? '지도 교사 이름' : '기사님 이름'}
             </Text>
             <TextInput 
               style={styles.input} 
-              placeholder={role === 'STUDENT' || role === 'PARENT' ? '학원에 등록된 원생 이름 (예: 홍길동)' : '학원에 등록된 배차 이름 (예: 김기사)'}
+              placeholder={role === 'STUDENT' || role === 'PARENT' ? '유치원에 등록된 원아 이름 (예: 홍길동)' : '유치원에 등록된 통학차량 담당자 이름 (예: 김기사)'}
               placeholderTextColor="#94a3b8"
               value={name}
               onChangeText={setName}

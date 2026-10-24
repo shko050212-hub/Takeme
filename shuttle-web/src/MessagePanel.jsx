@@ -123,7 +123,7 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
             <h2 className="text-xl font-black text-slate-800 mb-1 flex items-center gap-2">
               <span>📥</span> 수신함
             </h2>
-            <p className="text-sm text-slate-500">원장님께 수신된 메세지 목록입니다.</p>
+            <p className="text-sm text-slate-500">원장선생님께 수신된 메세지 목록입니다.</p>
           </div>
           <button onClick={fetchInbox} className="text-slate-400 hover:text-blue-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>

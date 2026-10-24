@@ -174,7 +174,7 @@ export class RoutingService {
 
   async initializeZones(vehicles: any[], parsedData: any[], academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
-    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+    if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
 
     // 1. Reset Database Data FOR THIS ACADEMY ONLY (Isolated)
     await this.studentRepository.query(
@@ -354,7 +354,7 @@ export class RoutingService {
   async generateAuthCode(academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
     if (!academy) {
-      throw new BadRequestException('학원 정보가 설정되지 않았습니다.');
+      throw new BadRequestException('유치원 정보가 설정되지 않았습니다.');
     }
     
     // Generate a random 6-character alphanumeric code
@@ -590,7 +590,7 @@ export class RoutingService {
 
   async saveStudents(students: any[], academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
-    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+    if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
 
     // Only clear student records for THIS academy
     await this.studentRepository.query(
@@ -723,7 +723,7 @@ export class RoutingService {
 
   async addStudent(studentData: any, academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
-    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+    if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
 
     let lat = studentData.lat !== undefined && studentData.lat !== null && !isNaN(parseFloat(studentData.lat)) ? parseFloat(studentData.lat) : undefined;
     let lng = studentData.lng !== undefined && studentData.lng !== null && !isNaN(parseFloat(studentData.lng)) ? parseFloat(studentData.lng) : undefined;
@@ -913,7 +913,7 @@ export class RoutingService {
 
   async deleteStudent(studentId: number, academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
-    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+    if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
 
     await this.studentRepository.delete({ id: studentId, academy: { id: academy.id } });
     return { success: true };
@@ -1194,7 +1194,7 @@ export class RoutingService {
     await this.academyHolidayRepository.save(holiday);
 
     // Notify system (broadcast)
-    const msg = `[학원 공지] ${body.startDate}부터 ${body.endDate}까지 학원 휴무일로 지정되었습니다. ${body.reason ? `사유: ${body.reason}` : ''}`;
+    const msg = `[유치원 공지] ${body.startDate}부터 ${body.endDate}까지 유치원 휴원일로 지정되었습니다. ${body.reason ? `사유: ${body.reason}` : ''}`;
     const notification = this.notificationRepository.create({
       message: msg
     });

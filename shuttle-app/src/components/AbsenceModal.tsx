@@ -127,7 +127,7 @@ export default function AbsenceModal({ visible, onClose, email }) {
               <View style={styles.checkboxRow}>
                 {['ACADEMY_ADMIN', 'DRIVER', 'TEACHER'].map(role => {
                   const isChecked = targetRoles.includes(role);
-                  const label = role === 'ACADEMY_ADMIN' ? '학원장' : role === 'DRIVER' ? '해당 노선 기사님' : '해당 노선 지도교사님';
+                  const label = role === 'ACADEMY_ADMIN' ? '원장선생님' : role === 'DRIVER' ? '해당 노선 기사님' : '해당 노선 지도교사님';
                   return (
                     <TouchableOpacity 
                       key={role}

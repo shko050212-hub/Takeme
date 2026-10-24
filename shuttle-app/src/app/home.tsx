@@ -214,7 +214,7 @@ export default function HomeScreen() {
             {routeData.academy && (
               <Marker
                 coordinate={{ latitude: routeData.academy.latitude, longitude: routeData.academy.longitude }}
-                title="학원"
+                title="유치원"
                 pinColor="red"
               />
             )}

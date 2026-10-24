@@ -712,7 +712,7 @@ export class TeacherService {
            const msg = this.messageRepository.create({
              student,
              targetRoles: ['PARENT'],
-             message: `[긴급 안내] ${vehicle.busNumber} 사고로 인해 운행이 불가능해졌습니다. 아직 탑승하지 못한 학생분들은 다른 호차 차량이 픽업해 학원까지 운행하겠습니다.`,
+             message: `[긴급 안내] ${vehicle.busNumber} 사고로 인해 운행이 불가능해졌습니다. 아직 탑승하지 못한 원아들은 다른 호차 차량이 픽업해 유치원까지 안전하게 이동하겠습니다.`,
              receiverUser: parentUser
            });
            await this.messageRepository.save(msg);

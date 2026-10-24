@@ -137,7 +137,7 @@ export default function Landing() {
 
       <div className="landing-glass w-full max-w-md p-8 relative z-10">
         <h1 className="text-3xl font-bold text-center mb-2 text-blue-600">Takeme</h1>
-        <p className="text-center text-slate-500 mb-8">스마트한 학원 셔틀 시스템</p>
+        <p className="text-center text-slate-500 mb-8">스마트한 유치원 안심 통학 셔틀 시스템</p>
 
         {mode === 'login' && (
           <form onSubmit={handleLogin} className="space-y-4">
@@ -173,7 +173,7 @@ export default function Landing() {
 
         {mode === 'signup' && (
           <form onSubmit={handleSignup} className="space-y-4">
-            <p className="text-center text-sm font-bold text-blue-600 bg-blue-50 py-2 rounded-xl border border-blue-100">원장님 전용 회원가입</p>
+            <p className="text-center text-sm font-bold text-blue-600 bg-blue-50 py-2 rounded-xl border border-blue-100">원장선생님 전용 회원가입</p>
 
             <div className="flex gap-2">
               <input type="email" placeholder="이메일" value={email} onChange={e=>setEmail(e.target.value)} className="form-input" required disabled={isEmailVerified || isEmailSending}/>

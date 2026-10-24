@@ -101,7 +101,7 @@ export default function TeacherDashboard({ email, name, role }) {
                 if (dist <= 500) {
                   // Trigger TTS: Intro once, student info twice
                   const intro = "지금부터 탑승지 안내를 시작하겠습니다.";
-                  const studentInfo = `${stop.name} 학생 ${stop.expectedTime}까지 ${stop.address}에서 탑승 예정입니다.`;
+                  const studentInfo = `${stop.name} 원아 ${stop.expectedTime}까지 ${stop.address}에서 탑승 예정입니다.`;
                   Speech.speak(`${intro} ${studentInfo} ${studentInfo}`);
                   const newAnnounced = new Set(announced).add(stop.id);
                   ttsAnnouncedRef.current = newAnnounced;
@@ -276,7 +276,7 @@ export default function TeacherDashboard({ email, name, role }) {
           const nextStudent = students.find(s => s.id !== id && !s.boarded && !s.absent);
           let nextMessage = "";
           if (nextStudent) {
-              const nextInfo = `다음 학생은 ${nextStudent.name} 학생 도착지는 ${nextStudent.address} 입니다.`;
+              const nextInfo = `다음 원아는 ${nextStudent.name} 원아 도착지는 ${nextStudent.address} 입니다.`;
               nextMessage = ` ${nextInfo} ${nextInfo}`;
           }
           Speech.speak(`${name} 원생, 탑승 완료.${nextMessage}`);
@@ -307,7 +307,7 @@ export default function TeacherDashboard({ email, name, role }) {
       });
       if (res.ok) {
         setMemoPrompt(null);
-        Alert.alert('저장 완료', '원장님께 공유되는 교사 메모가 저장되었습니다.');
+        Alert.alert('저장 완료', '원장선생님께 공유되는 교사 메모가 저장되었습니다.');
         fetchPassengers(); // Refresh list to get updated memo
       } else {
         Alert.alert('오류', '메모 저장에 실패했습니다.');
@@ -360,7 +360,7 @@ export default function TeacherDashboard({ email, name, role }) {
         <TouchableOpacity style={styles.card} onPress={() => setActiveView('scanner')}>
           <QrCode size={48} color="#16a34a" style={styles.cardIcon} />
           <Text style={styles.cardTitle}>우리차량 QR</Text>
-          <Text style={styles.cardSub}>학생용 스캔 화면</Text>
+          <Text style={styles.cardSub}>원아용 스캔 화면</Text>
         </TouchableOpacity>
       )}
 
@@ -644,7 +644,7 @@ export default function TeacherDashboard({ email, name, role }) {
           <Text style={styles.viewTitle}>우리 차량 QR 탑승코드</Text>
         </View>
         <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20}}>
-          <Text style={{fontSize: 20, fontWeight: 'bold', marginBottom: 30, color: '#1e293b'}}>학생들에게 이 화면을 보여주세요</Text>
+          <Text style={{fontSize: 20, fontWeight: 'bold', marginBottom: 30, color: '#1e293b'}}>원아 또는 학부모님께 이 화면을 보여주세요</Text>
           <View style={{padding: 20, backgroundColor: 'white', borderRadius: 24, shadowColor: '#000', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.1, shadowRadius: 20, elevation: 5}}>
             {Platform.OS === 'web' ? (
               <Text style={{color: 'red'}}>웹 버전에서는 QR 라이브러리 프리뷰가 지원되지 않을 수 있습니다.</Text>
@@ -788,7 +788,7 @@ export default function TeacherDashboard({ email, name, role }) {
               style={{flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: messageTargetTab === 'STUDENT' ? '#2563eb' : 'transparent', backgroundColor: messageTargetTab === 'STUDENT' ? 'white' : '#f8fafc'}}
               onPress={() => setMessageTargetTab('STUDENT')}
             >
-              <Text style={{fontWeight: 'bold', color: messageTargetTab === 'STUDENT' ? '#2563eb' : '#64748b'}}>학부모/학생</Text>
+              <Text style={{fontWeight: 'bold', color: messageTargetTab === 'STUDENT' ? '#2563eb' : '#64748b'}}>학부모/원아</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={{flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: messageTargetTab === 'STAFF' ? '#2563eb' : 'transparent', backgroundColor: messageTargetTab === 'STAFF' ? 'white' : '#f8fafc'}}
@@ -805,7 +805,7 @@ export default function TeacherDashboard({ email, name, role }) {
                   <Text style={{fontWeight: 'bold', color: '#475569'}}>받는 사람 선택</Text>
                   <View style={{flexDirection: 'row', gap: 12}}>
                 <TouchableOpacity onPress={handleSelectAllStudents} style={{padding: 4}}>
-                  <Text style={{color: '#2563eb', fontWeight: 'bold'}}>{selectedStudents.size === students.length && students.length > 0 ? '학생 선택 해제' : '학생 전체선택'}</Text>
+                  <Text style={{color: '#2563eb', fontWeight: 'bold'}}>{selectedStudents.size === students.length && students.length > 0 ? '원아 선택 해제' : '원아 전체선택'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleSelectAllParents} style={{padding: 4}}>
                   <Text style={{color: '#10b981', fontWeight: 'bold'}}>{selectedParents.size === students.length && students.length > 0 ? '학부모 선택 해제' : '학부모 전체선택'}</Text>
@@ -845,7 +845,7 @@ export default function TeacherDashboard({ email, name, role }) {
                       }}>
                         {selectedStudents.has(st.id) && <View style={{width: 10, height: 10, backgroundColor: 'white', borderRadius: 5}} />}
                       </View>
-                      <Text style={{fontSize: 10, color: '#64748b', marginTop: 4}}>학생</Text>
+                      <Text style={{fontSize: 10, color: '#64748b', marginTop: 4}}>원아</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={() => toggleParentSelection(st.id)} style={{alignItems: 'center'}}>
@@ -869,13 +869,13 @@ export default function TeacherDashboard({ email, name, role }) {
               <ScrollView style={{padding: 12, backgroundColor: '#f8fafc'}}>
                 {staffData?.admin && (
                   <View style={{marginBottom: 16}}>
-                    <Text style={{fontWeight: 'bold', color: '#475569', marginBottom: 8, paddingHorizontal: 4}}>원장님</Text>
+                    <Text style={{fontWeight: 'bold', color: '#475569', marginBottom: 8, paddingHorizontal: 4}}>원장선생님</Text>
                     <TouchableOpacity 
                       style={{flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 12, borderWidth: 1, borderColor: selectedStaff.has(staffData.admin.id) ? '#2563eb' : '#e2e8f0'}}
                       onPress={() => toggleStaffSelection(staffData.admin.id)}
                     >
                       <View style={{flex: 1}}>
-                        <Text style={{fontWeight: 'bold', fontSize: 16, color: '#1e293b'}}>{staffData.admin.name} <Text style={{fontSize: 12, color: '#64748b'}}>(원장)</Text></Text>
+                        <Text style={{fontWeight: 'bold', fontSize: 16, color: '#1e293b'}}>{staffData.admin.name} <Text style={{fontSize: 12, color: '#64748b'}}>(원장선생님)</Text></Text>
                       </View>
                       <View style={{width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: selectedStaff.has(staffData.admin.id) ? '#2563eb' : '#cbd5e1', backgroundColor: selectedStaff.has(staffData.admin.id) ? '#2563eb' : 'transparent', justifyContent: 'center', alignItems: 'center'}}>
                         {selectedStaff.has(staffData.admin.id) && <View style={{width: 10, height: 10, backgroundColor: 'white', borderRadius: 5}} />}
@@ -949,7 +949,7 @@ export default function TeacherDashboard({ email, name, role }) {
               <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4}}>
                 <View>
                   <Text style={{fontSize: 14, fontWeight: 'bold', color: '#1e293b'}}>
-                    {m.student ? `${m.student.name} 학생 어머니 (학부모)` : '원장님 (관리자)'}
+                    {m.student ? `${m.student.name} 원아 학부모님` : '원장선생님 (관리자)'}
                   </Text>
                   <Text style={[styles.msgTime, {marginTop: 2}]}>{new Date(m.createdAt).toLocaleTimeString()}</Text>
                 </View>
@@ -1134,7 +1134,7 @@ export default function TeacherDashboard({ email, name, role }) {
           <View style={{ width: '85%', backgroundColor: 'white', borderRadius: 16, padding: 24, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 }}>
             <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 12 }}>{memoPrompt.name} 원생 교사 메모</Text>
             
-            <Text style={{ fontSize: 14, color: '#64748b', marginBottom: 8, fontWeight: 'bold' }}>교사 메모 (원장님 실시간 공유)</Text>
+            <Text style={{ fontSize: 14, color: '#64748b', marginBottom: 8, fontWeight: 'bold' }}>교사 메모 (원장선생님 실시간 공유)</Text>
             
             <TextInput 
               style={{ backgroundColor: '#f1f5f9', borderRadius: 8, padding: 12, fontSize: 16, borderWidth: 1, borderColor: '#cbd5e1', marginBottom: 20, minHeight: 80, textAlignVertical: 'top', color: '#1e293b' }}

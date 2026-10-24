@@ -242,7 +242,7 @@ export default function Dashboard() {
   };
 
   const handleGenerateAuthCode = async () => {
-    if (!window.confirm('새로운 학원 인증코드를 발급하시겠습니까? 기존 코드는 사용할 수 없게 됩니다.')) return;
+    if (!window.confirm('새로운 원 인증코드를 발급하시겠습니까? 기존 코드는 사용할 수 없게 됩니다.')) return;
     try {
       setIsProcessing(true);
       const targetAcademyId = selectedAcademyId || currentUser.academyId;
@@ -260,7 +260,7 @@ export default function Dashboard() {
         });
         alert('새로운 인증코드가 발급되었습니다!');
       } else {
-        alert(data.message || '인증코드 발급에 실패했습니다. 학원 정보를 먼저 설정해주세요.');
+        alert(data.message || '인증코드 발급에 실패했습니다. 유치원 정보를 먼저 설정해주세요.');
       }
     } catch (e) {
       console.error(e);
@@ -287,7 +287,7 @@ export default function Dashboard() {
   };
 
   const handleRevokeStudent = async (studentId, isPending = false) => {
-    if (!window.confirm(isPending ? '가입 승인을 거절하시겠습니까?' : '이 학생의 앱 접근 권한을 해제(탈퇴)하시겠습니까?')) return;
+    if (!window.confirm(isPending ? '가입 승인을 거절하시겠습니까?' : '이 원아의 앱 접근 권한을 해제(탈퇴)하시겠습니까?')) return;
     try {
       const res = await fetch(`${API_BASE_URL}/routing/revoke-student`, {
         method: 'POST',
@@ -345,7 +345,7 @@ export default function Dashboard() {
   };
 
   const handleDeleteAcademy = async () => {
-    if (!window.confirm('정말 학원 계정을 탈퇴(삭제)하시겠습니까?\n학생 명단, 배차 정보 등 모든 데이터가 영구적으로 삭제됩니다.')) return;
+    if (!window.confirm('정말 유치원 계정을 탈퇴(삭제)하시겠습니까?\n원아 명단, 통학차량 정보 등 모든 데이터가 영구적으로 삭제됩니다.')) return;
     try {
       setIsProcessing(true);
       const targetAcademyId = selectedAcademyId || currentUser.academyId;
@@ -363,7 +363,7 @@ export default function Dashboard() {
         setStudents([]);
         setActiveTab('status');
         setShowAcademyModal(true);
-        alert('학원 회원 탈퇴 및 데이터 초기화가 완료되었습니다. 로그인 화면으로 돌아갑니다.');
+        alert('유치원 회원 탈퇴 및 데이터 초기화가 완료되었습니다. 로그인 화면으로 돌아갑니다.');
         navigate('/');
       } else {
         alert('탈퇴 처리 중 오류가 발생했습니다.');
@@ -556,7 +556,7 @@ export default function Dashboard() {
 
   const handleAcademySubmit = async (e) => {
     e.preventDefault();
-    if (!academyForm.name || !academyForm.address) return alert('학원명과 주소를 입력해주세요.');
+    if (!academyForm.name || !academyForm.address) return alert('유치원명과 주소를 입력해주세요.');
 
     setIsProcessing(true);
     try {
@@ -603,7 +603,7 @@ export default function Dashboard() {
 
   const handleChangeAcademySubmit = async (e) => {
     e.preventDefault();
-    if (!academyChangeForm.name || !academyChangeForm.address) return alert('학원명과 주소를 입력해주세요.');
+    if (!academyChangeForm.name || !academyChangeForm.address) return alert('유치원명과 주소를 입력해주세요.');
 
     setIsProcessing(true);
     try {
@@ -636,7 +636,7 @@ export default function Dashboard() {
         setAcademy(newAcademy);
         localStorage.setItem('takeme_academy', JSON.stringify(newAcademy));
         setIsChangingAcademy(false);
-        alert('학원 위치가 성공적으로 변경되었습니다!');
+        alert('유치원 위치가 성공적으로 변경되었습니다!');
       } else {
         alert('주소를 좌표로 변환할 수 없습니다. 정확한 주소를 입력해주세요.');
       }
@@ -772,7 +772,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         }).filter(item => item.address);
 
         if (addressMap.length === 0) {
-          alert('유효한 주소(등원지, 탑승지, 주소 등)가 입력된 학생 행을 찾을 수 없습니다.');
+          alert('유효한 주소(등원지, 탑승지, 주소 등)가 입력된 원아 행을 찾을 수 없습니다.');
           setIsProcessing(false);
           return;
         }
@@ -902,7 +902,7 @@ const parseKindergartenExcelSheet = (sheet) => {
       }
 
       if (data.length === 0) {
-        alert('엑셀 파일에서 유효한 학생/배차 데이터 행을 찾을 수 없습니다. 시트에 내용이 입력되어 있는지 확인해주세요.');
+        alert('엑셀 파일에서 유효한 원아/배차 데이터 행을 찾을 수 없습니다. 시트에 내용이 입력되어 있는지 확인해주세요.');
         setIsProcessing(false);
         return;
       }
@@ -1074,7 +1074,7 @@ const parseKindergartenExcelSheet = (sheet) => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `원아_데이터_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `유치원_원아_명단_${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1115,7 +1115,7 @@ const parseKindergartenExcelSheet = (sheet) => {
   const handleAddStudentSubmit = async (e) => {
     e.preventDefault();
     if (!studentForm.name.trim()) {
-      alert('학생 이름을 입력해주세요.');
+      alert('원아 이름을 입력해주세요.');
       return;
     }
     if (!studentForm.address.trim()) {
@@ -1223,7 +1223,7 @@ const parseKindergartenExcelSheet = (sheet) => {
 
       const busName = assignedBus?.name || (resData.student?.assignedBusId ? buses.find(b => b.id === resData.student.assignedBusId)?.name : '');
       const busInfo = busName 
-        ? `[${busName}]에 배정되었으며, 차량 운행 구역이 학생 위치까지 자동으로 확장되었습니다!`
+        ? `[${busName}]에 배정되었으며, 차량 운행 구역이 원아 위치까지 자동으로 확장되었습니다!`
         : '(구역 미배정)';
       alert(`'${studentForm.name}' 원아가 성공적으로 추가되었습니다!\n${busInfo}`);
       setShowAddStudentModal(false);
@@ -1323,24 +1323,24 @@ const parseKindergartenExcelSheet = (sheet) => {
               <>
                 <div className="text-center mb-6">
                   <div className="text-5xl mb-4">🏫</div>
-                  <h2 className="text-2xl font-bold text-slate-800">학원 위치 확인</h2>
-                  <p className="text-slate-500 text-sm mt-2">지도의 중심이 될 학원의 위치를 등록해주세요.</p>
+                  <h2 className="text-2xl font-bold text-slate-800">유치원 위치 확인</h2>
+                  <p className="text-slate-500 text-sm mt-2">지도의 중심이 될 유치원의 위치를 등록해주세요.</p>
                 </div>
                 
                 <form onSubmit={handleAcademySubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">학원명</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">유치원명</label>
                     <input 
                       type="text" 
                       value={academyForm.name} 
                       onChange={e => setAcademyForm({...academyForm, name: e.target.value})}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                      placeholder="예: 에듀탑 학원"
+                      placeholder="예: 해솔 유치원"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">학원 도로명 주소</label>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">원 도로명 주소</label>
                     <input 
                       type="text" 
                       value={academyForm.address} 
@@ -1368,7 +1368,7 @@ const parseKindergartenExcelSheet = (sheet) => {
       <div className="w-20 bg-blue-700 flex flex-col items-center py-8 gap-6 z-20 shadow-xl">
         <div className="text-white font-bold text-xs mb-1">Takeme</div>
         <div className="text-[10px] text-blue-200 text-center truncate max-w-[70px] mb-4 font-medium" title={currentUser.name}>
-          {isSuperAdmin ? '플랫폼관리' : (currentUser.name ? `${currentUser.name} 원장` : '원장')}
+          {isSuperAdmin ? '플랫폼관리' : (currentUser.name ? `${currentUser.name} 원장선생님` : '원장선생님')}
         </div>
         <button onClick={() => handleTabChange('status')} className={`p-4 rounded-2xl transition-all ${activeTab === 'status' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="차량 구역 현황">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
@@ -1460,7 +1460,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                         </div>
                       )}
                       {isSelected && busStudents.length === 0 && (
-                        <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400 text-center">배정된 학생이 없습니다.</div>
+                        <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400 text-center">배정된 원아가 없습니다.</div>
                       )}
                     </div>
                   );
@@ -1522,7 +1522,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                           
                           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                             <div className="bg-slate-50 px-3 py-2 flex justify-between items-center border-b border-slate-200">
-                              <span className="text-xs font-bold text-slate-600">학생 학부모님 ({msgTargetStudents.length}/{busStudents.length})</span>
+                              <span className="text-xs font-bold text-slate-600">원아 학부모님 ({msgTargetStudents.length}/{busStudents.length})</span>
                               <button 
                                 onClick={() => {
                                   if (msgTargetStudents.length === busStudents.length) setMsgTargetStudents([]);
@@ -1546,7 +1546,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                                   <span className="text-xs font-bold text-slate-700">{st.name} <span className="font-normal text-slate-400">({st.raw?.['보호자 성함'] || '학부모'})</span></span>
                                 </label>
                               ))}
-                              {busStudents.length === 0 && <div className="text-center text-xs text-slate-400 py-2">배정된 학생이 없습니다.</div>}
+                              {busStudents.length === 0 && <div className="text-center text-xs text-slate-400 py-2">배정된 원아가 없습니다.</div>}
                             </div>
                           </div>
                         </div>
@@ -1728,10 +1728,10 @@ const parseKindergartenExcelSheet = (sheet) => {
 
         {activeTab === 'auth' && (
           <div className="p-6 h-full flex flex-col">
-            <h2 className="text-xl font-bold text-slate-800 mb-6">학생 앱 가입 현황</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-6">원아·학부모 앱 가입 현황</h2>
             
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 text-center shadow-sm">
-              <h3 className="text-blue-800 font-bold mb-2">학원 인증코드</h3>
+              <h3 className="text-blue-800 font-bold mb-2">원 인증코드</h3>
               {academy?.authCode ? (
                 <div className="text-3xl font-black text-blue-600 tracking-widest">{academy.authCode}</div>
               ) : (
@@ -1744,7 +1744,7 @@ const parseKindergartenExcelSheet = (sheet) => {
               >
                 {academy?.authCode ? '인증코드 재발급' : '인증코드 발급받기'}
               </button>
-              <p className="text-xs text-blue-600/80 mt-3">학부모님들이 학생 앱에 가입할 때 이 코드를 입력해야 합니다.</p>
+              <p className="text-xs text-blue-600/80 mt-3">학부모님들이 앱에 가입할 때 이 코드를 입력해야 합니다.</p>
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -1918,31 +1918,31 @@ const parseKindergartenExcelSheet = (sheet) => {
               </div>
 
               <div className="p-4 bg-orange-50 rounded-xl border border-orange-100 transition-all">
-                <h3 className="font-bold text-orange-700 mb-1">학원 위치 변경</h3>
-                <p className="text-xs text-orange-600 mb-3 opacity-80">학원이 이전한 경우 새 주소와 이름을 입력하세요.</p>
+                <h3 className="font-bold text-orange-700 mb-1">유치원 위치 변경</h3>
+                <p className="text-xs text-orange-600 mb-3 opacity-80">유치원이 이전한 경우 새 주소와 이름을 입력하세요.</p>
                 
                 {!isChangingAcademy ? (
                   <button onClick={() => {
                     setAcademyChangeForm({ name: academy?.name || '', address: academy?.address || '' });
                     setIsChangingAcademy(true);
                   }} className="w-full py-2 bg-white text-orange-600 rounded-lg text-sm font-bold border border-orange-200 shadow-sm hover:bg-orange-600 hover:text-white transition-colors">
-                    학원 위치 변경 모드
+                    유치원 위치 변경 모드
                   </button>
                 ) : (
                   <form onSubmit={handleChangeAcademySubmit} className="space-y-3 mt-4 pt-4 border-t border-orange-200">
                     <div>
-                      <label className="block text-xs font-bold text-orange-800 mb-1">새 학원명</label>
+                      <label className="block text-xs font-bold text-orange-800 mb-1">새 유치원명</label>
                       <input 
                         type="text" 
                         value={academyChangeForm.name} 
                         onChange={e => setAcademyChangeForm({...academyChangeForm, name: e.target.value})}
                         className="w-full px-3 py-2 bg-white border border-orange-200 rounded-lg text-sm outline-none"
-                        placeholder="학원명"
+                        placeholder="유치원명"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-orange-800 mb-1">새 학원 주소 (도로명/지번)</label>
+                      <label className="block text-xs font-bold text-orange-800 mb-1">새 원 주소 (도로명/지번)</label>
                       <input 
                         type="text" 
                         value={academyChangeForm.address} 
@@ -1979,7 +1979,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                   disabled={isProcessing}
                   className="w-full py-2 bg-white text-slate-500 rounded-lg text-sm font-bold border border-slate-300 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors"
                 >
-                  {isProcessing ? '처리 중...' : '학원 데이터 삭제 및 탈퇴'}
+                  {isProcessing ? '처리 중...' : '유치원 데이터 삭제 및 탈퇴'}
                 </button>
               </div>
               </div>
@@ -2094,7 +2094,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2">
           {isSuperAdmin && (
             <div className="flex items-center gap-2 bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-lg text-xs font-bold border border-indigo-500">
-              <span className="whitespace-nowrap">🏛️ 학원 선택:</span>
+              <span className="whitespace-nowrap">🏛️ 유치원 선택:</span>
               <select
                 value={selectedAcademyId || ''}
                 onChange={(e) => handleSwitchAcademy(Number(e.target.value))}
@@ -2223,7 +2223,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                     
                     <div className="text-xs text-slate-600 mb-2">
                       <div className="font-bold text-slate-500 mb-1">
-                        탑승학생 ({(() => {
+                        탑승원아 ({(() => {
                           const boardingStudents = students.filter(st => (st.boardingLocation || st.address) === p.name);
                           return boardingStudents.length;
                         })()}명)

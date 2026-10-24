@@ -6,7 +6,7 @@ export function openPrintDocument(type, data = {}) {
   const month = now.getMonth() + 1;
   const day = now.getDate();
   const autoDateKorean = `${year}년 ${month}월 ${day}일`;
-  const academyName = data.academyName || 'Takeme 협력학원';
+  const academyName = data.academyName || 'Takeme 협력유치원';
 
   const bus = data.selectedBus || null;
   const busStudents = data.busStudents || [];
@@ -291,7 +291,7 @@ export function openPrintDocument(type, data = {}) {
         <div class="header-section">
           <div class="title-wrap" style="width: 100%; text-align: center;">
             <h1 style="font-size: 22px;">어린이 통학차량 이용 신청 및 안전동의서</h1>
-            <p class="sub-text">${academyName ? `${academyName} 귀중` : '학원장 귀중'}</p>
+            <p class="sub-text">${academyName ? `${academyName} 귀중` : '유치원장선생님 귀중'}</p>
           </div>
         </div>
 
@@ -310,7 +310,7 @@ export function openPrintDocument(type, data = {}) {
           </tr>
           <tr>
             <th>배정 희망 차량</th>
-            <td style="font-weight: bold; color: #2563eb;">${assignedBusName || '학원 배차 규정에 따름'}</td>
+            <td style="font-weight: bold; color: #2563eb;">${assignedBusName || '유치원 배차 규정에 따름'}</td>
             <th>탑승지 (주소)</th>
             <td style="font-size: 11px;">${address}</td>
           </tr>
@@ -323,7 +323,7 @@ export function openPrintDocument(type, data = {}) {
             <li>차량 운행 중에는 창밖으로 손이나 머리를 내밀지 않으며, 자리에서 일어나거나 장난을 치지 않습니다.</li>
             <li>승·하차 시에는 동승보호자의 안내에 따라 차례대로 손잡이를 잡고 안전하게 승·하차합니다.</li>
             <li>지정된 탑승 시간 3분 전까지 정류장에 도착하여 대기하도록 지도하겠습니다.</li>
-            <li>원생의 건강 이상이나 결석 발생 시 학원 및 담당 기사님께 사전에 미리 통보하겠습니다.</li>
+            <li>원아의 건강 이상이나 결석 발생 시 유치원 및 담당 기사님께 사전에 미리 통보하겠습니다.</li>
           </ol>
         </div>
 

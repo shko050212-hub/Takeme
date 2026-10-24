@@ -67,7 +67,7 @@ export class AuthService {
             <div style="padding: 32px; background-color: #ffffff;">
               <h2 style="color: #1e40af; margin-top: 0; font-size: 24px;">환영합니다! 🎉</h2>
               <p style="color: #475569; font-size: 16px; line-height: 1.6;">
-                Takeme에 가입을 진행해 주셔서 감사합니다.<br/>원장님의 학원 차량 관리를 스마트하고 안전하게 돕겠습니다.
+                Takeme에 가입을 진행해 주셔서 감사합니다.<br/>원장선생님의 유치원 안심 통학차량 관리를 스마트하고 안전하게 돕겠습니다.
               </p>
               <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 24px; text-align: center; margin: 32px 0;">
                 <p style="margin: 0; color: #64748b; font-size: 14px; margin-bottom: 8px;">인증코드 6자리</p>
@@ -213,7 +213,7 @@ export class AuthService {
             authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
           }
           academy = this.academyRepository.create({
-            name: user.name ? `${user.name} 학원` : '신규 학원',
+            name: user.name ? `${user.name} 유치원` : '신규 유치원',
             owner: user,
             authCode,
             vehicleCount: 0
@@ -275,7 +275,7 @@ export class AuthService {
       const cleanAuthCode = authCode ? authCode.trim().toUpperCase() : '';
       targetAcademy = await this.academyRepository.findOne({ where: { authCode: cleanAuthCode } });
       if (!targetAcademy) {
-        throw new BadRequestException('유효하지 않은 학원 인증코드입니다.');
+        throw new BadRequestException('유효하지 않은 원 인증코드입니다.');
       }
     }
 
@@ -306,14 +306,14 @@ export class AuthService {
           authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         }
         const academy = this.academyRepository.create({
-          name: name ? `${name} 학원` : '신규 학원',
+          name: name ? `${name} 유치원` : '신규 유치원',
           owner: savedUser,
           authCode,
           vehicleCount: 0,
         });
         await this.academyRepository.save(academy);
       } else if (userRole === UserRole.STUDENT || userRole === UserRole.PARENT) {
-        if (!targetAcademy) throw new BadRequestException('소속 학원 정보를 찾을 수 없습니다.');
+        if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
         const student = await this.studentRepository.createQueryBuilder('student')
           .leftJoinAndSelect('student.studentUser', 'studentUser')
           .leftJoinAndSelect('student.parentUser', 'parentUser')
@@ -322,7 +322,7 @@ export class AuthService {
           .getOne();
           
         if (!student) {
-          throw new BadRequestException('해당 학원에서 일치하는 이름의 원생 정보를 찾을 수 없습니다.');
+          throw new BadRequestException('해당 유치원에서 일치하는 이름의 원아 정보를 찾을 수 없습니다.');
         }
         
         if (userRole === UserRole.STUDENT) {
@@ -337,7 +337,7 @@ export class AuthService {
         await this.studentRepository.save(student);
         
       } else if (userRole === UserRole.DRIVER || userRole === UserRole.TEACHER) {
-        if (!targetAcademy) throw new BadRequestException('소속 학원 정보를 찾을 수 없습니다.');
+        if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
         const vehicle = await this.vehicleRepository.createQueryBuilder('vehicle')
           .leftJoinAndSelect('vehicle.driverUser', 'driverUser')
           .leftJoinAndSelect('vehicle.teacherUser', 'teacherUser')
@@ -346,7 +346,7 @@ export class AuthService {
           .getOne();
           
         if (!vehicle) {
-          throw new BadRequestException('해당 학원에 등록된 배차 차량 정보를 찾을 수 없습니다.');
+          throw new BadRequestException('해당 유치원에 등록된 통학차량 정보를 찾을 수 없습니다.');
         }
 
         if (userRole === UserRole.DRIVER) {

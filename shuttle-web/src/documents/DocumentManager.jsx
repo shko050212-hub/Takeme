@@ -153,7 +153,7 @@ export default function DocumentManager({
         category: categoryLabel,
         file: uploadFile,
         note: uploadNote.trim(),
-        uploadedBy: currentUser?.name ? `${currentUser.name} 관리자` : '원장/관리자',
+        uploadedBy: currentUser?.name ? `${currentUser.name} 관리자` : '원장선생님/관리자',
       });
 
       // Reset modal form
@@ -781,7 +781,7 @@ export default function DocumentManager({
                     차량이용 및 안전동의서
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
-                    {activeStudent ? `[${activeStudent.name}] 학생 인적사항 연동` : '보호자 서약 서식'}
+                    {activeStudent ? `[${activeStudent.name}] 원아 인적사항 연동` : '보호자 서약 서식'}
                   </div>
                 </div>
                 <span className="text-xs font-bold text-blue-600 bg-white group-hover:bg-blue-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shrink-0 shadow-2xs">

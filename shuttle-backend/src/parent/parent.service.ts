@@ -195,7 +195,7 @@ export class ParentService {
     const academy = student.academy;
     const routePoints = [];
     if (academy && academy.latitude && academy.longitude) {
-      routePoints.push({ latitude: academy.latitude, longitude: academy.longitude, title: '학원' });
+      routePoints.push({ latitude: academy.latitude, longitude: academy.longitude, title: '유치원' });
     }
 
     stops.forEach(s => {

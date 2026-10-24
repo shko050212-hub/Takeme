@@ -138,7 +138,7 @@ const LoginScreen = ({ onLoginSuccess, onPending }) => {
       }
       
       if (!data.success || !data.user) {
-        showAlert('로그인 불가', data.message || '웹 대시보드 전용 계정이거나 인증이 필요합니다. (원장님은 PC웹을 이용해주세요)');
+        showAlert('로그인 불가', data.message || '웹 대시보드 전용 계정이거나 인증이 필요합니다. (원장선생님은 PC웹을 이용해주세요)');
         return;
       }
       
@@ -238,10 +238,10 @@ const PendingScreen = ({ userName, role, onLogout, onSettings }) => {
         
         <View style={{ marginTop: 32, backgroundColor: '#f8fafc', padding: 24, borderRadius: 16, width: '100%' }}>
           <Text style={{ textAlign: 'center', color: '#64748b', fontSize: 15, lineHeight: 24 }}>
-            원장님께서 앱 연동을 승인해 주셔야{'\n'}앱 기능을 사용할 수 있습니다.
+            원장선생님께서 앱 연동을 승인해 주셔야{'\n'}앱 기능을 사용할 수 있습니다.
           </Text>
           <Text style={{ textAlign: 'center', color: '#ef4444', fontSize: 13, marginTop: 16, fontWeight: 'bold' }}>
-            학원으로 승인을 요청해 주세요.
+            유치원으로 승인을 요청해 주세요.
           </Text>
         </View>
 
