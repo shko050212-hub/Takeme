@@ -1082,71 +1082,68 @@ export class RoutingService {
       return '정규하원';
     };
 
-    // 1. First Sheet: Overall Student Roster (유치원부)
-    const masterSheet = workbook.addWorksheet('유치원부');
-    masterSheet.columns = columns;
-
-    for (const student of students) {
+    const mapStudentRow = (student: any, sched?: any) => {
       let raw: any = student.raw;
       if (typeof raw === 'string') {
         try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
       }
       raw = raw || {};
 
-      masterSheet.addRow({
-        className: raw['반명'] || '',
+      return {
+        className: raw['반명'] || '반 미지정',
         name: student.name || raw['원아명'] || raw['학생이름/영문이름'] || raw['이름'] || '',
         kindergartenName: raw['유치원명'] || raw['소속원명'] || raw['학교명'] || academy?.name || '',
-        age: raw['연령'] || raw['학년'] || '',
+        age: raw['연령'] || raw['학년'] || '연령 미입력',
         gender: raw['성별'] || '',
         parentName: raw['보호자 성함'] || '',
         parentPhone: raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || '',
         address: student.address || raw['주소'] || '',
-        inLocation: raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
-        outLocation: raw['하원지'] || student.boardingLocation || student.address || '',
+        inLocation: sched?.address || raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
+        outLocation: raw['하원지'] || sched?.address || student.boardingLocation || student.address || '',
         teacherName: raw['담임명'] || '',
         departureType: getDepartureType(raw),
-        inBus: raw['등원차량'] || student.assignedVehicle?.busNumber || '',
-        outBus: raw['하원차량'] || student.assignedVehicle?.busNumber || '',
+        inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || student.assignedVehicle?.busNumber || '배정 대기',
+        outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '배정 대기',
         inTime: raw['등원시간'] || '',
         outTime: raw['하원시간'] || '',
         note: raw['비고'] || '',
-      });
-    }
+      };
+    };
 
-    // 2. Day-specific sheets (월, 화, 수, 목, 금, 토, 일)
+    const allRows = students.map(st => mapStudentRow(st));
+
+    // 1. 전체 원아 명단
+    const masterSheet = workbook.addWorksheet('전체 원아 명단');
+    masterSheet.columns = columns;
+    allRows.forEach(row => masterSheet.addRow(row));
+
+    // 2. 반별 명단 (반명 정렬)
+    const classSheet = workbook.addWorksheet('반별 명단');
+    classSheet.columns = columns;
+    const classRows = [...allRows].sort((a, b) => a.className.localeCompare(b.className));
+    classRows.forEach(row => classSheet.addRow(row));
+
+    // 3. 연령별 명단 (연령 정렬)
+    const ageSheet = workbook.addWorksheet('연령별 명단');
+    ageSheet.columns = columns;
+    const ageRows = [...allRows].sort((a, b) => a.age.localeCompare(b.age));
+    ageRows.forEach(row => ageSheet.addRow(row));
+
+    // 4. 차량별 명단 (배정차량 정렬)
+    const busSheet = workbook.addWorksheet('차량별 명단');
+    busSheet.columns = columns;
+    const busRows = [...allRows].sort((a, b) => a.inBus.localeCompare(b.inBus));
+    busRows.forEach(row => busSheet.addRow(row));
+
+    // 5. 요일별 운행 명단 (월, 화, 수, 목, 금, 토, 일)
     for (let i = 0; i < days.length; i++) {
-      const sheet = workbook.addWorksheet(`${days[i]} 유치원부`);
+      const sheet = workbook.addWorksheet(`${days[i]}요일 운행명단`);
       sheet.columns = columns;
 
       for (const student of students) {
         const sched = student.schedules?.find(s => s.dayOfWeek === daysEnglish[i]);
         if (sched || student.raw) {
-          let raw: any = student.raw;
-          if (typeof raw === 'string') {
-            try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
-          }
-          raw = raw || {};
-
-          sheet.addRow({
-            className: raw['반명'] || '',
-            name: student.name || raw['원아명'] || raw['학생이름/영문이름'] || raw['이름'] || '',
-            kindergartenName: raw['유치원명'] || raw['소속원명'] || raw['학교명'] || academy?.name || '',
-            age: raw['연령'] || raw['학년'] || '',
-            gender: raw['성별'] || '',
-            parentName: raw['보호자 성함'] || '',
-            parentPhone: raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || '',
-            address: student.address || raw['주소'] || '',
-            inLocation: sched?.address || raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
-            outLocation: raw['하원지'] || sched?.address || student.boardingLocation || student.address || '',
-            teacherName: raw['담임명'] || '',
-            departureType: getDepartureType(raw),
-            inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || student.assignedVehicle?.busNumber || '',
-            outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '',
-            inTime: raw['등원시간'] || '',
-            outTime: raw['하원시간'] || '',
-            note: raw['비고'] || '',
-          });
+          sheet.addRow(mapStudentRow(student, sched));
         }
       }
     }
