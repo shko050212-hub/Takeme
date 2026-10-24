@@ -1120,19 +1120,19 @@ export class RoutingService {
     // 2. 반별 명단 (반명 정렬)
     const classSheet = workbook.addWorksheet('반별 명단');
     classSheet.columns = columns;
-    const classRows = [...allRows].sort((a, b) => a.className.localeCompare(b.className));
+    const classRows = [...allRows].sort((a, b) => String(a.className || "").localeCompare(String(b.className || "")));
     classRows.forEach(row => classSheet.addRow(row));
 
     // 3. 연령별 명단 (연령 정렬)
     const ageSheet = workbook.addWorksheet('연령별 명단');
     ageSheet.columns = columns;
-    const ageRows = [...allRows].sort((a, b) => a.age.localeCompare(b.age));
+    const ageRows = [...allRows].sort((a, b) => String(a.age || "").localeCompare(String(b.age || "")));
     ageRows.forEach(row => ageSheet.addRow(row));
 
     // 4. 차량별 명단 (배정차량 정렬)
     const busSheet = workbook.addWorksheet('차량별 명단');
     busSheet.columns = columns;
-    const busRows = [...allRows].sort((a, b) => a.inBus.localeCompare(b.inBus));
+    const busRows = [...allRows].sort((a, b) => String(a.inBus || "").localeCompare(String(b.inBus || "")));
     busRows.forEach(row => busSheet.addRow(row));
 
     // 5. 요일별 운행 명단 (월, 화, 수, 목, 금, 토, 일)
