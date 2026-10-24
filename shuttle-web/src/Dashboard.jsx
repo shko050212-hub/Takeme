@@ -187,13 +187,13 @@ export default function Dashboard() {
     inLocation: '',
     outLocation: '',
     className: '',
-    schoolName: '',
-    grade: '',
+    kindergartenName: '',
     age: '',
     gender: '남',
     parentName: '',
     parentPhone: '',
     teacherName: '',
+    departureType: '정규하원',
     assignedBusId: '',
     inTime: '',
     outTime: '',
@@ -648,6 +648,82 @@ export default function Dashboard() {
     }
   };
 
+// Kindergarten Excel 2-Row Header Parser
+const parseKindergartenExcelSheet = (sheet) => {
+  if (!sheet) return [];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  if (!rows || rows.length === 0) return [];
+
+  const row0 = rows[0] || [];
+  const row1 = rows[1] || [];
+
+  // Check if row 1 contains sub-headers like '정규하원', '방과후하원', '종일반하원'
+  const isTwoRowHeader = row1.some(cell => 
+    cell && typeof cell === 'string' && (cell.includes('하원') || cell.includes('정규') || cell.includes('종일'))
+  );
+
+  let headerRowIndex = 0;
+  let headers = [];
+
+  if (isTwoRowHeader) {
+    headerRowIndex = 2; // Data rows start at index 2
+    for (let c = 0; c < Math.max(row0.length, row1.length); c++) {
+      const top = row0[c] ? String(row0[c]).trim() : '';
+      const sub = row1[c] ? String(row1[c]).trim() : '';
+      if (sub) {
+        headers.push(sub);
+      } else if (top) {
+        headers.push(top);
+      } else {
+        headers.push(`COL_${c}`);
+      }
+    }
+  } else {
+    headerRowIndex = 1;
+    headers = row0.map((c, idx) => c ? String(c).trim() : `COL_${idx}`);
+  }
+
+  const result = [];
+  for (let r = headerRowIndex; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    if (row.every(cell => cell === null || cell === undefined || String(cell).trim() === '')) continue;
+    
+    const obj = {};
+    headers.forEach((h, idx) => {
+      obj[h] = row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim() : '';
+    });
+
+    // Detect departure type
+    let depType = obj['하원구분'] || obj['하원정보'] || '';
+    if (!depType) {
+      if (obj['정규하원'] && String(obj['정규하원']).trim()) depType = '정규하원';
+      else if (obj['방과후하원'] && String(obj['방과후하원']).trim()) depType = '방과후하원';
+      else if (obj['종일반하원'] && String(obj['종일반하원']).trim()) depType = '종일반하원';
+    }
+    obj['하원구분'] = depType || '정규하원';
+
+    // Normalize field aliases
+    const name = obj['원아명'] || obj['학생이름/영문이름'] || obj['이름'] || obj['원생명'] || obj['학생명'] || obj['원생이름'] || '';
+    const kindergartenName = obj['유치원명'] || obj['소속원명'] || obj['학교명'] || '';
+    const age = obj['연령'] || obj['학년'] || '';
+    const parentPhone = obj['부모연락처'] || obj['보호자연락처'] || obj['보호자 연락처'] || '';
+    const address = obj['등원지'] || obj['탑승지'] || obj['승차지'] || obj['주소'] || obj['도로명주소'] || '';
+
+    obj['원아명'] = name;
+    obj['이름'] = name;
+    obj['유치원명'] = kindergartenName;
+    obj['학교명'] = kindergartenName;
+    obj['연령'] = age;
+    obj['부모연락처'] = parentPhone;
+    obj['보호자연락처'] = parentPhone;
+    obj['주소'] = address;
+
+    result.push(obj);
+  }
+  return result;
+};
+
   const handleStudentUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -662,10 +738,10 @@ export default function Dashboard() {
         let data = [];
         wb.SheetNames.forEach(sheetName => {
           const sheet = wb.Sheets[sheetName];
-          const sheetData = XLSX.utils.sheet_to_json(sheet);
+          const sheetData = parseKindergartenExcelSheet(sheet);
           if (Array.isArray(sheetData) && sheetData.length > 0) {
             const hasRelevantColumns = sheetData.some(r => 
-              r['학생이름/영문이름'] || r['이름'] || r['원생명'] || r['학생명'] || r['원생이름'] || r['주소'] || r['등원지'] || r['탑승지'] || r['승차지']
+              r['원아명'] || r['학생이름/영문이름'] || r['이름'] || r['주소'] || r['등원지'] || r['탑승지'] || r['반명']
             );
             if (hasRelevantColumns) {
               data = data.concat(sheetData);
@@ -674,11 +750,11 @@ export default function Dashboard() {
         });
 
         if (data.length === 0 && wb.SheetNames.length > 0) {
-          data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) || [];
+          data = parseKindergartenExcelSheet(wb.Sheets[wb.SheetNames[0]]) || [];
         }
 
         if (data.length === 0) {
-          alert('엑셀 파일에서 유효한 학원생 명단 데이터를 찾을 수 없습니다.');
+          alert('엑셀 파일에서 유효한 원아 명단 데이터를 찾을 수 없습니다.');
           setIsProcessing(false);
           return;
         }
@@ -810,10 +886,10 @@ export default function Dashboard() {
       let data = [];
       wb.SheetNames.forEach(sheetName => {
         const sheet = wb.Sheets[sheetName];
-        const sheetData = XLSX.utils.sheet_to_json(sheet);
+        const sheetData = parseKindergartenExcelSheet(sheet);
         if (Array.isArray(sheetData) && sheetData.length > 0) {
           const hasRelevantColumns = sheetData.some(r => 
-            r['등원차량'] || r['하원차량'] || r['차량'] || r['호차'] || r['등원지'] || r['주소'] || r['승차지'] || r['학생이름/영문이름'] || r['이름']
+            r['등원차량'] || r['하원차량'] || r['차량'] || r['호차'] || r['등원지'] || r['주소'] || r['승차지'] || r['원아명'] || r['학생이름/영문이름'] || r['이름']
           );
           if (hasRelevantColumns) {
             data = data.concat(sheetData);
@@ -822,7 +898,7 @@ export default function Dashboard() {
       });
 
       if (data.length === 0 && wb.SheetNames.length > 0) {
-        data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) || [];
+        data = parseKindergartenExcelSheet(wb.Sheets[wb.SheetNames[0]]) || [];
       }
 
       if (data.length === 0) {
@@ -998,7 +1074,7 @@ export default function Dashboard() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `학원생_데이터_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `원아_데이터_${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1101,13 +1177,14 @@ export default function Dashboard() {
         lng: coords ? coords.lng : undefined,
         assignedBusId: assignedBusId,
         className: studentForm.className.trim(),
-        schoolName: studentForm.schoolName.trim(),
-        grade: studentForm.grade.trim(),
+        kindergartenName: studentForm.kindergartenName?.trim() || academy?.name || '',
+        schoolName: studentForm.kindergartenName?.trim() || academy?.name || '',
         age: studentForm.age.trim(),
         gender: studentForm.gender,
         parentName: studentForm.parentName.trim(),
         parentPhone: studentForm.parentPhone.trim(),
         teacherName: studentForm.teacherName.trim(),
+        departureType: studentForm.departureType || '정규하원',
         inLocation: inLoc,
         outLocation: outLoc,
         inBus: assignedBus?.name || '',
@@ -1148,7 +1225,7 @@ export default function Dashboard() {
       const busInfo = busName 
         ? `[${busName}]에 배정되었으며, 차량 운행 구역이 학생 위치까지 자동으로 확장되었습니다!`
         : '(구역 미배정)';
-      alert(`'${studentForm.name}' 원생이 성공적으로 추가되었습니다!\n${busInfo}`);
+      alert(`'${studentForm.name}' 원아가 성공적으로 추가되었습니다!\n${busInfo}`);
       setShowAddStudentModal(false);
       setStudentForm({
         name: '',
@@ -1156,13 +1233,13 @@ export default function Dashboard() {
         inLocation: '',
         outLocation: '',
         className: '',
-        schoolName: '',
-        grade: '',
+        kindergartenName: '',
         age: '',
         gender: '남',
         parentName: '',
         parentPhone: '',
         teacherName: '',
+        departureType: '정규하원',
         assignedBusId: '',
         inTime: '',
         outTime: '',
@@ -1518,9 +1595,9 @@ export default function Dashboard() {
 
         {activeTab === 'students' && (
           <div className="p-4 h-full flex flex-col">
-            <h2 className="text-lg font-bold text-slate-800 mb-1 text-center">학원생 정보</h2>
+            <h2 className="text-lg font-bold text-slate-800 mb-1 text-center">원아 정보</h2>
             <p className="text-xs text-slate-500 mb-3 text-center">
-              학원생을 직접 추가하거나 엑셀 파일로 일괄 등록 및 다운로드할 수 있습니다.
+              원아를 직접 추가하거나 엑셀 파일로 일괄 등록 및 다운로드할 수 있습니다.
             </p>
 
             <input 
@@ -1539,7 +1616,7 @@ export default function Dashboard() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
               </svg>
-              학원생 추가
+              원아 추가
             </button>
 
             <div className="grid grid-cols-2 gap-2 mb-2">
@@ -1551,7 +1628,7 @@ export default function Dashboard() {
                 <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
                 </svg>
-                {isProcessing ? '처리 중...' : '학원생 엑셀 업로드'}
+                {isProcessing ? '처리 중...' : '원아 엑셀 업로드'}
               </button>
               
               <button 
@@ -1567,20 +1644,20 @@ export default function Dashboard() {
             </div>
 
             <a 
-              href="/학원생_정보_입력_시트.xlsx" 
-              download="학원생_정보_입력_시트.xlsx" 
+              href="/원아_정보_입력_시트.xlsx" 
+              download="원아_정보_입력_시트.xlsx" 
               className="w-full py-2 mb-3 bg-white text-slate-600 rounded-xl text-xs font-semibold border border-slate-200 shadow-xs hover:bg-slate-50 transition-colors text-center flex items-center justify-center gap-1.5"
             >
               <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              학원생 등록 양식 다운로드
+              원아 등록 양식 다운로드
             </a>
 
             {students.length > 0 ? (
               <div className="mt-1 flex-1 overflow-y-auto">
                 <div className="flex justify-between items-center mb-2 border-b pb-1.5">
-                  <h3 className="font-bold text-slate-700 text-xs">등록 학원생 목록</h3>
+                  <h3 className="font-bold text-slate-700 text-xs">등록 원아 목록</h3>
                   <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                     총 {students.length}명
                   </span>
@@ -1592,9 +1669,9 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2">
                           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color }}></div>
                           <span className="font-bold text-slate-800 text-xs">{st.name}</span>
-                          {(st.raw?.['학교명'] || st.raw?.['학년']) && (
+                          {(st.raw?.['유치원명'] || st.raw?.['학교명'] || st.raw?.['연령'] || st.raw?.['반명'] || st.raw?.['하원구분']) && (
                             <span className="text-[11px] text-slate-400">
-                              {st.raw?.['학교명']} {st.raw?.['학년']} {st.raw?.['반명'] ? `(${st.raw?.['반명']})` : ''}
+                              {st.raw?.['유치원명'] || st.raw?.['학교명']} {st.raw?.['연령'] ? `| ${st.raw?.['연령']}` : ''} {st.raw?.['반명'] ? `(${st.raw?.['반명']})` : ''} {st.raw?.['하원구분'] ? `[${st.raw?.['하원구분']}]` : ''}
                             </span>
                           )}
                         </div>
@@ -2274,7 +2351,7 @@ export default function Dashboard() {
               <Marker key={st.id} position={[displayLat, displayLng]} icon={studentIcon}>
                 <Popup className="student-popup">
                 <div className="font-bold text-lg mb-1">{st.name} <span className="text-sm font-normal text-slate-500">{st.raw?.['성별']} / {st.raw?.['연령']}</span></div>
-                <div className="text-sm text-slate-700 mb-2">{st.raw?.['학교명']} {st.raw?.['학년']}</div>
+                <div className="text-sm text-slate-700 mb-2">{st.raw?.['유치원명'] || st.raw?.['학교명']} {st.raw?.['반명'] ? `(${st.raw?.['반명']})` : ''} {st.raw?.['하원구분'] ? `[${st.raw?.['하원구분']}]` : ''}</div>
                 
                 <div className="bg-slate-50 p-2 rounded border border-slate-100 text-xs mb-2">
                   <div className="mb-1"><b>주소:</b> {st.address}</div>
@@ -2315,8 +2392,8 @@ export default function Dashboard() {
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div>
-                <h3 className="text-lg font-bold text-slate-800">학원생 직접 추가</h3>
-                <p className="text-xs text-slate-500 mt-0.5">엑셀 양식의 17개 항목을 작성하여 원생을 등록합니다. (추가 시 기존 엑셀과 동기화)</p>
+                <h3 className="text-lg font-bold text-slate-800">원아 직접 추가</h3>
+                <p className="text-xs text-slate-500 mt-0.5">유치원 엑셀 양식 항목을 작성하여 원아를 등록합니다. (추가 시 차량 구역 자동 확장)</p>
               </div>
               <button
                 type="button"
@@ -2331,7 +2408,7 @@ export default function Dashboard() {
 
             {/* Form */}
             <form onSubmit={handleAddStudentSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
-              {/* Section 1: 기본 정보 */}
+              {/* Section 1: 유치원 및 원아 기본 정보 */}
               <div>
                 <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
@@ -2340,7 +2417,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      학생 이름 <span className="text-red-500">*</span>
+                      원아 이름 <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -2366,7 +2443,7 @@ export default function Dashboard() {
                     <label className="block text-xs font-semibold text-slate-700 mb-1">연령</label>
                     <input
                       type="text"
-                      placeholder="예: 8세"
+                      placeholder="예: 만 4세 (6세반)"
                       value={studentForm.age}
                       onChange={e => setStudentForm({ ...studentForm, age: e.target.value })}
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -2376,22 +2453,12 @@ export default function Dashboard() {
 
                 <div className="grid grid-cols-3 gap-3 mt-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">학교명</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">소속 유치원명</label>
                     <input
                       type="text"
-                      placeholder="예: 서울초등학교"
-                      value={studentForm.schoolName}
-                      onChange={e => setStudentForm({ ...studentForm, schoolName: e.target.value })}
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">학년</label>
-                    <input
-                      type="text"
-                      placeholder="예: 초1"
-                      value={studentForm.grade}
-                      onChange={e => setStudentForm({ ...studentForm, grade: e.target.value })}
+                      placeholder={academy?.name || '예: 해솔유치원'}
+                      value={studentForm.kindergartenName}
+                      onChange={e => setStudentForm({ ...studentForm, kindergartenName: e.target.value })}
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
@@ -2399,20 +2466,30 @@ export default function Dashboard() {
                     <label className="block text-xs font-semibold text-slate-700 mb-1">반명</label>
                     <input
                       type="text"
-                      placeholder="예: 파닉스 A반"
+                      placeholder="예: 햇살반, 열매반"
                       value={studentForm.className}
                       onChange={e => setStudentForm({ ...studentForm, className: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">담임명</label>
+                    <input
+                      type="text"
+                      placeholder="예: 박선생님"
+                      value={studentForm.teacherName}
+                      onChange={e => setStudentForm({ ...studentForm, teacherName: e.target.value })}
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Section 2: 보호자 정보 */}
+              {/* Section 2: 보호자 및 하원 구분 */}
               <div className="pt-2 border-t border-slate-100">
                 <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                  보호자 및 담당자
+                  보호자 및 하원 구분
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -2426,7 +2503,7 @@ export default function Dashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">보호자 연락처</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">부모연락처</label>
                     <input
                       type="text"
                       placeholder="010-0000-0000"
@@ -2437,14 +2514,16 @@ export default function Dashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">담임명</label>
-                    <input
-                      type="text"
-                      placeholder="예: 박선생"
-                      value={studentForm.teacherName}
-                      onChange={e => setStudentForm({ ...studentForm, teacherName: e.target.value })}
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    />
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">하원구분</label>
+                    <select
+                      value={studentForm.departureType}
+                      onChange={e => setStudentForm({ ...studentForm, departureType: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="정규하원">정규하원</option>
+                      <option value="방과후하원">방과후하원</option>
+                      <option value="종일반하원">종일반하원</option>
+                    </select>
                   </div>
                 </div>
               </div>

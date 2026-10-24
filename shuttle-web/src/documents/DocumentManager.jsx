@@ -803,7 +803,7 @@ export default function DocumentManager({
                 >
                   {availableStudents.map((st) => (
                     <option key={st.id} value={st.id}>
-                      {st.name} ({st.raw?.['학교명'] || ''} {st.raw?.['학년'] || ''})
+                      {st.name} ({st.raw?.['유치원명'] || st.raw?.['학교명'] || ''} {st.raw?.['연령'] || st.raw?.['학년'] || ''} {st.raw?.['반명'] ? `| ${st.raw?.['반명']}` : ''})
                     </option>
                   ))}
                 </select>

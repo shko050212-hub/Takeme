@@ -156,8 +156,10 @@ export function openPrintDocument(type, data = {}) {
     if (busStudents.length > 0) {
       rosterRowsHtml = busStudents.map((st, idx) => {
         const raw = st.raw || {};
-        const schoolGrade = raw['학교명'] && raw['학년'] ? `${raw['학교명']} ${raw['학년']}` : (st.grade || '-');
-        const phone = raw['보호자연락처'] || st.parentPhone || '-';
+        const schoolGrade = raw['유치원명'] || raw['소속원명'] || raw['학교명']
+          ? `${raw['유치원명'] || raw['소속원명'] || raw['학교명']} ${raw['연령'] || raw['학년'] || ''} ${raw['반명'] ? `(${raw['반명']})` : ''}`.trim()
+          : (st.grade || '-');
+        const phone = raw['부모연락처'] || raw['보호자연락처'] || st.parentPhone || '-';
         const location = raw['비고'] || st.boardingLocation || st.address || '-';
         const cleanLocation = location.replace(/\[등\/하차 지점 상세\]:\s*/, '');
 
@@ -233,7 +235,7 @@ export function openPrintDocument(type, data = {}) {
             <tr>
               <th style="width: 6%;">번호</th>
               <th style="width: 15%;">원생명</th>
-              <th style="width: 18%;">학교 / 학년</th>
+              <th style="width: 18%;">유치원 / 연령 / 반</th>
               <th style="width: 33%;">탑승지 (등/하차 지점)</th>
               <th style="width: 16%;">보호자 연락처</th>
               <th style="width: 6%;">승차</th>
@@ -276,9 +278,11 @@ export function openPrintDocument(type, data = {}) {
     const stName = student ? (student.name || student.realName || '') : '';
     const raw = student ? (student.raw || {}) : {};
     const parentName = raw['보호자 성함'] || student?.parentName || '';
-    const parentPhone = raw['보호자연락처'] || student?.parentPhone || '';
+    const parentPhone = raw['부모연락처'] || raw['보호자연락처'] || student?.parentPhone || '';
     const address = raw['주소'] || student?.address || '';
-    const schoolGrade = raw['학교명'] && raw['학년'] ? `${raw['학교명']} ${raw['학년']}` : (student?.grade || '');
+    const schoolGrade = raw['유치원명'] || raw['소속원명'] || raw['학교명']
+      ? `${raw['유치원명'] || raw['소속원명'] || raw['학교명']} ${raw['연령'] || raw['학년'] || ''} ${raw['반명'] ? `(${raw['반명']})` : ''}`.trim()
+      : (student?.grade || '');
     const assignedBusName = raw['등원차량'] || student?.assignedVehicle?.name || (data.selectedBus?.name || '');
 
     title = `통학차량이용신청서_${stName || '원생'}`;
@@ -295,7 +299,7 @@ export function openPrintDocument(type, data = {}) {
           <tr>
             <th style="width: 18%;">원 생 명</th>
             <td style="width: 32%; font-weight: bold; font-size: 13px; color: #1e293b;">${stName}</td>
-            <th style="width: 18%;">학교 / 학년</th>
+            <th style="width: 18%;">유치원 / 연령 / 반</th>
             <td style="width: 32%; font-weight: bold;">${schoolGrade}</td>
           </tr>
           <tr>

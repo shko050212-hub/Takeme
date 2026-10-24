@@ -633,6 +633,24 @@ export class RoutingService {
         adminDisplayName = `${st.name} ${String.fromCharCode(65 + index)}`; // A, B, C...
       }
 
+      let rawObj = st.raw;
+      if (typeof rawObj === 'string') {
+        try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+      }
+      if (rawObj && typeof rawObj === 'object') {
+        const kName = rawObj['유치원명'] || rawObj['소속원명'] || rawObj['학교명'] || academy.name || '';
+        const pPhone = rawObj['부모연락처'] || rawObj['보호자연락처'] || rawObj['보호자 연락처'] || '';
+        const kAge = rawObj['연령'] || rawObj['학년'] || '';
+        const depType = rawObj['하원구분'] || rawObj['하원정보'] || (rawObj['정규하원'] ? '정규하원' : rawObj['방과후하원'] ? '방과후하원' : rawObj['종일반하원'] ? '종일반하원' : '정규하원');
+        rawObj['유치원명'] = kName;
+        rawObj['학교명'] = kName;
+        rawObj['원아명'] = rawObj['원아명'] || rawObj['학생이름/영문이름'] || rawObj['이름'] || st.name;
+        rawObj['부모연락처'] = pPhone;
+        rawObj['보호자연락처'] = pPhone;
+        rawObj['연령'] = kAge;
+        rawObj['하원구분'] = depType;
+      }
+
       return this.studentRepository.create({
         name: st.name,
         adminDisplayName,
@@ -640,7 +658,7 @@ export class RoutingService {
         boardingLocation: st.boardingLocation || st.address,
         latitude: st.lat !== undefined && st.lat !== null ? parseFloat(st.lat) : undefined,
         longitude: st.lng !== undefined && st.lng !== null ? parseFloat(st.lng) : undefined,
-        raw: st.raw,
+        raw: rawObj || st.raw,
         assignedVehicle: vehicle || undefined,
         academy: academy
       });
@@ -817,20 +835,32 @@ export class RoutingService {
       }
     }
 
-    // Format raw JSON containing all 17 Excel columns
-    const raw = studentData.raw || {
-      '반명': studentData.className || '',
+    // Format raw JSON containing kindergarten columns
+    const departureType = studentData.departureType || studentData.raw?.['하원구분'] || studentData.raw?.['하원정보'] || '정규하원';
+    const kindergartenName = studentData.kindergartenName || studentData.schoolName || studentData.raw?.['유치원명'] || studentData.raw?.['소속원명'] || studentData.raw?.['학교명'] || academy.name || '';
+    const parentPhone = studentData.parentPhone || studentData.raw?.['부모연락처'] || studentData.raw?.['보호자연락처'] || studentData.raw?.['보호자 연락처'] || '';
+    const age = studentData.age || studentData.raw?.['연령'] || studentData.raw?.['학년'] || '';
+    const className = studentData.className || studentData.raw?.['반명'] || '';
+    const teacherName = studentData.teacherName || studentData.raw?.['담임명'] || '';
+
+    const raw = {
+      ...(studentData.raw || {}),
+      '반명': className,
+      '원아명': studentData.name || '',
       '학생이름/영문이름': studentData.name || '',
-      '학교명': studentData.schoolName || '',
-      '학년': studentData.grade || '',
-      '연령': studentData.age || '',
-      '성별': studentData.gender || '',
-      '보호자 성함': studentData.parentName || '',
-      '보호자연락처': studentData.parentPhone || '',
+      '유치원명': kindergartenName,
+      '학교명': kindergartenName,
+      '연령': age,
+      '학년': age,
+      '성별': studentData.gender || studentData.raw?.['성별'] || '',
+      '보호자 성함': studentData.parentName || studentData.raw?.['보호자 성함'] || '',
+      '부모연락처': parentPhone,
+      '보호자연락처': parentPhone,
       '주소': studentData.address || '',
       '등원지': studentData.inLocation || studentData.boardingLocation || studentData.address || '',
       '하원지': studentData.outLocation || studentData.address || '',
-      '담임명': studentData.teacherName || '',
+      '담임명': teacherName,
+      '하원구분': departureType,
       '등원차량': studentData.inBus || vehicle?.busNumber || '',
       '하원차량': studentData.outBus || vehicle?.busNumber || '',
       '등원시간': studentData.inTime || '',
@@ -1025,26 +1055,35 @@ export class RoutingService {
     
     const columns = [
       { header: '반명', key: 'className', width: 15 },
-      { header: '학생이름/영문이름', key: 'name', width: 20 },
-      { header: '학교명', key: 'schoolName', width: 15 },
-      { header: '학년', key: 'grade', width: 10 },
-      { header: '연령', key: 'age', width: 10 },
+      { header: '원아명', key: 'name', width: 20 },
+      { header: '유치원명', key: 'kindergartenName', width: 18 },
+      { header: '연령', key: 'age', width: 12 },
       { header: '성별', key: 'gender', width: 10 },
       { header: '보호자 성함', key: 'parentName', width: 15 },
-      { header: '보호자연락처', key: 'parentPhone', width: 20 },
-      { header: '주소', key: 'address', width: 30 },
+      { header: '부모연락처', key: 'parentPhone', width: 20 },
+      { header: '주소', key: 'address', width: 32 },
       { header: '등원지', key: 'inLocation', width: 20 },
       { header: '하원지', key: 'outLocation', width: 20 },
       { header: '담임명', key: 'teacherName', width: 15 },
+      { header: '하원구분', key: 'departureType', width: 15 },
       { header: '등원차량', key: 'inBus', width: 15 },
       { header: '하원차량', key: 'outBus', width: 15 },
       { header: '등원시간', key: 'inTime', width: 15 },
       { header: '하원시간', key: 'outTime', width: 15 },
-      { header: '비고', key: 'note', width: 20 },
+      { header: '비고', key: 'note', width: 25 },
     ];
 
-    // 1. First Sheet: Overall Student Roster (초-중-고등부)
-    const masterSheet = workbook.addWorksheet('초-중-고등부');
+    const getDepartureType = (r: any) => {
+      if (r['하원구분']) return r['하원구분'];
+      if (r['하원정보']) return r['하원정보'];
+      if (r['정규하원'] && String(r['정규하원']).trim()) return '정규하원';
+      if (r['방과후하원'] && String(r['방과후하원']).trim()) return '방과후하원';
+      if (r['종일반하원'] && String(r['종일반하원']).trim()) return '종일반하원';
+      return '정규하원';
+    };
+
+    // 1. First Sheet: Overall Student Roster (유치원부)
+    const masterSheet = workbook.addWorksheet('유치원부');
     masterSheet.columns = columns;
 
     for (const student of students) {
@@ -1056,17 +1095,17 @@ export class RoutingService {
 
       masterSheet.addRow({
         className: raw['반명'] || '',
-        name: student.name || raw['학생이름/영문이름'] || raw['이름'] || '',
-        schoolName: raw['학교명'] || '',
-        grade: raw['학년'] || '',
-        age: raw['연령'] || '',
+        name: student.name || raw['원아명'] || raw['학생이름/영문이름'] || raw['이름'] || '',
+        kindergartenName: raw['유치원명'] || raw['소속원명'] || raw['학교명'] || academy?.name || '',
+        age: raw['연령'] || raw['학년'] || '',
         gender: raw['성별'] || '',
         parentName: raw['보호자 성함'] || '',
-        parentPhone: raw['보호자연락처'] || raw['보호자 연락처'] || '',
+        parentPhone: raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || '',
         address: student.address || raw['주소'] || '',
         inLocation: raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
         outLocation: raw['하원지'] || student.boardingLocation || student.address || '',
         teacherName: raw['담임명'] || '',
+        departureType: getDepartureType(raw),
         inBus: raw['등원차량'] || student.assignedVehicle?.busNumber || '',
         outBus: raw['하원차량'] || student.assignedVehicle?.busNumber || '',
         inTime: raw['등원시간'] || '',
@@ -1077,7 +1116,7 @@ export class RoutingService {
 
     // 2. Day-specific sheets (월, 화, 수, 목, 금, 토, 일)
     for (let i = 0; i < days.length; i++) {
-      const sheet = workbook.addWorksheet(`${days[i]} 초-중-고등부`);
+      const sheet = workbook.addWorksheet(`${days[i]} 유치원부`);
       sheet.columns = columns;
 
       for (const student of students) {
@@ -1091,17 +1130,17 @@ export class RoutingService {
 
           sheet.addRow({
             className: raw['반명'] || '',
-            name: student.name || raw['학생이름/영문이름'] || raw['이름'] || '',
-            schoolName: raw['학교명'] || '',
-            grade: raw['학년'] || '',
-            age: raw['연령'] || '',
+            name: student.name || raw['원아명'] || raw['학생이름/영문이름'] || raw['이름'] || '',
+            kindergartenName: raw['유치원명'] || raw['소속원명'] || raw['학교명'] || academy?.name || '',
+            age: raw['연령'] || raw['학년'] || '',
             gender: raw['성별'] || '',
             parentName: raw['보호자 성함'] || '',
-            parentPhone: raw['보호자연락처'] || raw['보호자 연락처'] || '',
+            parentPhone: raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || '',
             address: student.address || raw['주소'] || '',
             inLocation: sched?.address || raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
             outLocation: raw['하원지'] || sched?.address || student.boardingLocation || student.address || '',
             teacherName: raw['담임명'] || '',
+            departureType: getDepartureType(raw),
             inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || student.assignedVehicle?.busNumber || '',
             outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '',
             inTime: raw['등원시간'] || '',
