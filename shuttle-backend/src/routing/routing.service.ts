@@ -584,6 +584,97 @@ export class RoutingService {
     return { success: true, count: newStudents.length };
   }
 
+  async addStudent(studentData: any, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+
+    let lat = studentData.lat !== undefined && studentData.lat !== null && !isNaN(parseFloat(studentData.lat)) ? parseFloat(studentData.lat) : undefined;
+    let lng = studentData.lng !== undefined && studentData.lng !== null && !isNaN(parseFloat(studentData.lng)) ? parseFloat(studentData.lng) : undefined;
+
+    if ((lat === undefined || lng === undefined) && studentData.address) {
+      const coords = await this.geocodeAddress(studentData.address);
+      if (coords) {
+        lat = coords.lat;
+        lng = coords.lng;
+      }
+    }
+
+    let vehicle: Vehicle | null = null;
+    if (studentData.assignedBusId) {
+      vehicle = await this.vehicleRepository.findOne({ where: { id: Number(studentData.assignedBusId), academy: { id: academy.id } } });
+    }
+
+    // Format raw JSON containing all 17 Excel columns
+    const raw = studentData.raw || {
+      '반명': studentData.className || '',
+      '학생이름/영문이름': studentData.name || '',
+      '학교명': studentData.schoolName || '',
+      '학년': studentData.grade || '',
+      '연령': studentData.age || '',
+      '성별': studentData.gender || '',
+      '보호자 성함': studentData.parentName || '',
+      '보호자연락처': studentData.parentPhone || '',
+      '주소': studentData.address || '',
+      '등원지': studentData.inLocation || studentData.boardingLocation || studentData.address || '',
+      '하원지': studentData.outLocation || studentData.address || '',
+      '담임명': studentData.teacherName || '',
+      '등원차량': studentData.inBus || vehicle?.busNumber || '',
+      '하원차량': studentData.outBus || vehicle?.busNumber || '',
+      '등원시간': studentData.inTime || '',
+      '하원시간': studentData.outTime || '',
+      '비고': studentData.note || ''
+    };
+
+    // Duplicate name disambiguation (e.g. 홍길동 A, 홍길동 B)
+    const existingSameName = await this.studentRepository.find({
+      where: { name: studentData.name, academy: { id: academy.id } }
+    });
+    let adminDisplayName = studentData.name;
+    if (existingSameName.length > 0) {
+      adminDisplayName = `${studentData.name} ${String.fromCharCode(65 + existingSameName.length)}`;
+    }
+
+    const student = this.studentRepository.create({
+      name: studentData.name,
+      adminDisplayName,
+      address: studentData.address,
+      boardingLocation: studentData.inLocation || studentData.boardingLocation || studentData.address,
+      latitude: lat,
+      longitude: lng,
+      raw,
+      assignedVehicle: vehicle || undefined,
+      academy
+    });
+
+    const saved = await this.studentRepository.save(student);
+
+    return {
+      success: true,
+      student: {
+        id: saved.id,
+        name: saved.adminDisplayName || saved.name,
+        realName: saved.name,
+        address: saved.address,
+        boardingLocation: saved.boardingLocation,
+        lat: saved.latitude,
+        lng: saved.longitude,
+        assignedBusId: vehicle ? vehicle.id : null,
+        color: vehicle?.colorHex || '#64748b',
+        raw: typeof saved.raw === 'string' ? JSON.parse(saved.raw) : saved.raw,
+        isRegistered: false,
+        approvalStatus: saved.approvalStatus
+      }
+    };
+  }
+
+  async deleteStudent(studentId: number, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
+
+    await this.studentRepository.delete({ id: studentId, academy: { id: academy.id } });
+    return { success: true };
+  }
+
   async geocodeBulk(addresses: string[]) {
     const cache = new Map<string, { lat: number, lng: number } | null>();
     const results = [];
@@ -711,7 +802,7 @@ export class RoutingService {
     const academy = await this.getAcademy(academyId, userId);
     const students = await this.studentRepository.find({ 
       where: academy ? { academy: { id: academy.id } } : {},
-      relations: { schedules: { assignedVehicle: true } } 
+      relations: { assignedVehicle: true, schedules: { assignedVehicle: true } } 
     });
     const workbook = new ExcelJS.Workbook();
     
@@ -738,6 +829,39 @@ export class RoutingService {
       { header: '비고', key: 'note', width: 20 },
     ];
 
+    // 1. First Sheet: Overall Student Roster (초-중-고등부)
+    const masterSheet = workbook.addWorksheet('초-중-고등부');
+    masterSheet.columns = columns;
+
+    for (const student of students) {
+      let raw: any = student.raw;
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
+      }
+      raw = raw || {};
+
+      masterSheet.addRow({
+        className: raw['반명'] || '',
+        name: student.name || raw['학생이름/영문이름'] || raw['이름'] || '',
+        schoolName: raw['학교명'] || '',
+        grade: raw['학년'] || '',
+        age: raw['연령'] || '',
+        gender: raw['성별'] || '',
+        parentName: raw['보호자 성함'] || '',
+        parentPhone: raw['보호자연락처'] || raw['보호자 연락처'] || '',
+        address: student.address || raw['주소'] || '',
+        inLocation: raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
+        outLocation: raw['하원지'] || student.boardingLocation || student.address || '',
+        teacherName: raw['담임명'] || '',
+        inBus: raw['등원차량'] || student.assignedVehicle?.busNumber || '',
+        outBus: raw['하원차량'] || student.assignedVehicle?.busNumber || '',
+        inTime: raw['등원시간'] || '',
+        outTime: raw['하원시간'] || '',
+        note: raw['비고'] || '',
+      });
+    }
+
+    // 2. Day-specific sheets (월, 화, 수, 목, 금, 토, 일)
     for (let i = 0; i < days.length; i++) {
       const sheet = workbook.addWorksheet(`${days[i]} 초-중-고등부`);
       sheet.columns = columns;
@@ -745,22 +869,27 @@ export class RoutingService {
       for (const student of students) {
         const sched = student.schedules?.find(s => s.dayOfWeek === daysEnglish[i]);
         if (sched || student.raw) {
-          const raw = student.raw || {};
+          let raw: any = student.raw;
+          if (typeof raw === 'string') {
+            try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
+          }
+          raw = raw || {};
+
           sheet.addRow({
             className: raw['반명'] || '',
-            name: student.name || '',
+            name: student.name || raw['학생이름/영문이름'] || raw['이름'] || '',
             schoolName: raw['학교명'] || '',
             grade: raw['학년'] || '',
             age: raw['연령'] || '',
             gender: raw['성별'] || '',
             parentName: raw['보호자 성함'] || '',
-            parentPhone: raw['보호자 연락처'] || '',
-            address: student.address || '',
-            inLocation: sched?.address || raw['등원지'] || student.address || '',
-            outLocation: raw['하원지'] || sched?.address || student.address || '',
+            parentPhone: raw['보호자연락처'] || raw['보호자 연락처'] || '',
+            address: student.address || raw['주소'] || '',
+            inLocation: sched?.address || raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
+            outLocation: raw['하원지'] || sched?.address || student.boardingLocation || student.address || '',
             teacherName: raw['담임명'] || '',
-            inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || '',
-            outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || '',
+            inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || student.assignedVehicle?.busNumber || '',
+            outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '',
             inTime: raw['등원시간'] || '',
             outTime: raw['하원시간'] || '',
             note: raw['비고'] || '',

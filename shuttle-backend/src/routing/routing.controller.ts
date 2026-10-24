@@ -172,6 +172,30 @@ export class RoutingController {
     return this.routingService.saveStudents(students, academyId, userId);
   }
 
+  @Post('add-student')
+  async addStudent(
+    @Body() body: any,
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+  ) {
+    const academyId = body.academyId || (academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined));
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.addStudent(body, academyId, userId);
+  }
+
+  @Delete('student/:id')
+  async deleteStudent(
+    @Param('id') id: string,
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined);
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.deleteStudent(Number(id), academyId, userId);
+  }
+
   @Post('pickup-point')
   async createPickupPoint(
     @Body() body: { name: string, latitude: number, longitude: number, academyId?: number },
