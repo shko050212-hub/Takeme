@@ -179,6 +179,27 @@ export default function Dashboard() {
 
   const [busLocations, setBusLocations] = useState({});
 
+  // Student Addition Modal State
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+  const [studentForm, setStudentForm] = useState({
+    name: '',
+    address: '',
+    inLocation: '',
+    outLocation: '',
+    className: '',
+    schoolName: '',
+    grade: '',
+    age: '',
+    gender: '남',
+    parentName: '',
+    parentPhone: '',
+    teacherName: '',
+    assignedBusId: '',
+    inTime: '',
+    outTime: '',
+    note: ''
+  });
+
   useEffect(() => {
     const socket = io(API_BASE_URL);
     socket.on('locationUpdated', (data) => {
@@ -987,6 +1008,183 @@ export default function Dashboard() {
     }
   };
 
+  const handleSearchAddress = () => {
+    const triggerPostcode = () => {
+      new window.daum.Postcode({
+        oncomplete: (data) => {
+          const selectedAddr = data.roadAddress || data.jibunAddress || data.address;
+          setStudentForm(prev => ({
+            ...prev,
+            address: selectedAddr,
+            inLocation: prev.inLocation ? prev.inLocation : selectedAddr,
+            outLocation: prev.outLocation ? prev.outLocation : selectedAddr,
+          }));
+        }
+      }).open();
+    };
+
+    if (window.daum && window.daum.Postcode) {
+      triggerPostcode();
+    } else {
+      const script = document.createElement('script');
+      script.src = '//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
+      script.onload = triggerPostcode;
+      document.head.appendChild(script);
+    }
+  };
+
+  const handleAddStudentSubmit = async (e) => {
+    e.preventDefault();
+    if (!studentForm.name.trim()) {
+      alert('학생 이름을 입력해주세요.');
+      return;
+    }
+    if (!studentForm.address.trim()) {
+      alert('도로명 주소를 입력해주세요.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+
+      // 1. Geocode address via backend geocode-bulk endpoint
+      const geoRes = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addresses: [studentForm.address.trim()] })
+      });
+      if (!geoRes.ok) throw new Error('주소 좌표 변환(지오코딩)에 실패했습니다.');
+      const geocoded = await geoRes.json();
+      const coords = geocoded[0]?.coords;
+
+      let assignedBusId = studentForm.assignedBusId ? Number(studentForm.assignedBusId) : null;
+      let assignedBus = buses.find(b => b.id === assignedBusId);
+
+      // 2. Auto-assign vehicle by zone polygon if not manually selected
+      if (!assignedBusId && coords) {
+        const pt = turf.point([coords.lng, coords.lat]);
+        let minDistance = Infinity;
+
+        for (const bus of buses) {
+          if (bus.turfPolygon && turf.booleanPointInPolygon(pt, bus.turfPolygon)) {
+            assignedBus = bus;
+            assignedBusId = bus.id;
+            break;
+          }
+          if (bus.points && bus.points.length > 0) {
+            for (const bPt of bus.points) {
+              const busNode = turf.point([bPt[1], bPt[0]]);
+              const dist = turf.distance(pt, busNode);
+              if (dist < minDistance) {
+                minDistance = dist;
+                assignedBus = bus;
+                assignedBusId = bus.id;
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Prepare payload matching all 17 Excel columns
+      const inLoc = studentForm.inLocation?.trim() || studentForm.address.trim();
+      const outLoc = studentForm.outLocation?.trim() || studentForm.address.trim();
+
+      const payload = {
+        name: studentForm.name.trim(),
+        address: studentForm.address.trim(),
+        boardingLocation: inLoc,
+        lat: coords ? coords.lat : undefined,
+        lng: coords ? coords.lng : undefined,
+        assignedBusId: assignedBusId,
+        className: studentForm.className.trim(),
+        schoolName: studentForm.schoolName.trim(),
+        grade: studentForm.grade.trim(),
+        age: studentForm.age.trim(),
+        gender: studentForm.gender,
+        parentName: studentForm.parentName.trim(),
+        parentPhone: studentForm.parentPhone.trim(),
+        teacherName: studentForm.teacherName.trim(),
+        inLocation: inLoc,
+        outLocation: outLoc,
+        inBus: assignedBus?.name || '',
+        outBus: assignedBus?.name || '',
+        inTime: studentForm.inTime.trim(),
+        outTime: studentForm.outTime.trim(),
+        note: studentForm.note.trim(),
+        academyId: targetAcademyId
+      };
+
+      const res = await fetch(`${API_BASE_URL}/routing/add-student`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || '원생 등록 실패');
+      }
+
+      const resData = await res.json();
+      
+      // Refresh students from initial-state to keep everything synced with DB
+      const stateRes = await fetch(`${API_BASE_URL}/routing/initial-state?academyId=${targetAcademyId}`);
+      if (stateRes.ok) {
+        const stateData = await stateRes.json();
+        if (Array.isArray(stateData.students)) {
+          setStudents(stateData.students);
+        }
+      } else if (resData.student) {
+        setStudents(prev => [...prev, resData.student]);
+      }
+
+      alert(`'${studentForm.name}' 원생이 성공적으로 추가되었습니다! ${assignedBus ? `(${assignedBus.name} 배차 완료)` : '(구역 미배정)'}`);
+      setShowAddStudentModal(false);
+      setStudentForm({
+        name: '',
+        address: '',
+        inLocation: '',
+        outLocation: '',
+        className: '',
+        schoolName: '',
+        grade: '',
+        age: '',
+        gender: '남',
+        parentName: '',
+        parentPhone: '',
+        teacherName: '',
+        assignedBusId: '',
+        inTime: '',
+        outTime: '',
+        note: ''
+      });
+    } catch (err) {
+      console.error(err);
+      alert(`원생 추가 중 오류가 발생했습니다: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteStudent = async (student) => {
+    if (!window.confirm(`'${student.name}' 원생을 삭제하시겠습니까?`)) return;
+    try {
+      setIsProcessing(true);
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+      const res = await fetch(`${API_BASE_URL}/routing/student/${student.id}${targetAcademyId ? `?academyId=${targetAcademyId}` : ''}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('삭제 실패');
+      setStudents(prev => prev.filter(s => s.id !== student.id));
+      alert(`'${student.name}' 원생이 삭제되었습니다.`);
+    } catch (e) {
+      console.error(e);
+      alert('원생 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   if (isInitializing) {
     return (
       <div className="flex h-screen bg-slate-50 items-center justify-center">
@@ -1091,7 +1289,7 @@ export default function Dashboard() {
         <button onClick={() => handleTabChange('buses')} className={`p-4 rounded-2xl transition-all ${activeTab === 'buses' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="버스 정보 관리">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /><path d="M4 15h2v5h12V4H6v5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
         </button>
-        <button onClick={() => handleTabChange('students')} className={`p-4 rounded-2xl transition-all ${activeTab === 'students' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="현 학원생 정보">
+        <button onClick={() => handleTabChange('students')} className={`p-4 rounded-2xl transition-all ${activeTab === 'students' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="학원생 정보">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
         </button>
         <button onClick={() => handleTabChange('auth')} className={`p-4 rounded-2xl transition-all ${activeTab === 'auth' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="인증 관리">
@@ -1310,9 +1508,9 @@ export default function Dashboard() {
 
         {activeTab === 'students' && (
           <div className="p-4 h-full flex flex-col">
-            <h2 className="text-lg font-bold text-slate-800 mb-1 text-center">현 학원생 정보</h2>
+            <h2 className="text-lg font-bold text-slate-800 mb-1 text-center">학원생 정보</h2>
             <p className="text-xs text-slate-500 mb-3 text-center">
-              학원생 명단 엑셀을 업로드하여 구역별로 자동 배차하거나 현재 원생 정보를 다운로드하세요.
+              학원생을 직접 추가하거나 엑셀 파일로 일괄 등록 및 다운로드할 수 있습니다.
             </p>
 
             <input 
@@ -1323,20 +1521,37 @@ export default function Dashboard() {
               onChange={handleStudentUpload} 
             />
 
+            {/* Primary Action Button: 학원생 추가 */}
+            <button
+              onClick={() => setShowAddStudentModal(true)}
+              className="w-full py-2.5 px-3 mb-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-[0.99]"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              학원생 추가
+            </button>
+
             <div className="grid grid-cols-2 gap-2 mb-2">
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isProcessing}
-                className="w-full py-2.5 px-2 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm"
+                className="w-full py-2.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-200 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm flex items-center justify-center gap-1.5"
               >
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+                </svg>
                 {isProcessing ? '처리 중...' : '학원생 엑셀 업로드'}
               </button>
               
               <button 
                 onClick={handleExportExcel}
                 disabled={isProcessing}
-                className="w-full py-2.5 px-2 bg-emerald-600 text-white font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm"
+                className="w-full py-2.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-colors disabled:opacity-50 text-center text-xs sm:text-sm flex items-center justify-center gap-1.5"
               >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
                 {isProcessing ? '준비 중...' : '엑셀 다운로드'}
               </button>
             </div>
@@ -1344,32 +1559,55 @@ export default function Dashboard() {
             <a 
               href="/학원생_정보_입력_시트.xlsx" 
               download="학원생_정보_입력_시트.xlsx" 
-              className="w-full py-2 mb-3 bg-white text-slate-600 rounded-lg text-xs font-semibold border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors text-center block"
+              className="w-full py-2 mb-3 bg-white text-slate-600 rounded-xl text-xs font-semibold border border-slate-200 shadow-xs hover:bg-slate-50 transition-colors text-center flex items-center justify-center gap-1.5"
             >
+              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
               학원생 등록 양식 다운로드
             </a>
 
             {students.length > 0 ? (
               <div className="mt-1 flex-1 overflow-y-auto">
                 <div className="flex justify-between items-center mb-2 border-b pb-1.5">
-                  <h3 className="font-bold text-slate-700 text-xs">배차 결과</h3>
+                  <h3 className="font-bold text-slate-700 text-xs">등록 학원생 목록</h3>
                   <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                     총 {students.length}명
                   </span>
                 </div>
                 <div className="space-y-2 pr-1">
                   {students.map(st => (
-                    <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color }}></div>
-                        <span className="font-bold text-slate-800 text-xs">{st.name}</span>
-                        <span className="text-[11px] text-slate-400">{st.raw?.['학교명']} {st.raw?.['학년']}</span>
+                    <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-xl shadow-xs hover:shadow-md transition-shadow group">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color }}></div>
+                          <span className="font-bold text-slate-800 text-xs">{st.name}</span>
+                          {(st.raw?.['학교명'] || st.raw?.['학년']) && (
+                            <span className="text-[11px] text-slate-400">
+                              {st.raw?.['학교명']} {st.raw?.['학년']} {st.raw?.['반명'] ? `(${st.raw?.['반명']})` : ''}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteStudent(st); }}
+                          className="text-slate-300 hover:text-red-500 p-1 rounded-md transition-colors opacity-80 group-hover:opacity-100"
+                          title="원생 삭제"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
-                      <div className="text-xs text-slate-600 truncate mb-1">{st.address}</div>
+                      <div className="text-xs text-slate-600 truncate mb-1" title={st.address}>
+                        {st.address}
+                      </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-400 text-[11px]">{st.raw?.['보호자 성함']} {maskPhoneNumber(st.raw?.['보호자연락처'])}</span>
-                        <span className="font-bold text-[11px]" style={{ color: st.color }}>
-                          {st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 실패'}
+                        <span className="text-slate-400 text-[11px]">
+                          {st.raw?.['보호자 성함'] ? `${st.raw?.['보호자 성함']} ` : ''}
+                          {maskPhoneNumber(st.raw?.['보호자연락처'] || st.raw?.['보호자 연락처'])}
+                        </span>
+                        <span className="font-bold text-[11px] px-2 py-0.5 rounded-md" style={{ color: st.color, backgroundColor: `${st.color}15` }}>
+                          {st.assignedBusId ? buses.find(b => b.id === st.assignedBusId)?.name : '배정 대기'}
                         </span>
                       </div>
                     </div>
@@ -1380,14 +1618,22 @@ export default function Dashboard() {
               <div className="mt-2 flex-1 flex flex-col items-center justify-center text-center p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                 <h4 className="font-bold text-slate-700 text-xs mb-1 text-center">등록된 학원생이 없습니다</h4>
                 <p className="text-[11px] text-slate-500 mb-3 text-center max-w-xs leading-relaxed">
-                  학원생 엑셀 파일을 업로드하시면 구역에 맞추어 자동으로 배차됩니다.
+                  [학원생 추가] 버튼을 눌러 직접 등록하거나, 엑셀 파일을 업로드하여 구역에 맞추어 자동으로 배차해보세요.
                 </p>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 shadow-sm transition text-center"
-                >
-                  명단 업로드하기
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setShowAddStudentModal(true)}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition text-center"
+                  >
+                    학원생 추가하기
+                  </button>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 shadow-sm transition text-center"
+                  >
+                    엑셀 파일 업로드
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -2052,7 +2298,288 @@ export default function Dashboard() {
           })}
         </MapContainer>
       </div>
-      {/* Bus Editing Modal */}
+            {/* Student Addition Modal */}
+      {showAddStudentModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in border border-slate-100">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">학원생 직접 추가</h3>
+                <p className="text-xs text-slate-500 mt-0.5">엑셀 양식의 17개 항목을 작성하여 원생을 등록합니다. (추가 시 기존 엑셀과 동기화)</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddStudentModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleAddStudentSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Section 1: 기본 정보 */}
+              <div>
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                  기본 인적사항
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      학생 이름 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="예: 김민수"
+                      value={studentForm.name}
+                      onChange={e => setStudentForm({ ...studentForm, name: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">성별</label>
+                    <select
+                      value={studentForm.gender}
+                      onChange={e => setStudentForm({ ...studentForm, gender: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="남">남</option>
+                      <option value="여">여</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">연령</label>
+                    <input
+                      type="text"
+                      placeholder="예: 8세"
+                      value={studentForm.age}
+                      onChange={e => setStudentForm({ ...studentForm, age: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">학교명</label>
+                    <input
+                      type="text"
+                      placeholder="예: 서울초등학교"
+                      value={studentForm.schoolName}
+                      onChange={e => setStudentForm({ ...studentForm, schoolName: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">학년</label>
+                    <input
+                      type="text"
+                      placeholder="예: 초1"
+                      value={studentForm.grade}
+                      onChange={e => setStudentForm({ ...studentForm, grade: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">반명</label>
+                    <input
+                      type="text"
+                      placeholder="예: 파닉스 A반"
+                      value={studentForm.className}
+                      onChange={e => setStudentForm({ ...studentForm, className: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: 보호자 정보 */}
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                  보호자 및 담당자
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">보호자 성함</label>
+                    <input
+                      type="text"
+                      placeholder="예: 김영희"
+                      value={studentForm.parentName}
+                      onChange={e => setStudentForm({ ...studentForm, parentName: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">보호자 연락처</label>
+                    <input
+                      type="text"
+                      placeholder="010-0000-0000"
+                      value={studentForm.parentPhone}
+                      onChange={e => setStudentForm({ ...studentForm, parentPhone: formatPhoneNumber(e.target.value) })}
+                      maxLength={13}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">담임명</label>
+                    <input
+                      type="text"
+                      placeholder="예: 박선생"
+                      value={studentForm.teacherName}
+                      onChange={e => setStudentForm({ ...studentForm, teacherName: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: 주소 및 탑승 장소 */}
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                  주소 및 승하차 위치
+                </h4>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    도로명 주소 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="주소 검색 버튼을 눌러 도로명 주소를 선택하세요"
+                      value={studentForm.address}
+                      onChange={e => setStudentForm({ ...studentForm, address: e.target.value })}
+                      className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSearchAddress}
+                      className="px-3.5 py-2 bg-slate-800 text-white text-xs font-semibold rounded-lg hover:bg-slate-700 transition shrink-0 shadow-xs"
+                    >
+                      주소 검색
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      등원지 (미입력 시 도로명 주소 적용)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="예: 101동 앞 정문"
+                      value={studentForm.inLocation}
+                      onChange={e => setStudentForm({ ...studentForm, inLocation: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      하원지 (미입력 시 도로명 주소 적용)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="예: 101동 앞 정문"
+                      value={studentForm.outLocation}
+                      onChange={e => setStudentForm({ ...studentForm, outLocation: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: 배차 및 시간 */}
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                  배차 및 운행 일정
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">배정 차량</label>
+                    <select
+                      value={studentForm.assignedBusId}
+                      onChange={e => setStudentForm({ ...studentForm, assignedBusId: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">자동 배정 (구역 기반)</option>
+                      {buses.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">등원 시간</label>
+                    <input
+                      type="text"
+                      placeholder="예: 08:30"
+                      value={studentForm.inTime}
+                      onChange={e => setStudentForm({ ...studentForm, inTime: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">하원 시간</label>
+                    <input
+                      type="text"
+                      placeholder="예: 17:00"
+                      value={studentForm.outTime}
+                      onChange={e => setStudentForm({ ...studentForm, outTime: e.target.value })}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">비고</label>
+                  <input
+                    type="text"
+                    placeholder="특이사항, 승하차 유의사항 등"
+                    value={studentForm.note}
+                    onChange={e => setStudentForm({ ...studentForm, note: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStudentModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span>등록 중...</span>
+                    </>
+                  ) : (
+                    <span>학원생 등록하기</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+{/* Bus Editing Modal */}
       {editingBus && (
         <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
