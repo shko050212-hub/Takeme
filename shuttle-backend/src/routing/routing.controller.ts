@@ -179,9 +179,9 @@ export class RoutingController {
     @Headers('x-user-id') userIdHeader?: string,
     @Query('academyId') academyIdQuery?: string,
   ) {
-    const academyId = body.academyId || (academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined));
+    const academyId = body?.academyId || (academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined));
     const userId = userIdHeader ? Number(userIdHeader) : undefined;
-    return this.routingService.addStudent(body, academyId, userId);
+    return this.routingService.addStudent(body || {}, academyId, userId);
   }
 
   @Delete('student/:id')
