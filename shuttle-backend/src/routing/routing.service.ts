@@ -522,6 +522,72 @@ export class RoutingService {
     return { success: true };
   }
 
+  private computeConvexHull(points: [number, number][]): [number, number][] {
+    if (points.length <= 3) return points;
+    
+    // Deduplicate points
+    const pointMap = new Map<string, [number, number]>();
+    for (const p of points) {
+      const key = `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
+      if (!pointMap.has(key)) pointMap.set(key, p);
+    }
+    const uniquePoints = Array.from(pointMap.values());
+    if (uniquePoints.length <= 3) return uniquePoints;
+
+    // Sort by latitude (x), then longitude (y)
+    const sorted = [...uniquePoints].sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
+
+    // 2D cross product: > 0 for CCW, < 0 for CW, 0 if collinear
+    const cross = (o: [number, number], a: [number, number], b: [number, number]) => {
+      return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    };
+
+    const lower: [number, number][] = [];
+    for (const p of sorted) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+        lower.pop();
+      }
+      lower.push(p);
+    }
+
+    const upper: [number, number][] = [];
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const p = sorted[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+        upper.pop();
+      }
+      upper.push(p);
+    }
+
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+
+  private isPointInPolygon(point: [number, number], vs: [number, number][]): boolean {
+    const x = point[0], y = point[1];
+    let inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+      const xi = vs[i][0], yi = vs[i][1];
+      const xj = vs[j][0], yj = vs[j][1];
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  private getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   async saveStudents(students: any[], academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
     if (!academy) throw new BadRequestException('학원 정보를 찾을 수 없습니다.');
@@ -581,6 +647,59 @@ export class RoutingService {
     });
 
     await this.studentRepository.save(newStudents);
+
+    // Expand vehicle zones to encompass all newly assigned students
+    for (const vehicle of vehicles) {
+      const assignedStudents = newStudents.filter(
+        st => st.assignedVehicle && st.assignedVehicle.id === vehicle.id && st.latitude && st.longitude
+      );
+      if (assignedStudents.length > 0) {
+        let existingPoints: [number, number][] = [];
+        try {
+          const rawPts = typeof vehicle.polygonCoordinates === 'string' 
+            ? JSON.parse(vehicle.polygonCoordinates) 
+            : vehicle.polygonCoordinates;
+          if (Array.isArray(rawPts)) {
+            existingPoints = rawPts.filter(p => Array.isArray(p) && p.length >= 2 && !isNaN(p[0]) && !isNaN(p[1])) as [number, number][];
+          }
+        } catch (e) {}
+
+        const studentBufferedPoints: [number, number][] = [];
+        const dLat = 0.0008;
+        const dLng = 0.0009;
+        for (const st of assignedStudents) {
+          studentBufferedPoints.push(
+            [st.latitude! + dLat, st.longitude!],
+            [st.latitude! - dLat, st.longitude!],
+            [st.latitude!, st.longitude! + dLng],
+            [st.latitude!, st.longitude! - dLng],
+            [st.latitude!, st.longitude!]
+          );
+        }
+
+        const pointsToHull = [...existingPoints, ...studentBufferedPoints];
+        if (existingPoints.length < 3 && academy.latitude && academy.longitude) {
+          const acadLat = parseFloat(academy.latitude);
+          const acadLng = parseFloat(academy.longitude);
+          if (!isNaN(acadLat) && !isNaN(acadLng)) {
+            pointsToHull.push(
+              [acadLat + dLat, acadLng],
+              [acadLat - dLat, acadLng],
+              [acadLat, acadLng + dLng],
+              [acadLat, acadLng - dLng],
+              [acadLat, acadLng]
+            );
+          }
+        }
+
+        const expandedPolygon = this.computeConvexHull(pointsToHull);
+        if (expandedPolygon && expandedPolygon.length >= 3) {
+          vehicle.polygonCoordinates = JSON.stringify(expandedPolygon);
+          await this.vehicleRepository.save(vehicle);
+        }
+      }
+    }
+
     return { success: true, count: newStudents.length };
   }
 
@@ -599,9 +718,103 @@ export class RoutingService {
       }
     }
 
+    const vehicles = await this.vehicleRepository.find({ 
+      where: { academy: { id: academy.id } } 
+    });
+
     let vehicle: Vehicle | null = null;
     if (studentData.assignedBusId) {
-      vehicle = await this.vehicleRepository.findOne({ where: { id: Number(studentData.assignedBusId), academy: { id: academy.id } } });
+      vehicle = vehicles.find(v => v.id === Number(studentData.assignedBusId)) || null;
+    }
+
+    // Auto-assign to nearest vehicle if not explicitly selected
+    if (!vehicle && lat !== undefined && lng !== undefined && vehicles.length > 0) {
+      // 1. Check if inside any existing vehicle polygon
+      for (const v of vehicles) {
+        let pts: [number, number][] = [];
+        try {
+          pts = typeof v.polygonCoordinates === 'string' ? JSON.parse(v.polygonCoordinates) : (v.polygonCoordinates || []);
+        } catch (e) {}
+        if (Array.isArray(pts) && pts.length >= 3 && this.isPointInPolygon([lat, lng], pts)) {
+          vehicle = v;
+          break;
+        }
+      }
+
+      // 2. Fallback: find closest vehicle by distance to its polygon/route points
+      if (!vehicle) {
+        let minDistance = Infinity;
+        for (const v of vehicles) {
+          let pts: [number, number][] = [];
+          try {
+            pts = typeof v.polygonCoordinates === 'string' ? JSON.parse(v.polygonCoordinates) : (v.polygonCoordinates || []);
+          } catch (e) {}
+          if (Array.isArray(pts) && pts.length > 0) {
+            for (const pt of pts) {
+              const dist = this.getDistanceKm(lat, lng, pt[0], pt[1]);
+              if (dist < minDistance) {
+                minDistance = dist;
+                vehicle = v;
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Fallback: first vehicle
+      if (!vehicle && vehicles.length > 0) {
+        vehicle = vehicles[0];
+      }
+    }
+
+    // AUTO-EXPAND VEHICLE ZONE:
+    // Expand assigned vehicle's polygon to encompass the new student's location so that no student is left outside!
+    let zoneExpanded = false;
+    if (vehicle && lat !== undefined && lng !== undefined) {
+      let existingPoints: [number, number][] = [];
+      try {
+        const rawPts = typeof vehicle.polygonCoordinates === 'string' 
+          ? JSON.parse(vehicle.polygonCoordinates) 
+          : vehicle.polygonCoordinates;
+        if (Array.isArray(rawPts)) {
+          existingPoints = rawPts.filter(p => Array.isArray(p) && p.length >= 2 && !isNaN(p[0]) && !isNaN(p[1])) as [number, number][];
+        }
+      } catch (e) {}
+
+      // Buffer ~80m around the student coordinates so the boundary comfortably encloses the student
+      const dLat = 0.0008;
+      const dLng = 0.0009;
+      const studentBufferedPoints: [number, number][] = [
+        [lat + dLat, lng],
+        [lat - dLat, lng],
+        [lat, lng + dLng],
+        [lat, lng - dLng],
+        [lat, lng]
+      ];
+
+      const pointsToHull: [number, number][] = [...existingPoints, ...studentBufferedPoints];
+
+      // If the vehicle had 0 or very few points, also include academy coordinates
+      if (existingPoints.length < 3 && academy.latitude && academy.longitude) {
+        const acadLat = parseFloat(academy.latitude);
+        const acadLng = parseFloat(academy.longitude);
+        if (!isNaN(acadLat) && !isNaN(acadLng)) {
+          pointsToHull.push(
+            [acadLat + dLat, acadLng],
+            [acadLat - dLat, acadLng],
+            [acadLat, acadLng + dLng],
+            [acadLat, acadLng - dLng],
+            [acadLat, acadLng]
+          );
+        }
+      }
+
+      const expandedPolygon = this.computeConvexHull(pointsToHull);
+      if (expandedPolygon && expandedPolygon.length >= 3) {
+        vehicle.polygonCoordinates = JSON.stringify(expandedPolygon);
+        await this.vehicleRepository.save(vehicle);
+        zoneExpanded = true;
+      }
     }
 
     // Format raw JSON containing all 17 Excel columns
@@ -650,6 +863,7 @@ export class RoutingService {
 
     return {
       success: true,
+      zoneExpanded,
       student: {
         id: saved.id,
         name: saved.adminDisplayName || saved.name,

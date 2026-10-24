@@ -34,7 +34,7 @@ export class ParentService {
       const intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
-    return false;
+    return inside;
   }
 
   async registerInfo(email: string, payload: any) {

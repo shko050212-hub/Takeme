@@ -772,6 +772,9 @@ export default function Dashboard() {
         const stateRes = await fetch(`${API_BASE_URL}/routing/initial-state?academyId=${targetAcademyId}`);
         if (stateRes.ok) {
           const stateData = await stateRes.json();
+          if (Array.isArray(stateData.buses)) {
+            setBuses(computePolygons(stateData.buses));
+          }
           if (Array.isArray(stateData.students)) {
             setStudents(stateData.students);
           } else {
@@ -1127,10 +1130,13 @@ export default function Dashboard() {
 
       const resData = await res.json();
       
-      // Refresh students from initial-state to keep everything synced with DB
+      // Refresh students and buses from initial-state to keep everything synced with DB
       const stateRes = await fetch(`${API_BASE_URL}/routing/initial-state?academyId=${targetAcademyId}`);
       if (stateRes.ok) {
         const stateData = await stateRes.json();
+        if (Array.isArray(stateData.buses)) {
+          setBuses(computePolygons(stateData.buses));
+        }
         if (Array.isArray(stateData.students)) {
           setStudents(stateData.students);
         }
@@ -1138,7 +1144,11 @@ export default function Dashboard() {
         setStudents(prev => [...prev, resData.student]);
       }
 
-      alert(`'${studentForm.name}' 원생이 성공적으로 추가되었습니다! ${assignedBus ? `(${assignedBus.name} 배차 완료)` : '(구역 미배정)'}`);
+      const busName = assignedBus?.name || (resData.student?.assignedBusId ? buses.find(b => b.id === resData.student.assignedBusId)?.name : '');
+      const busInfo = busName 
+        ? `[${busName}]에 배정되었으며, 차량 운행 구역이 학생 위치까지 자동으로 확장되었습니다!`
+        : '(구역 미배정)';
+      alert(`'${studentForm.name}' 원생이 성공적으로 추가되었습니다!\n${busInfo}`);
       setShowAddStudentModal(false);
       setStudentForm({
         name: '',
