@@ -221,11 +221,21 @@ export default function Dashboard() {
     }));
   };
 
+  const getStudentRaw = (st) => {
+    let raw = st?.raw;
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
+    }
+    return raw || {};
+  };
+
   const getGroupedStudents = () => {
     if (studentFilterMode === 'CLASS') {
       const groups = {};
       students.forEach(st => {
-        const key = st.raw?.['반명']?.trim() || '반 미지정';
+        const raw = getStudentRaw(st);
+        const val = raw['반명'];
+        const key = val !== undefined && val !== null && String(val).trim() ? String(val).trim() : '반 미지정';
         if (!groups[key]) groups[key] = [];
         groups[key].push(st);
       });
@@ -238,11 +248,13 @@ export default function Dashboard() {
     if (studentFilterMode === 'AGE') {
       const groups = {};
       students.forEach(st => {
-        const key = st.raw?.['연령']?.trim() || '연령 미입력';
+        const raw = getStudentRaw(st);
+        const rawAge = raw['연령'] !== undefined && raw['연령'] !== null ? raw['연령'] : raw['학년'];
+        const key = rawAge !== undefined && rawAge !== null && String(rawAge).trim() ? String(rawAge).trim() : '연령 미입력';
         if (!groups[key]) groups[key] = [];
         groups[key].push(st);
       });
-      return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).map(([name, list]) => ({
+      return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([name, list]) => ({
         key: `age_${name}`,
         name,
         list
@@ -1816,9 +1828,9 @@ const parseKindergartenExcelSheet = (sheet) => {
                                     {st.raw['반명']}
                                   </span>
                                 )}
-                                {st.raw?.['연령'] && (
+                                {(st.raw?.['연령'] !== undefined && st.raw?.['연령'] !== null ? st.raw['연령'] : st.raw?.['학년']) && (
                                   <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">
-                                    {st.raw['연령']}
+                                    {st.raw['연령'] !== undefined && st.raw['연령'] !== null ? st.raw['연령'] : st.raw['학년']}
                                   </span>
                                 )}
                                 {st.raw?.['하원구분'] && (
@@ -1956,9 +1968,9 @@ const parseKindergartenExcelSheet = (sheet) => {
                                                 {st.raw['반명']}
                                               </span>
                                             )}
-                                            {studentFilterMode !== 'AGE' && st.raw?.['연령'] && (
+                                            {studentFilterMode !== 'AGE' && (st.raw?.['연령'] !== undefined && st.raw?.['연령'] !== null ? st.raw['연령'] : st.raw?.['학년']) && (
                                               <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">
-                                                {st.raw['연령']}
+                                                {st.raw['연령'] !== undefined && st.raw['연령'] !== null ? st.raw['연령'] : st.raw['학년']}
                                               </span>
                                             )}
                                             {st.raw?.['하원구분'] && (
@@ -2707,7 +2719,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             return (
               <Marker key={st.id} position={[displayLat, displayLng]} icon={studentIcon}>
                 <Popup className="student-popup">
-                <div className="font-bold text-lg mb-1">{st.name} <span className="text-sm font-normal text-slate-500">{st.raw?.['성별']} / {st.raw?.['연령']}</span></div>
+                <div className="font-bold text-lg mb-1">{st.name} <span className="text-sm font-normal text-slate-500">{st.raw?.['성별']} / {st.raw?.['연령'] || st.raw?.['학년'] || ''}</span></div>
                 <div className="text-sm text-slate-700 mb-2">{st.raw?.['유치원명'] || st.raw?.['학교명']} {st.raw?.['반명'] ? `(${st.raw?.['반명']})` : ''} {st.raw?.['하원구분'] ? `[${st.raw?.['하원구분']}]` : ''}</div>
                 
                 <div className="bg-slate-50 p-2 rounded border border-slate-100 text-xs mb-2">
