@@ -1454,7 +1454,7 @@ const parseKindergartenExcelSheet = (sheet) => {
     return (
       <div className="flex h-screen bg-slate-50 items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4 animate-bounce">🚌</div>
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
           <div className="font-bold text-slate-500 text-lg">데이터를 불러오는 중입니다...</div>
         </div>
       </div>
@@ -1622,13 +1622,13 @@ const parseKindergartenExcelSheet = (sheet) => {
               onClick={() => setShowPickupPoints(!showPickupPoints)} 
               className={`mb-2 w-full py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${showPickupPoints ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-inner' : 'border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-600 shadow-sm'}`}
             >
-              {showPickupPoints ? '🚏 탑승지 숨기기' : '🚏 탑승지 보기'}
+              {showPickupPoints ? '탑승지 숨기기' : '탑승지 보기'}
             </button>
             <button 
               onClick={() => setIsAddingPickupPoint(!isAddingPickupPoint)} 
               className={`mb-4 w-full py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${isAddingPickupPoint ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-inner' : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300 hover:text-purple-600 shadow-sm'}`}
             >
-              {isAddingPickupPoint ? '📍 지도에서 탑승지 위치를 클릭하세요' : '📍 새 탑승지 추가'}
+              {isAddingPickupPoint ? '지도에서 탑승지 위치를 클릭하세요' : '+ 새 탑승지 추가'}
             </button>
             <div className="space-y-3 overflow-y-auto">
               {buses.length === 0 ? (
@@ -1719,11 +1719,11 @@ const parseKindergartenExcelSheet = (sheet) => {
                           <div className="flex gap-2">
                             <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${msgTargetDriver ? 'border-blue-500 bg-blue-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
                               <input type="checkbox" className="hidden" checked={msgTargetDriver} onChange={() => setMsgTargetDriver(!msgTargetDriver)} />
-                              <span className={`font-bold text-sm ${msgTargetDriver ? 'text-blue-700' : 'text-slate-600'}`}>🚙 기사님</span>
+                              <span className={`font-bold text-sm ${msgTargetDriver ? 'text-blue-700' : 'text-slate-600'}`}>기사님</span>
                             </label>
                             <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${msgTargetTeacher ? 'border-green-500 bg-green-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
                               <input type="checkbox" className="hidden" checked={msgTargetTeacher} onChange={() => setMsgTargetTeacher(!msgTargetTeacher)} />
-                              <span className={`font-bold text-sm ${msgTargetTeacher ? 'text-green-700' : 'text-slate-600'}`}>👩‍🏫 지도교사</span>
+                              <span className={`font-bold text-sm ${msgTargetTeacher ? 'text-green-700' : 'text-slate-600'}`}>지도교사</span>
                             </label>
                           </div>
                           
@@ -1909,9 +1909,9 @@ const parseKindergartenExcelSheet = (sheet) => {
                 {studentFilterMode !== 'ALL' && (
                   <div className="flex justify-between items-center px-1 mb-1.5 shrink-0">
                     <span className="text-[11px] font-bold text-slate-500">
-                      {studentFilterMode === 'CLASS' && '🏫 반별 분류'}
-                      {studentFilterMode === 'AGE' && '👶 연령별 분류'}
-                      {studentFilterMode === 'BUS' && '🚌 차량별 분류'}
+                      {studentFilterMode === 'CLASS' && '반별 분류'}
+                      {studentFilterMode === 'AGE' && '연령별 분류'}
+                      {studentFilterMode === 'BUS' && '차량별 분류'}
                     </span>
                     <button 
                       type="button"
@@ -2349,14 +2349,14 @@ const parseKindergartenExcelSheet = (sheet) => {
             <div className="flex-1 flex flex-col overflow-hidden mt-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="font-bold text-slate-700 text-base">👩‍🏫 유치원 교사 관리 및 반 배정 ({teachers.length}명)</h3>
+                  <h3 className="font-bold text-slate-700 text-base">유치원 교사 관리 및 반 배정 ({teachers.length}명)</h3>
                   <p className="text-xs text-slate-500 mt-0.5">가입한 교사에게 담당 학급(반)을 배정하면 해당 교사의 웹/앱 화면에 우리 반 명단 및 앨범이 연동됩니다.</p>
                 </div>
                 <button
                   onClick={fetchTeachers}
                   className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-sm"
                 >
-                  <span>🔄</span> 새로고침
+                  새로고침
                 </button>
               </div>
 
@@ -2377,18 +2377,18 @@ const parseKindergartenExcelSheet = (sheet) => {
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-800 text-sm">{teacher.name} 선생님</span>
                             {currentClass ? (
-                              <span className="text-[11px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-200">
-                                🌱 {currentClass} 담임
+                              <span className="text-[11px] bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200">
+                                {currentClass} 담임
                               </span>
                             ) : (
-                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold border border-amber-200">
-                                ⏳ 반 미배정
+                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200">
+                                반 미배정
                               </span>
                             )}
                           </div>
                           <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                            <span>📧 {teacher.email}</span>
-                            {teacher.phone && <span>• 📞 {teacher.phone}</span>}
+                            <span>{teacher.email}</span>
+                            {teacher.phone && <span>• {teacher.phone}</span>}
                           </div>
                         </div>
                       </div>

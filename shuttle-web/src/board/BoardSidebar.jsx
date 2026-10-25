@@ -25,7 +25,6 @@ export default function BoardSidebar({
       <div className="p-5 border-b border-slate-100 bg-white">
         <div className="flex items-center justify-between mb-1.5">
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-            <span className="p-1.5 bg-blue-50 text-blue-600 rounded-xl">📸</span>
             <span>원아 앨범 · 게시판</span>
           </h2>
           <span className="text-[11px] font-bold px-2.5 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-100">
@@ -89,10 +88,7 @@ export default function BoardSidebar({
                   : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-100'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span>🌟</span>
-                <span>전체 게시물 보기</span>
-              </div>
+              <span>전체 게시물 보기</span>
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                 selectedClass === 'ALL' ? 'bg-blue-500/50 text-white' : 'bg-slate-200 text-slate-600'
               }`}>
@@ -109,10 +105,7 @@ export default function BoardSidebar({
                   : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-100'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span>📢</span>
-                <span>전체 공개글만 보기</span>
-              </div>
+              <span>전체 공개글만 보기</span>
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                 selectedClass === 'PUBLIC_ONLY' ? 'bg-emerald-500/50 text-white' : 'bg-slate-200 text-slate-600'
               }`}>
@@ -158,9 +151,8 @@ export default function BoardSidebar({
 
         {/* Board Statistics Card */}
         <div className="mt-auto p-4 bg-slate-50 rounded-2xl border border-slate-200">
-          <h4 className="text-xs font-bold text-slate-700 mb-2.5 flex items-center gap-1.5">
-            <span>📊</span>
-            <span>게시판 활동 현황</span>
+          <h4 className="text-xs font-bold text-slate-700 mb-2.5">
+            게시판 활동 현황
           </h4>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
@@ -169,11 +161,11 @@ export default function BoardSidebar({
             </div>
             <div className="bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
               <span className="text-[10px] text-slate-400 block font-medium">좋아요</span>
-              <span className="text-sm font-black text-red-500">❤️ {totalLikes}</span>
+              <span className="text-sm font-black text-red-500">{totalLikes}</span>
             </div>
             <div className="bg-white p-2 rounded-xl border border-slate-100 shadow-2xs">
               <span className="text-[10px] text-slate-400 block font-medium">댓글</span>
-              <span className="text-sm font-black text-blue-600">💬 {totalComments}</span>
+              <span className="text-sm font-black text-blue-600">{totalComments}</span>
             </div>
           </div>
         </div>

@@ -245,7 +245,6 @@ export default function Landing() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <span>👑</span>
                   <span>원장선생님</span>
                 </button>
                 <button
@@ -259,19 +258,18 @@ export default function Landing() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <span>👩‍🏫</span>
                   <span>유치원 교사</span>
                 </button>
               </div>
             </div>
 
             {role === 'ACADEMY_ADMIN' ? (
-              <p className="text-xs font-medium text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-100 flex items-center gap-1.5">
-                <span>👑</span> 가입 즉시 새로운 유치원 관리 대시보드가 생성됩니다.
+              <p className="text-xs font-medium text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-100">
+                가입 즉시 새로운 유치원 관리 대시보드가 생성됩니다.
               </p>
             ) : (
-              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 py-2 px-3 rounded-lg border border-emerald-100 flex items-center gap-1.5">
-                <span>👩‍🏫</span> 원장선생님께 전달받은 <strong>원 인증코드</strong>를 입력해주세요.
+              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 py-2 px-3 rounded-lg border border-emerald-100">
+                원장선생님께 전달받은 <strong>원 인증코드</strong>를 입력해주세요.
               </p>
             )}
 
@@ -396,7 +394,7 @@ export default function Landing() {
               className="btn-primary w-full py-3 font-bold text-sm shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed" 
               disabled={!isEmailVerified || !validatePassword(password) || (role === 'TEACHER' && !isAuthCodeVerified)}
             >
-              {role === 'ACADEMY_ADMIN' ? '👑 원장선생님 가입 완료' : '👩‍🏫 유치원 교사 가입 완료'}
+              {role === 'ACADEMY_ADMIN' ? '원장선생님 가입 완료' : '유치원 교사 가입 완료'}
             </button>
             <div className="text-center mt-3">
               <button type="button" onClick={() => setMode('login')} className="text-xs font-semibold text-slate-500 hover:underline">

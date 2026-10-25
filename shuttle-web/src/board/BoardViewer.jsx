@@ -31,7 +31,7 @@ const PRESET_PHOTOS = [
 const DEFAULT_POSTS = [
   {
     id: 101,
-    title: '햇살반 가을 낙엽 탐색 및 숲 체험 활동 🍂',
+    title: '햇살반 가을 낙엽 탐색 및 숲 체험 활동',
     content: '오늘 햇살반 친구들과 함께 유치원 뒤뜰에서 알록달록 단풍잎과 솔방울을 모아 왕관 만들기 놀이를 했습니다. 아이들이 자연 속에서 너무 신나게 참여했어요!',
     imageUrl: 'https://images.unsplash.com/photo-1596464716127-f2a82984de30?w=800&auto=format&fit=crop&q=80',
     images: [],
@@ -42,14 +42,14 @@ const DEFAULT_POSTS = [
     likeCount: 5,
     likedUserIds: ['admin'],
     comments: [
-      { id: 1, authorName: '민준이 어머님', authorRole: 'PARENT', content: '사진 너무 예쁘네요! 오늘도 수고 많으셨습니다 선생님~ ❤️', createdAt: new Date(Date.now() - 3600000).toISOString() },
+      { id: 1, authorName: '민준이 어머님', authorRole: 'PARENT', content: '사진 너무 예쁘네요! 오늘도 수고 많으셨습니다 선생님~', createdAt: new Date(Date.now() - 3600000).toISOString() },
       { id: 2, authorName: '원장선생님', authorRole: 'ADMIN', content: '햇살반 친구들 표정이 정말 밝고 예쁩니다 ^^', createdAt: new Date(Date.now() - 1800000).toISOString() }
     ],
     createdAt: new Date(Date.now() - 7200000).toISOString()
   },
   {
     id: 102,
-    title: '[전체 공지] 10월 유치원 가을 운동회 & 꿈나무 축제 안내 🎈',
+    title: '[전체 공지] 10월 유치원 가을 운동회 및 꿈나무 축제 안내',
     content: '학부모님 안녕하십니까. 다음 주 금요일 진행되는 가을 운동회 및 꿈나무 축제 일정 안내드립니다. 편안한 복장과 운동화 착용을 부탁드리며 셔틀 운행 시간표를 확인해 주시기 바랍니다.',
     imageUrl: 'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=800&auto=format&fit=crop&q=80',
     images: [],
@@ -66,7 +66,7 @@ const DEFAULT_POSTS = [
   },
   {
     id: 103,
-    title: '열매반 조물조물 클레이 도예 체험 시간 🎨',
+    title: '열매반 조물조물 클레이 도예 체험 시간',
     content: '고사리 같은 손으로 찰흙을 빚어 나만의 예쁜 동물 그릇을 만들었어요. 집으로 가져가서 칭찬 많이 해주세요!',
     imageUrl: 'https://images.unsplash.com/photo-1566140967404-b8b3932483f5?w=800&auto=format&fit=crop&q=80',
     images: [],
@@ -505,8 +505,8 @@ export default function BoardViewer({
       <div className="bg-white px-8 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shadow-xs z-10">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-              <span>📸</span> 원아 활동 앨범 & 소식 게시판
+            <h1 className="text-2xl font-black text-slate-800">
+              원아 활동 앨범 & 소식 게시판
             </h1>
             <span className="text-xs font-bold px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200">
               {selectedClass === 'ALL' ? '전체 보기' : selectedClass === 'PUBLIC_ONLY' ? '전체 공개글' : `${selectedClass} 전용`}
@@ -532,14 +532,14 @@ export default function BoardViewer({
                 onClick={() => setSelectedClass(teacherClass)}
                 className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === teacherClass ? 'bg-white text-emerald-700 shadow-xs' : 'hover:text-slate-800'}`}
               >
-                🌱 {teacherClass} 글
+                {teacherClass} 글
               </button>
             )}
             <button
               onClick={() => setSelectedClass('PUBLIC_ONLY')}
               className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'PUBLIC_ONLY' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
             >
-              📢 전체 공개 공지
+              전체 공개 공지
             </button>
           </div>
 
@@ -555,7 +555,7 @@ export default function BoardViewer({
               onClick={() => setSortBy('POPULAR')}
               className={`px-3 py-1.5 rounded-lg transition-all ${sortBy === 'POPULAR' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
             >
-              좋아요순 ❤️
+              인기순
             </button>
           </div>
 
@@ -592,7 +592,11 @@ export default function BoardViewer({
           </div>
         ) : filteredPosts.length === 0 ? (
           <div className="h-full min-h-[400px] flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-300 text-center p-8">
-            <div className="text-6xl mb-4">📷</div>
+            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-4 mx-auto">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
             <h3 className="text-lg font-black text-slate-800 mb-2">등록된 사진이나 게시글이 없습니다</h3>
             <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
               {searchKeyword ? `'${searchKeyword}' 검색어와 일치하는 게시물이 없습니다.` : '원아들의 신나는 활동 사진이나 공지사항을 첫 번째로 등록해 보세요!'}
@@ -637,7 +641,7 @@ export default function BoardViewer({
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span>📢 전체 공개</span>
+                          <span>전체 공개</span>
                         </span>
                       )}
 
@@ -684,13 +688,17 @@ export default function BoardViewer({
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                        <span className="text-4xl">🖼️</span>
+                        <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-400">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
                         <span className="text-xs mt-1 font-bold">등록된 사진 없음</span>
                       </div>
                     )}
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                       <span className="opacity-0 group-hover:opacity-100 px-3 py-1.5 bg-black/60 text-white text-[11px] font-bold rounded-full backdrop-blur-xs transition-opacity shadow-sm">
-                        🔍 크게 보기
+                        크게 보기
                       </span>
                     </div>
                   </div>
@@ -735,7 +743,9 @@ export default function BoardViewer({
                               : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
                           }`}
                         >
-                          <span className={isLiked ? 'scale-110' : ''}>{isLiked ? '❤️' : '🤍'}</span>
+                          <svg className={`w-4 h-4 transition-transform ${isLiked ? 'text-rose-500 fill-rose-500 scale-110' : 'text-slate-400'}`} viewBox="0 0 24 24" fill={isLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                          </svg>
                           <span>{post.likeCount || 0}</span>
                         </button>
 
@@ -749,7 +759,9 @@ export default function BoardViewer({
                               : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
                           }`}
                         >
-                          <span>💬</span>
+                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
                           <span>댓글 {post.comments?.length || 0}</span>
                         </button>
 
@@ -760,7 +772,9 @@ export default function BoardViewer({
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-50 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200"
                           title="클라우드 원본 사진 저장 (PC/휴대폰 다운로드)"
                         >
-                          <span>💾</span>
+                          <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
                           <span>사진 저장</span>
                         </button>
                       </div>
@@ -845,12 +859,9 @@ export default function BoardViewer({
         <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl p-6 sm:p-8 animate-scale-up border border-slate-100">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">📸</span>
-                <h3 className="text-xl font-black text-slate-800">
-                  {editingPost ? '게시글 수정' : '새 원아 사진 및 소식 등록'}
-                </h3>
-              </div>
+              <h3 className="text-xl font-black text-slate-800">
+                {editingPost ? '게시글 수정' : '새 원아 사진 및 소식 등록'}
+              </h3>
               <button
                 type="button"
                 onClick={() => { setIsCreatingPost(false); setEditingPost(null); }}
@@ -870,7 +881,7 @@ export default function BoardViewer({
                   type="text"
                   value={postForm.title}
                   onChange={(e) => setPostForm(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="예: 햇살반 가을 소풍 활동 사진입니다 🍂"
+                  placeholder="예: 햇살반 가을 소풍 활동 사진입니다"
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 />
               </div>
@@ -890,7 +901,6 @@ export default function BoardViewer({
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>📢</span>
                     <span>전체 공개 (모든 학부모·교사)</span>
                   </button>
 
@@ -903,7 +913,6 @@ export default function BoardViewer({
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>🔒</span>
                     <span>반별 전용 (선택한 반만 열람)</span>
                   </button>
                 </div>
@@ -936,7 +945,7 @@ export default function BoardViewer({
                     onClick={() => fileInputRef.current?.click()}
                     className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 underline"
                   >
-                    <span>📁 내 컴퓨터에서 사진 올리기</span>
+                    <span>내 컴퓨터에서 사진 올리기</span>
                   </button>
                   <input
                     ref={fileInputRef}
@@ -1039,7 +1048,11 @@ export default function BoardViewer({
       {postToDelete && (
         <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 text-center shadow-2xl animate-scale-up border border-slate-100">
-            <div className="text-5xl mb-3">🗑️</div>
+            <div className="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-3 mx-auto">
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
             <h3 className="text-lg font-black text-slate-800 mb-2">게시글을 삭제하시겠습니까?</h3>
             <p className="text-xs text-slate-500 mb-6 leading-relaxed">
               <b className="text-slate-800">'{postToDelete.title}'</b><br />
