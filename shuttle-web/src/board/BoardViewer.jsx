@@ -80,6 +80,23 @@ const DEFAULT_POSTS = [
       { id: 4, authorName: '서아 어머님', authorRole: 'PARENT', content: '집에 와서 서아가 찰흙 놀이한 거 엄청 자랑했어요 ㅎㅎ 감사해요!', createdAt: new Date(Date.now() - 28800000).toISOString() }
     ],
     createdAt: new Date(Date.now() - 172800000).toISOString()
+  },
+  {
+    id: 104,
+    title: '심화 B반 창의 블록 및 협동 보드게임 활동',
+    content: '심화 B반 친구들과 함께 팀을 나누어 대형 블록 성을 쌓고 협동 보드게임을 진행했습니다. 친구를 배려하며 즐겁게 활동하는 모습이 대견했습니다.',
+    imageUrl: 'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=800&auto=format&fit=crop&q=80',
+    images: [],
+    authorName: '이선생 선생님',
+    authorRole: 'TEACHER',
+    visibility: 'CLASS',
+    targetClass: '심화B반',
+    likeCount: 7,
+    likedUserIds: [],
+    comments: [
+      { id: 5, authorName: '민재 어머님', authorRole: 'PARENT', content: '블록 완성하고 엄청 뿌듯해했어요! 선생님 늘 감사합니다~', createdAt: new Date(Date.now() - 1800000).toISOString() }
+    ],
+    createdAt: new Date(Date.now() - 3600000).toISOString()
   }
 ];
 
@@ -102,7 +119,7 @@ export default function BoardViewer({
 
   const isAdmin = currentUser.role === 'ACADEMY_ADMIN' || currentUser.role === 'SUPER_ADMIN';
   const isTeacher = currentUser.role === 'TEACHER';
-  const teacherClass = currentUser.assignedClass || '햇살반';
+  const teacherClass = currentUser.assignedClass || '';
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
   const [commentInputs, setCommentInputs] = useState({});
   const [sortBy, setSortBy] = useState('LATEST'); // 'LATEST' | 'POPULAR'
@@ -177,11 +194,25 @@ export default function BoardViewer({
   const filteredPosts = useMemo(() => {
     let result = [...posts];
 
-    if (selectedClass === 'PUBLIC_ONLY') {
-      result = result.filter(p => p.visibility === 'ALL');
-    } else if (selectedClass !== 'ALL') {
-      // Show ALL-public posts OR posts specifically targeted to this class
-      result = result.filter(p => p.visibility === 'ALL' || p.targetClass === selectedClass);
+    if (isTeacher && teacherClass) {
+      // 심화 B반 교사는 오직 B반 게시글만 조회 (타 반 글 및 전체글 노출 차단)
+      const normTeacherClass = String(teacherClass).replace(/\s+/g, '').toLowerCase();
+      result = result.filter(p => {
+        if (!p.targetClass) return false;
+        const normTarget = String(p.targetClass).replace(/\s+/g, '').toLowerCase();
+        return normTarget === normTeacherClass;
+      });
+    } else {
+      if (selectedClass === 'PUBLIC_ONLY') {
+        result = result.filter(p => p.visibility === 'ALL');
+      } else if (selectedClass !== 'ALL') {
+        const normSelected = String(selectedClass).replace(/\s+/g, '').toLowerCase();
+        result = result.filter(p => {
+          if (p.visibility === 'ALL') return true;
+          if (!p.targetClass) return false;
+          return String(p.targetClass).replace(/\s+/g, '').toLowerCase() === normSelected;
+        });
+      }
     }
 
     if (searchKeyword.trim()) {
@@ -201,7 +232,7 @@ export default function BoardViewer({
     }
 
     return result;
-  }, [posts, selectedClass, searchKeyword, sortBy]);
+  }, [posts, isTeacher, teacherClass, selectedClass, searchKeyword, sortBy]);
 
   // Handle Like Toggle
   const handleToggleLike = async (postId) => {
@@ -506,42 +537,38 @@ export default function BoardViewer({
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black text-slate-800">
-              원아 활동 앨범 & 소식 게시판
+              {isTeacher && teacherClass ? `${teacherClass} 활동 앨범` : '원아 활동 앨범 & 소식 게시판'}
             </h1>
             <span className="text-xs font-bold px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200">
-              {selectedClass === 'ALL' ? '전체 보기' : selectedClass === 'PUBLIC_ONLY' ? '전체 공개글' : `${selectedClass} 전용`}
+              {isTeacher && teacherClass ? `${teacherClass} 전용` : (selectedClass === 'ALL' ? '전체 보기' : selectedClass === 'PUBLIC_ONLY' ? '전체 공개글' : `${selectedClass} 전용`)}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            학부모와 접속자는 자신이 속한 반의 사진과 전체 공개 소식만 열람할 수 있습니다. (현재 관리자 모드로 모든 반 조회 가능)
+            {isTeacher && teacherClass
+              ? `${teacherClass} 원아들의 활동 사진과 소식만 모아보는 전용 공간입니다.`
+              : '학부모와 접속자는 자신이 속한 반의 사진과 전체 공개 소식만 열람할 수 있습니다.'}
           </p>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
-          {/* Quick View Category Switcher */}
-          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
-            <button
-              onClick={() => setSelectedClass('ALL')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'ALL' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
-            >
-              전체 게시글
-            </button>
-            {teacherClass && (
+          {/* Quick View Category Switcher (Admin/Director Only) */}
+          {!isTeacher && (
+            <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
               <button
-                onClick={() => setSelectedClass(teacherClass)}
-                className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === teacherClass ? 'bg-white text-emerald-700 shadow-xs' : 'hover:text-slate-800'}`}
+                onClick={() => setSelectedClass('ALL')}
+                className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'ALL' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
               >
-                {teacherClass} 글
+                전체 게시글
               </button>
-            )}
-            <button
-              onClick={() => setSelectedClass('PUBLIC_ONLY')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'PUBLIC_ONLY' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
-            >
-              전체 공개 공지
-            </button>
-          </div>
+              <button
+                onClick={() => setSelectedClass('PUBLIC_ONLY')}
+                className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'PUBLIC_ONLY' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
+              >
+                전체 공개 공지
+              </button>
+            </div>
+          )}
 
           {/* Sort Switcher */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
@@ -566,10 +593,11 @@ export default function BoardViewer({
               setPostForm({
                 title: '',
                 content: '',
-                visibility: selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? 'CLASS' : 'ALL',
-                targetClass: selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? selectedClass : (availableClasses[0] || '햇살반'),
+                visibility: isTeacher ? 'CLASS' : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? 'CLASS' : 'ALL'),
+                targetClass: (isTeacher && teacherClass) ? teacherClass : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? selectedClass : (availableClasses[0] || '햇살반')),
                 imageUrl: PRESET_PHOTOS[0].url,
-                authorName: currentUser?.name ? `${currentUser.name} 원장선생님` : '원장선생님',
+                authorName: defaultAuthorName,
+                authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
               });
               setIsCreatingPost(true);
             }}
@@ -886,53 +914,65 @@ export default function BoardViewer({
                 />
               </div>
 
-              {/* 공개 범위 선택 (전체 공개 vs 반별 공개) */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                <label className="block text-xs font-black text-slate-700">
-                  공개 범위 설정 <span className="text-red-500">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPostForm(prev => ({ ...prev, visibility: 'ALL' }))}
-                    className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border ${
-                      postForm.visibility === 'ALL'
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>전체 공개 (모든 학부모·교사)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPostForm(prev => ({ ...prev, visibility: 'CLASS' }))}
-                    className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border ${
-                      postForm.visibility === 'CLASS'
-                        ? 'bg-orange-500 text-white border-orange-500 shadow-md'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>반별 전용 (선택한 반만 열람)</span>
-                  </button>
-                </div>
-
-                {/* 반 선택 (반별 공개일 때만 노출) */}
-                {postForm.visibility === 'CLASS' && (
-                  <div className="pt-2 border-t border-slate-200 animate-fade-in flex items-center gap-3">
-                    <span className="text-xs font-bold text-slate-600 shrink-0">대상 반 선택:</span>
-                    <select
-                      value={postForm.targetClass}
-                      onChange={(e) => setPostForm(prev => ({ ...prev, targetClass: e.target.value }))}
-                      className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    >
-                      {availableClasses.map(cls => (
-                        <option key={cls} value={cls}>{cls}</option>
-                      ))}
-                    </select>
+              {/* 공개 범위 선택 (교사는 자동으로 담당 반 전용으로 고정) */}
+              {isTeacher && teacherClass ? (
+                <div className="bg-blue-50/80 p-4 rounded-2xl border border-blue-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-500 block mb-0.5">게시 대상</span>
+                    <span className="text-sm font-extrabold text-blue-900">{teacherClass} 전용 사진첩</span>
                   </div>
-                )}
-              </div>
+                  <span className="text-xs font-bold px-3 py-1 bg-blue-600 text-white rounded-xl shadow-xs">
+                    {teacherClass}만 열람
+                  </span>
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <label className="block text-xs font-black text-slate-700">
+                    공개 범위 설정 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPostForm(prev => ({ ...prev, visibility: 'ALL' }))}
+                      className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border ${
+                        postForm.visibility === 'ALL'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>전체 공개 (모든 학부모·교사)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPostForm(prev => ({ ...prev, visibility: 'CLASS' }))}
+                      className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border ${
+                        postForm.visibility === 'CLASS'
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>반별 전용 (선택한 반만 열람)</span>
+                    </button>
+                  </div>
+
+                  {/* 반 선택 (반별 공개일 때만 노출) */}
+                  {postForm.visibility === 'CLASS' && (
+                    <div className="pt-2 border-t border-slate-200 animate-fade-in flex items-center gap-3">
+                      <span className="text-xs font-bold text-slate-600 shrink-0">대상 반 선택:</span>
+                      <select
+                        value={postForm.targetClass}
+                        onChange={(e) => setPostForm(prev => ({ ...prev, targetClass: e.target.value }))}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      >
+                        {availableClasses.map(cls => (
+                          <option key={cls} value={cls}>{cls}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 메인 사진 선택 (프리셋 or PC 업로드 or URL) */}
               <div>

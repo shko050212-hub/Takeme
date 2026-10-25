@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import BoardViewer from './board/BoardViewer';
-import BoardSidebar from './board/BoardSidebar';
 import { API_BASE_URL } from './config';
 
 // Leaflet Bus & School Icons
@@ -287,34 +286,23 @@ export default function TeacherDashboard({
       {/* 2. Main Area (To the right of the Left Rail) */}
       {/* ======================================================== */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* VIEW A: Board Mode */}
+        {/* VIEW A: Board Mode (Only assigned class, no side buttons) */}
         {activeNavTab === 'board' ? (
-          <div className="flex h-full w-full overflow-hidden">
-            <BoardSidebar
-              selectedClass={boardSelectedClass}
-              setSelectedClass={setBoardSelectedClass}
+          <div className="flex-1 relative z-0 overflow-hidden h-full w-full">
+            <BoardViewer
+              isClosing={false}
+              currentUser={localTeacherUser}
+              selectedAcademyId={selectedAcademyId}
               availableClasses={availableClasses}
+              selectedClass={teacherClass || 'ALL'}
+              setSelectedClass={setBoardSelectedClass}
               searchKeyword={boardSearchKeyword}
               setSearchKeyword={setBoardSearchKeyword}
-              onOpenNewPost={() => setIsCreatingBoardPost(true)}
+              isCreatingPost={isCreatingBoardPost}
+              setIsCreatingPost={setIsCreatingBoardPost}
               posts={boardPosts}
+              setPosts={setBoardPosts}
             />
-            <div className="flex-1 relative z-0 overflow-hidden">
-              <BoardViewer
-                isClosing={false}
-                currentUser={localTeacherUser}
-                selectedAcademyId={selectedAcademyId}
-                availableClasses={availableClasses}
-                selectedClass={boardSelectedClass}
-                setSelectedClass={setBoardSelectedClass}
-                searchKeyword={boardSearchKeyword}
-                setSearchKeyword={setBoardSearchKeyword}
-                isCreatingPost={isCreatingBoardPost}
-                setIsCreatingPost={setIsCreatingBoardPost}
-                posts={boardPosts}
-                setPosts={setBoardPosts}
-              />
-            </div>
           </div>
         ) : (
           /* VIEW B: Classroom Home Mode */
