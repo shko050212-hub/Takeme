@@ -304,4 +304,14 @@ export class RoutingController {
   async deleteBoardComment(@Param('commentId') commentId: string) {
     return this.routingService.deleteBoardComment(Number(commentId));
   }
+
+  @Post('student/:id/note')
+  async updateStudentNote(@Param('id') studentId: number, @Body('memo') memo: string) {
+    return this.routingService.updateStudentNote(Number(studentId), memo);
+  }
+
+  @Post('student/:id/board-status')
+  async updateStudentBoardStatus(@Param('id') studentId: number, @Body('boardStatus') boardStatus: string) {
+    return this.routingService.updateStudentBoardStatus(Number(studentId), boardStatus);
+  }
 }

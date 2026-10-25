@@ -14,6 +14,7 @@ import { getOverallExpirySummary } from './documents/documentStorage';
 import BoardViewer from './board/BoardViewer';
 import BoardSidebar from './board/BoardSidebar';
 import { API_BASE_URL } from './config';
+import TeacherDashboard from './TeacherDashboard';
 
 
 // Fix Leaflet default icon issue
@@ -647,8 +648,12 @@ export default function Dashboard() {
         setShowAcademyModal(false);
       } else {
         setBuses([]);
-        setShowAcademyModal(true);
-        setSetupStep(1);
+        if (currentUser.role !== 'TEACHER') {
+          setShowAcademyModal(true);
+          setSetupStep(1);
+        } else {
+          setShowAcademyModal(false);
+        }
       }
       
       if (data.students && data.students.length > 0) {
@@ -1402,6 +1407,91 @@ const parseKindergartenExcelSheet = (sheet) => {
           <div className="font-bold text-slate-500 text-lg">데이터를 불러오는 중입니다...</div>
         </div>
       </div>
+    );
+  }
+
+  // Dedicated Teacher Dashboard Mode
+  if (currentUser.role === 'TEACHER') {
+    if (activeTab === 'board') {
+      return (
+        <div className="flex h-screen w-full bg-slate-100 overflow-hidden font-sans">
+          {/* Simple Left Navigation Rail for Teacher */}
+          <div className="w-16 bg-blue-700 flex flex-col items-center py-6 gap-6 z-20 shadow-xl shrink-0">
+            <button 
+              onClick={() => handleTabChange('status')} 
+              className="p-3 rounded-2xl text-blue-200 hover:bg-blue-600 transition-all flex flex-col items-center gap-1"
+              title="우리 반 교실 홈"
+            >
+              <span className="text-xl">🏠</span>
+              <span className="text-[10px] font-bold">홈</span>
+            </button>
+            <button 
+              className="p-3 rounded-2xl bg-white text-blue-700 shadow-lg scale-105 flex flex-col items-center gap-1"
+              title="우리 반 앨범 / 게시판"
+            >
+              <span className="text-xl">📸</span>
+              <span className="text-[10px] font-bold">게시판</span>
+            </button>
+            <div className="mt-auto">
+              <button 
+                onClick={handleLogout}
+                className="p-3 rounded-2xl text-blue-200 hover:bg-blue-600 transition-all flex flex-col items-center gap-1"
+                title="로그아웃"
+              >
+                <span className="text-lg">🚪</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Board Sidebar */}
+          <BoardSidebar 
+            selectedClass={boardSelectedClass}
+            setSelectedClass={setBoardSelectedClass}
+            availableClasses={availableClasses}
+            searchKeyword={boardSearchKeyword}
+            setSearchKeyword={setBoardSearchKeyword}
+            onOpenNewPost={() => setIsCreatingBoardPost(true)}
+            posts={boardPosts}
+          />
+
+          {/* Board Main Area */}
+          <div className="flex-1 relative z-0 overflow-hidden">
+            <BoardViewer 
+              isClosing={false}
+              currentUser={currentUser}
+              selectedAcademyId={selectedAcademyId}
+              availableClasses={availableClasses}
+              selectedClass={boardSelectedClass}
+              setSelectedClass={setBoardSelectedClass}
+              searchKeyword={boardSearchKeyword}
+              setSearchKeyword={setBoardSearchKeyword}
+              isCreatingPost={isCreatingBoardPost}
+              setIsCreatingPost={setIsCreatingBoardPost}
+              posts={boardPosts}
+              setPosts={setBoardPosts}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <TeacherDashboard
+        currentUser={currentUser}
+        academy={academy}
+        buses={buses}
+        students={students}
+        onOpenBoard={() => {
+          if (currentUser.assignedClass) {
+            setBoardSelectedClass(currentUser.assignedClass);
+          }
+          setActiveTab('board');
+        }}
+        onLogout={handleLogout}
+        onRefreshData={() => {
+          loadInitialState(selectedAcademyId);
+        }}
+      />
     );
   }
 

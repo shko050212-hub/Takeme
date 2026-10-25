@@ -350,7 +350,9 @@ export class RoutingService {
         raw: parsedRaw,
         schedules: st.schedules,
         isRegistered: !!st.studentUser || !!st.parentUser,
-        approvalStatus: st.approvalStatus
+        approvalStatus: st.approvalStatus,
+        teacherMemo: st.teacherMemo || '',
+        boardStatus: st.boardStatus || 'WAITING'
       };
     });
 
@@ -1419,5 +1421,21 @@ export class RoutingService {
   async deleteBoardComment(commentId: number) {
     await this.boardCommentRepository.delete(commentId);
     return { success: true };
+  }
+
+  async updateStudentNote(studentId: number, memo: string) {
+    const student = await this.studentRepository.findOne({ where: { id: studentId } });
+    if (!student) throw new BadRequestException('원아를 찾을 수 없습니다.');
+    student.teacherMemo = memo;
+    await this.studentRepository.save(student);
+    return { success: true, studentId: student.id, teacherMemo: student.teacherMemo };
+  }
+
+  async updateStudentBoardStatus(studentId: number, boardStatus: string) {
+    const student = await this.studentRepository.findOne({ where: { id: studentId } });
+    if (!student) throw new BadRequestException('원아를 찾을 수 없습니다.');
+    student.boardStatus = boardStatus;
+    await this.studentRepository.save(student);
+    return { success: true, studentId: student.id, boardStatus: student.boardStatus };
   }
 }

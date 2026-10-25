@@ -108,6 +108,43 @@ export class AuthService {
     return { success: true, message: '이메일 인증이 완료되었습니다.' };
   }
 
+  async verifyAuthCode(authCode: string) {
+    if (!authCode) throw new BadRequestException('유치원 인증코드를 입력해주세요.');
+    const cleanAuthCode = authCode.trim().toUpperCase();
+    const academy = await this.academyRepository.findOne({ where: { authCode: cleanAuthCode } });
+    if (!academy) {
+      throw new BadRequestException('유효하지 않은 원 인증코드입니다. 원장선생님께 확인해주세요.');
+    }
+
+    const students = await this.studentRepository.find({
+      where: { academy: { id: academy.id } }
+    });
+
+    const classSet = new Set();
+    students.forEach(st => {
+      let raw = st.raw;
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch (e) { raw = {}; }
+      }
+      const cls = raw?.['반명'] || raw?.반명 || raw?.['반'] || raw?.반;
+      if (cls && typeof cls === 'string' && cls.trim()) {
+        classSet.add(cls.trim());
+      }
+    });
+
+    const classes = Array.from(classSet);
+    if (classes.length === 0) {
+      classes.push('햇살반', '열매반', '풀잎반', '새싹반');
+    }
+
+    return {
+      success: true,
+      academyId: academy.id,
+      academyName: academy.name,
+      classes,
+    };
+  }
+
   async verifyOtpSetup(userId: number, token: string) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new BadRequestException('User not found');
@@ -174,22 +211,16 @@ export class AuthService {
       }
     }
 
-    if (user.role === UserRole.DRIVER || user.role === UserRole.TEACHER) {
+    if (user.role === UserRole.DRIVER) {
       const vehicle = await this.vehicleRepository.findOne({ 
-        where: user.role === UserRole.DRIVER ? { driverUser: { id: user.id } } : { teacherUser: { id: user.id } } 
+        where: { driverUser: { id: user.id } }
       });
-      if (vehicle) {
-        const isPending = user.role === UserRole.DRIVER 
-          ? vehicle.driverApprovalStatus === 'PENDING' 
-          : vehicle.teacherApprovalStatus === 'PENDING';
-        
-        if (isPending) {
-          return {
-            success: true,
-            requireApproval: true,
-            user: { id: user.id, email: user.email, role: user.role, name: user.name }
-          };
-        }
+      if (vehicle && vehicle.driverApprovalStatus === 'PENDING') {
+        return {
+          success: true,
+          requireApproval: true,
+          user: { id: user.id, email: user.email, role: user.role, name: user.name }
+        };
       }
     }
 
@@ -232,9 +263,18 @@ export class AuthService {
         academyId = student.academy.id;
         academyName = student.academy.name;
       }
-    } else if (user.role === UserRole.DRIVER || user.role === UserRole.TEACHER) {
+    } else if (user.role === UserRole.TEACHER) {
+      const teacherUser = await this.usersRepository.findOne({
+        where: { id: user.id },
+        relations: { academy: true }
+      });
+      if (teacherUser?.academy) {
+        academyId = teacherUser.academy.id;
+        academyName = teacherUser.academy.name;
+      }
+    } else if (user.role === UserRole.DRIVER) {
       const vehicle = await this.vehicleRepository.findOne({
-        where: user.role === UserRole.DRIVER ? { driverUser: { id: user.id } } : { teacherUser: { id: user.id } },
+        where: { driverUser: { id: user.id } },
         relations: { academy: true }
       });
       if (vehicle?.academy) {
@@ -259,6 +299,7 @@ export class AuthService {
         email: user.email, 
         role: user.role, 
         name: user.name,
+        assignedClass: user.assignedClass || null,
         academyId,
         academyName
       }
@@ -336,12 +377,26 @@ export class AuthService {
         student.approvalStatus = 'PENDING';
         await this.studentRepository.save(student);
         
-      } else if (userRole === UserRole.DRIVER || userRole === UserRole.TEACHER) {
+      } else if (userRole === UserRole.TEACHER) {
+        if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
+        savedUser.academy = targetAcademy;
+        savedUser.academyId = targetAcademy.id;
+        savedUser.assignedClass = data.assignedClass || '담당 반 미지정';
+        await this.usersRepository.save(savedUser);
+
+        return {
+          success: true,
+          message: `${targetAcademy.name}의 ${savedUser.assignedClass} 교사로 등록되었습니다. 로그인해주세요!`,
+          userId: savedUser.id,
+          role: UserRole.TEACHER,
+          assignedClass: savedUser.assignedClass,
+          academyName: targetAcademy.name,
+        };
+      } else if (userRole === UserRole.DRIVER) {
         if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
         const vehicle = await this.vehicleRepository.createQueryBuilder('vehicle')
           .leftJoinAndSelect('vehicle.driverUser', 'driverUser')
-          .leftJoinAndSelect('vehicle.teacherUser', 'teacherUser')
-          .where(userRole === UserRole.DRIVER ? 'TRIM(vehicle.driverName) = :name' : 'TRIM(vehicle.teacherName) = :name', { name: searchName.trim() })
+          .where('TRIM(vehicle.driverName) = :name', { name: searchName.trim() })
           .andWhere('vehicle.academyId = :academyId', { academyId: targetAcademy.id })
           .getOne();
           
@@ -349,16 +404,9 @@ export class AuthService {
           throw new BadRequestException('해당 유치원에 등록된 통학차량 정보를 찾을 수 없습니다.');
         }
 
-        if (userRole === UserRole.DRIVER) {
-          if (vehicle.driverUser) throw new BadRequestException('해당 차량은 이미 기사님 계정과 연동되어 있습니다.');
-          vehicle.driverUser = savedUser;
-          vehicle.driverApprovalStatus = 'PENDING';
-        } else {
-          if (vehicle.teacherUser) throw new BadRequestException('해당 차량은 이미 지도 교사 계정과 연동되어 있습니다.');
-          vehicle.teacherUser = savedUser;
-          vehicle.teacherApprovalStatus = 'PENDING';
-        }
-        
+        if (vehicle.driverUser) throw new BadRequestException('해당 차량은 이미 기사님 계정과 연동되어 있습니다.');
+        vehicle.driverUser = savedUser;
+        vehicle.driverApprovalStatus = 'PENDING';
         await this.vehicleRepository.save(vehicle);
       }
 
