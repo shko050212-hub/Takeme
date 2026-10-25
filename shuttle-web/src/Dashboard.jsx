@@ -1487,6 +1487,13 @@ const parseKindergartenExcelSheet = (sheet) => {
           }
           setActiveTab('board');
         }}
+        onOpenNewPost={() => {
+          if (currentUser.assignedClass) {
+            setBoardSelectedClass(currentUser.assignedClass);
+          }
+          setIsCreatingBoardPost(true);
+          setActiveTab('board');
+        }}
         onLogout={handleLogout}
         onRefreshData={() => {
           loadInitialState(selectedAcademyId);

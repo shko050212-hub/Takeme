@@ -98,6 +98,11 @@ export default function BoardViewer({
   setPosts,
 }) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingToCloud, setIsUploadingToCloud] = useState(false);
+
+  const isAdmin = currentUser.role === 'ACADEMY_ADMIN' || currentUser.role === 'SUPER_ADMIN';
+  const isTeacher = currentUser.role === 'TEACHER';
+  const teacherClass = currentUser.assignedClass || '햇살반';
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
   const [commentInputs, setCommentInputs] = useState({});
   const [sortBy, setSortBy] = useState('LATEST'); // 'LATEST' | 'POPULAR'
@@ -106,13 +111,18 @@ export default function BoardViewer({
   const [editingPost, setEditingPost] = useState(null);
 
   // Form state for new / edit post
+  const defaultAuthorName = isTeacher 
+    ? `${currentUser.name || '선생님'} (${teacherClass})`
+    : (currentUser?.name ? `${currentUser.name} 원장선생님` : '원장선생님');
+
   const [postForm, setPostForm] = useState({
     title: '',
     content: '',
-    visibility: 'ALL',
-    targetClass: availableClasses[0] || '햇살반',
+    visibility: isTeacher ? 'CLASS' : 'ALL',
+    targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
     imageUrl: PRESET_PHOTOS[0].url,
-    authorName: currentUser?.name ? `${currentUser.name} 원장선생님` : '원장선생님',
+    authorName: defaultAuthorName,
+    authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
   });
   const fileInputRef = useRef(null);
 
@@ -296,19 +306,42 @@ export default function BoardViewer({
     }
   };
 
-  // Handle File Upload to Base64
-  const handleFileUpload = (e) => {
+  // Handle File Upload to Cloud Storage API
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert('사진 크기는 10MB 이하만 업로드 가능합니다.');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('사진 크기는 20MB 이하만 업로드 가능합니다.');
       return;
     }
 
+    setIsUploadingToCloud(true);
     const reader = new FileReader();
-    reader.onload = () => {
-      setPostForm(prev => ({ ...prev, imageUrl: reader.result }));
+    reader.onload = async () => {
+      const base64Data = reader.result;
+      try {
+        const res = await fetch(`${API_BASE_URL}/routing/board/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64Data,
+            filename: file.name,
+            mimeType: file.type
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.url) {
+          setPostForm(prev => ({ ...prev, imageUrl: data.url }));
+        } else {
+          setPostForm(prev => ({ ...prev, imageUrl: base64Data }));
+        }
+      } catch (err) {
+        console.warn('Cloud upload failed, using local preview', err);
+        setPostForm(prev => ({ ...prev, imageUrl: base64Data }));
+      } finally {
+        setIsUploadingToCloud(false);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -369,8 +402,8 @@ export default function BoardViewer({
         targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
         imageUrl: postForm.imageUrl,
         images: [],
-        authorName: postForm.authorName || '원장선생님',
-        authorRole: 'ADMIN',
+        authorName: postForm.authorName || defaultAuthorName,
+        authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
         likeCount: 0,
         likedUserIds: [],
         comments: [],
@@ -419,15 +452,27 @@ export default function BoardViewer({
     });
   };
 
+
+  const canEditPost = (post) => {
+    if (isAdmin) return true;
+    if (isTeacher) {
+      if (post.authorName && post.authorName.includes(currentUser.name)) return true;
+      if (post.targetClass && post.targetClass.trim() === teacherClass.trim()) return true;
+      if (post.authorRole === 'TEACHER' && post.targetClass === teacherClass) return true;
+    }
+    return false;
+  };
+
   const openEditModal = (post) => {
     setEditingPost(post);
     setPostForm({
       title: post.title,
       content: post.content,
-      visibility: post.visibility || 'ALL',
-      targetClass: post.targetClass || availableClasses[0] || '햇살반',
+      visibility: post.visibility || (isTeacher ? 'CLASS' : 'ALL'),
+      targetClass: post.targetClass || (isTeacher ? teacherClass : availableClasses[0]) || '햇살반',
       imageUrl: post.imageUrl || PRESET_PHOTOS[0].url,
-      authorName: post.authorName || '원장선생님'
+      authorName: post.authorName || defaultAuthorName,
+      authorRole: post.authorRole || (isTeacher ? 'TEACHER' : 'ADMIN')
     });
     setIsCreatingPost(true);
   };
@@ -551,25 +596,27 @@ export default function BoardViewer({
                         </span>
                       )}
 
-                      {/* Admin Post Actions */}
-                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(post)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-xs font-bold"
-                          title="게시글 수정"
-                        >
-                          수정
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPostToDelete(post)}
-                          className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors text-xs font-bold"
-                          title="게시글 삭제"
-                        >
-                          삭제
-                        </button>
-                      </div>
+                      {/* Post Actions (Admin or Authorized Teacher) */}
+                      {canEditPost(post) && (
+                        <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(post)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-xs font-bold"
+                            title="게시글 수정"
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPostToDelete(post)}
+                            className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors text-xs font-bold"
+                            title="게시글 삭제"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* 제목 */}

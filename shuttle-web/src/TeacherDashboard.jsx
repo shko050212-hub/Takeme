@@ -24,6 +24,7 @@ export default function TeacherDashboard({
   buses = [], 
   students = [], 
   onOpenBoard, 
+  onOpenNewPost,
   onLogout,
   onRefreshData
 }) {
@@ -196,11 +197,18 @@ export default function TeacherDashboard({
 
           <div className="flex items-center gap-2 sm:gap-3">
             <button
+              onClick={onOpenNewPost || onOpenBoard}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md shadow-blue-500/20 active:scale-95"
+            >
+              <span>✏️</span>
+              <span>새 활동 사진 등록</span>
+            </button>
+            <button
               onClick={onOpenBoard}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-sm active:scale-95"
             >
               <span>📸</span>
-              <span>우리 반 앨범 / 게시판</span>
+              <span>우리 반 앨범</span>
             </button>
 
             <button

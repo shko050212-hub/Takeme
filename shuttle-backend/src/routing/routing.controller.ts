@@ -314,4 +314,12 @@ export class RoutingController {
   async updateStudentBoardStatus(@Param('id') studentId: number, @Body('boardStatus') boardStatus: string) {
     return this.routingService.updateStudentBoardStatus(Number(studentId), boardStatus);
   }
+
+  @Post('board/upload')
+  async uploadBoardMedia(
+    @Body() body: { base64Data: string; filename?: string; mimeType?: string },
+    @Headers('host') host: string
+  ) {
+    return this.routingService.uploadMedia(body, host);
+  }
 }

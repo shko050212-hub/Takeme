@@ -1438,4 +1438,52 @@ export class RoutingService {
     await this.studentRepository.save(student);
     return { success: true, studentId: student.id, boardStatus: student.boardStatus };
   }
+
+  async uploadMedia(data: { base64Data: string; filename?: string; mimeType?: string }, reqHost?: string) {
+    if (!data.base64Data) {
+      throw new BadRequestException('업로드할 미디어 데이터가 없습니다.');
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const crypto = require('crypto');
+
+    let base64String = data.base64Data;
+    let ext = 'jpg';
+    if (base64String.includes(';base64,')) {
+      const parts = base64String.split(';base64,');
+      const mime = parts[0].replace('data:', '');
+      if (mime.includes('png')) ext = 'png';
+      else if (mime.includes('webp')) ext = 'webp';
+      else if (mime.includes('gif')) ext = 'gif';
+      else if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
+      base64String = parts[1];
+    } else if (data.mimeType) {
+      if (data.mimeType.includes('png')) ext = 'png';
+      else if (data.mimeType.includes('webp')) ext = 'webp';
+      else if (data.mimeType.includes('gif')) ext = 'gif';
+    }
+
+    const buffer = Buffer.from(base64String, 'base64');
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'board');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const randomName = `${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`;
+    const filePath = path.join(uploadsDir, randomName);
+    fs.writeFileSync(filePath, buffer);
+
+    const host = reqHost || '52.63.245.203';
+    const protocol = host.includes('localhost') ? 'http' : 'http';
+    const url = `${protocol}://${host}/uploads/board/${randomName}`;
+
+    return {
+      success: true,
+      url,
+      filename: randomName,
+      size: buffer.length,
+      createdAt: new Date().toISOString()
+    };
+  }
 }
