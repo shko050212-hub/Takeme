@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Alert, Platform } from 'react-native';
+import { API_HOST, authFetch } from '../lib/api';
 
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function AbsenceModal({ visible, onClose, email }) {
   const [overrideType, setOverrideType] = useState('ABSENCE');
@@ -58,7 +58,7 @@ export default function AbsenceModal({ visible, onClose, email }) {
         payload = { email, targetRoles, message: reason };
       }
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

@@ -1439,6 +1439,39 @@ export class RoutingService {
     return { success: true, studentId: student.id, boardStatus: student.boardStatus };
   }
 
+  async updateStudentClass(studentId: number, className: string) {
+    const student = await this.studentRepository.findOne({ where: { id: studentId } });
+    if (!student) throw new BadRequestException('원아를 찾을 수 없습니다.');
+    let rawObj = student.raw;
+    if (typeof rawObj === 'string') {
+      try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+    }
+    if (!rawObj || typeof rawObj !== 'object') rawObj = {};
+    rawObj['반명'] = className || '';
+    rawObj['반'] = className || '';
+    student.raw = rawObj;
+    await this.studentRepository.save(student);
+    return { success: true, studentId: student.id, className };
+  }
+
+  async batchAssignStudentClass(studentIds: number[], className: string) {
+    if (!Array.isArray(studentIds) || studentIds.length === 0) return { success: true, count: 0 };
+    const { In } = require('typeorm');
+    const students = await this.studentRepository.find({ where: { id: In(studentIds) } });
+    for (const st of students) {
+      let rawObj = st.raw;
+      if (typeof rawObj === 'string') {
+        try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+      }
+      if (!rawObj || typeof rawObj !== 'object') rawObj = {};
+      rawObj['반명'] = className || '';
+      rawObj['반'] = className || '';
+      st.raw = rawObj;
+    }
+    await this.studentRepository.save(students);
+    return { success: true, count: students.length, className };
+  }
+
   async uploadMedia(data: { base64Data: string; filename?: string; mimeType?: string }, reqHost?: string) {
     if (!data.base64Data) {
       throw new BadRequestException('업로드할 미디어 데이터가 없습니다.');

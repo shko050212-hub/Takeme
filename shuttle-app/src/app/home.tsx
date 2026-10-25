@@ -7,10 +7,10 @@ import AbsenceModal from '../components/AbsenceModal';
 import TeacherDashboard from '../components/TeacherDashboard';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import io from 'socket.io-client';
+import { API_HOST, authFetch, socketOptions } from '../lib/api';
 
 import KakaoMap from '../components/KakaoMap';
 
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -37,19 +37,18 @@ export default function HomeScreen() {
 
   const fetchRoute = async () => {
     try {
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`${API_HOST}/parent/route?email=${email}`, { headers });
+      const res = await authFetch(`${API_HOST}/parent/route?email=${email}`);
       const data = await res.json();
       if (res.ok) {
         setRouteData(data);
         if (data.vehicleId) {
           if (!socketRef.current) {
-            socketRef.current = io(API_HOST);
+            socketRef.current = io(API_HOST, socketOptions());
             socketRef.current.on('locationUpdated', (locData) => {
               setBusLocation({ latitude: locData.lat, longitude: locData.lng });
             });
           }
-          socketRef.current.emit('joinVehicleRoom', data.vehicleId);
+          socketRef.current.emit('joinVehicleRoom', { vehicleId: data.vehicleId });
         }
       }
     } catch (e) {
@@ -65,8 +64,7 @@ export default function HomeScreen() {
 
   const fetchNotifications = async () => {
     try {
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`${API_HOST}/parent/notifications?email=${email}`, { headers });
+      const res = await authFetch(`${API_HOST}/parent/notifications?email=${email}`);
       const data = await res.json();
       if (res.ok) {
         setNotifications(data);
@@ -95,7 +93,7 @@ export default function HomeScreen() {
     }
 
     try {
-      const res = await fetch(`${API_HOST}/teacher/student-board`, {
+      const res = await authFetch(`${API_HOST}/teacher/student-board`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentEmail: email, teacherEmail })

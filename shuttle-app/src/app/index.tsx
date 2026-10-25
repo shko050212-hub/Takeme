@@ -11,10 +11,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { API_HOST, setAccessToken } from '../lib/api';
 
 const { height, width } = Dimensions.get('window');
 
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 const showAlert = (title, message) => {
   if (Platform.OS === 'web') {
@@ -145,8 +145,10 @@ const LoginScreen = ({ onLoginSuccess, onPending }) => {
       }
       
       if (data.requireApproval) {
+        setAccessToken(null); // 승인 대기 중에는 토큰이 발급되지 않음
         onPending(data.user.name, email, data.user.role);
       } else {
+        setAccessToken(data.accessToken || null); // 이후 모든 API·소켓 요청에 사용
         onLoginSuccess(data.user.name, email, data.user.role, data.accessToken);
       }
     } catch (e) {
@@ -335,7 +337,7 @@ export default function AppIndex() {
         <PendingScreen 
           userName={userName}
           role={userRole}
-          onLogout={() => setAppState('login')}
+          onLogout={() => { setAccessToken(null); setAppState('login'); }}
           onSettings={() => router.push({ pathname: '/settings', params: { email: userEmail } })}
         />
       )}

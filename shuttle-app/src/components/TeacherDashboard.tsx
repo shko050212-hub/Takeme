@@ -5,10 +5,10 @@ import QRCode from 'react-native-qrcode-svg';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import io from 'socket.io-client';
+import { API_HOST, authFetch, socketOptions, getAccessToken } from '../lib/api';
 
 import KakaoMap from './KakaoMap';
 
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;
@@ -22,7 +22,10 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 export default function TeacherDashboard({ email, name, role, token }) {
-  const getAuthHeaders = () => token ? { 'Authorization': `Bearer ${token}` } : {};
+  const getAuthHeaders = () => {
+    const currentToken = token || getAccessToken();
+    return currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {};
+  };
   const [activeView, setActiveView] = useState(role === 'DRIVER' ? 'passengers' : 'dashboard'); // dashboard, passengers, scanner, send_message, inbox
   const [students, setStudents] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
@@ -56,7 +59,8 @@ export default function TeacherDashboard({ email, name, role, token }) {
   useEffect(() => {
     // 소켓 연결 (JWT 인증 토큰 포함)
     socketRef.current = io(API_HOST, {
-      auth: { token },
+      ...socketOptions(),
+      auth: { token: token || getAccessToken() },
       transports: ['websocket', 'polling']
     });
 
@@ -81,6 +85,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
         if (status !== 'granted') {
           console.warn('위치 권한이 거부되었습니다.');
           return;
+        }
         }
 
         // 1) 화면 진입 즉시 현재 위치 한번 가져와서 지도에 즉시 표시
@@ -190,7 +195,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
 
   const handleStartOperation = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/start-operation`, {
+      const res = await authFetch(`${API_HOST}/teacher/start-operation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email })
@@ -216,7 +221,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
 
   const handleEndOperation = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/end-operation`, {
+      const res = await authFetch(`${API_HOST}/teacher/end-operation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email })
@@ -310,7 +315,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
     const { id, name, text } = reasonPrompt;
     setReasonPrompt(null);
     try {
-      const res = await fetch(`${API_HOST}/teacher/board`, {
+      const res = await authFetch(`${API_HOST}/teacher/board`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, studentId: id, reason: text })
@@ -344,7 +349,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
 
 
     try {
-      const res = await fetch(`${API_HOST}/teacher/student/${id}/memo`, {
+      const res = await authFetch(`${API_HOST}/teacher/student/${id}/memo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, memo: teacherMemo || '' })
@@ -364,7 +369,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
 
   const handleSkipStudent = async (studentId, studentName) => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/skip-student`, {
+      const res = await authFetch(`${API_HOST}/teacher/skip-student`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, studentId })
@@ -726,7 +731,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
     }
 
     try {
-      const res = await fetch(`${API_HOST}/teacher/send-message`, {
+      const res = await authFetch(`${API_HOST}/teacher/send-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

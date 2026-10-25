@@ -315,6 +315,16 @@ export class RoutingController {
     return this.routingService.updateStudentBoardStatus(Number(studentId), boardStatus);
   }
 
+  @Post('student/:id/class')
+  async updateStudentClass(@Param('id') studentId: number, @Body('className') className: string) {
+    return this.routingService.updateStudentClass(Number(studentId), className);
+  }
+
+  @Post('students/assign-class')
+  async batchAssignStudentClass(@Body() body: { studentIds: number[]; className: string }) {
+    return this.routingService.batchAssignStudentClass(body.studentIds || [], body.className);
+  }
+
   @Post('board/upload')
   async uploadBoardMedia(
     @Body() body: { base64Data: string; filename?: string; mimeType?: string },

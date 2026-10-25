@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { API_HOST } from '../lib/api';
 
 // API Host for development testing (Mobile needs IP instead of localhost)
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function RegisterScreen() {
   const router = useRouter();
