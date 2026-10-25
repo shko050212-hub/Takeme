@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Query, Res, Delete, Headers } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Query, Res, Delete, Headers, Put } from '@nestjs/common';
 import type { Response } from 'express';
 import { RoutingService } from './routing.service';
 
@@ -129,6 +129,11 @@ export class RoutingController {
     return this.routingService.getHolidays(academyId);
   }
 
+  @Delete('holiday/:id')
+  async deleteHoliday(@Param('id') id: string) {
+    return this.routingService.deleteHoliday(Number(id));
+  }
+
   @Post('delete-academy')
   async deleteAcademy(
     @Headers('x-academy-id') academyIdHeader?: string,
@@ -237,5 +242,104 @@ export class RoutingController {
   @Post('admin-messages/send')
   async sendAdminMessage(@Body() body: { targetRoles: string[], vehicleId: number | null, studentIds: number[], message: string }) {
     return this.routingService.sendAdminMessage(body);
+  }
+
+  // ===================== BOARD ROUTES =====================
+  @Get('board/posts')
+  async getBoardPosts(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+    @Query('visibility') visibility?: string,
+    @Query('targetClass') targetClass?: string,
+    @Query('search') search?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined);
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.getBoardPosts({ academyId, userId, visibility, targetClass, search });
+  }
+
+  @Get('board/posts/:id')
+  async getBoardPostById(@Param('id') id: string) {
+    return this.routingService.getBoardPostById(Number(id));
+  }
+
+  @Post('board/posts')
+  async createBoardPost(
+    @Body() body: any,
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : undefined;
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.createBoardPost(body, academyId, userId);
+  }
+
+  @Put('board/posts/:id')
+  async updateBoardPost(@Param('id') id: string, @Body() body: any) {
+    return this.routingService.updateBoardPost(Number(id), body);
+  }
+
+  @Delete('board/posts/:id')
+  async deleteBoardPost(@Param('id') id: string) {
+    return this.routingService.deleteBoardPost(Number(id));
+  }
+
+  @Post('board/posts/:id/like')
+  async toggleBoardPostLike(
+    @Param('id') id: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Body('userId') userIdBody?: string,
+  ) {
+    const uid = userIdHeader || userIdBody;
+    return this.routingService.toggleBoardPostLike(Number(id), uid);
+  }
+
+  @Post('board/posts/:id/comments')
+  async addBoardComment(@Param('id') id: string, @Body() body: any) {
+    return this.routingService.addBoardComment(Number(id), body);
+  }
+
+  @Delete('board/posts/:postId/comments/:commentId')
+  async deleteBoardComment(@Param('commentId') commentId: string) {
+    return this.routingService.deleteBoardComment(Number(commentId));
+  }
+
+  @Post('student/:id/note')
+  async updateStudentNote(@Param('id') studentId: number, @Body('memo') memo: string) {
+    return this.routingService.updateStudentNote(Number(studentId), memo);
+  }
+
+  @Post('student/:id/board-status')
+  async updateStudentBoardStatus(@Param('id') studentId: number, @Body('boardStatus') boardStatus: string) {
+    return this.routingService.updateStudentBoardStatus(Number(studentId), boardStatus);
+  }
+
+  @Post('board/upload')
+  async uploadBoardMedia(
+    @Body() body: { base64Data: string; filename?: string; mimeType?: string },
+    @Headers('host') host: string
+  ) {
+    return this.routingService.uploadMedia(body, host);
+  }
+
+  @Get('teachers')
+  async getTeachers(
+    @Query('academyId') academyId?: string,
+    @Headers('x-academy-id') headerA?: string,
+    @Headers('x-user-id') headerU?: string
+  ) {
+    const { academyId: aId, userId: uId } = this.resolveAcademyContext(headerA, academyId, headerU);
+    return this.routingService.getTeachers(aId, uId);
+  }
+
+  @Post('teacher/assign-class')
+  async assignTeacherClass(@Body() body: { teacherId: number; assignedClass: string }) {
+    return this.routingService.assignTeacherClass(Number(body.teacherId), body.assignedClass);
+  }
+
+  @Get('teacher/profile/:id')
+  async getTeacherProfile(@Param('id') teacherId: string) {
+    return this.routingService.getTeacherProfile(Number(teacherId));
   }
 }

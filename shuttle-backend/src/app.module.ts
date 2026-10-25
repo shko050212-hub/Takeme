@@ -17,6 +17,8 @@ import { PickupPoint } from './entities/pickup-point.entity';
 import { ChatRoom } from './entities/chat-room.entity';
 import { ChatRoomMember } from './entities/chat-room-member.entity';
 import { ChatMessage } from './entities/chat-message.entity';
+import { BoardPost } from './entities/board-post.entity';
+import { BoardComment } from './entities/board-comment.entity';
 import { ParentModule } from './parent/parent.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { ChatModule } from './chat/chat.module';
@@ -53,6 +55,8 @@ import { DirectionsModule } from './directions/directions.module';
           ChatRoomMember,
           ChatMessage,
           ApprovalRequest,
+          BoardPost,
+          BoardComment,
         ],
         synchronize: true,
         ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,

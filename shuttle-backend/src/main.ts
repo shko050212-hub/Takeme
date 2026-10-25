@@ -2,12 +2,15 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as express from 'express';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // API 명세 자동 문서: http://서버주소:3000/api-docs
   const swaggerConfig = new DocumentBuilder()
@@ -18,6 +21,13 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('api-docs', app, SwaggerModule.createDocument(app, swaggerConfig));
 
+  // 정적 클라우드 미디어 업로드 서빙 (/uploads/*)
+  const uploadsPath = join(process.cwd(), 'uploads');
+  if (!existsSync(uploadsPath)) {
+    mkdirSync(uploadsPath, { recursive: true });
+  }
+  app.use('/uploads', express.static(uploadsPath));
+
   const webDistPath = join(process.cwd(), '..', 'shuttle-web', 'dist');
   if (existsSync(webDistPath)) {
     app.use(express.static(webDistPath));
@@ -27,9 +37,8 @@ async function bootstrap() {
         res: express.Response,
         next: express.NextFunction,
       ) => {
-        // API 경로는 웹 화면(index.html)으로 넘기지 않음
-        // (기존에는 /teacher, /chat, /approval 의 GET 요청까지 index.html 이 응답되던 문제 수정)
-        const apiPrefixes = ['/routing', '/auth', '/parent', '/teacher', '/chat', '/approval', '/api-docs', '/socket.io', '/directions'];
+        // API 및 정적 업로드 경로는 웹 화면(index.html)으로 넘기지 않음
+        const apiPrefixes = ['/routing', '/auth', '/parent', '/teacher', '/chat', '/approval', '/api-docs', '/socket.io', '/directions', '/uploads'];
         if (req.method === 'GET' && !apiPrefixes.some((p) => req.path.startsWith(p))) {
           res.sendFile(join(webDistPath, 'index.html'));
         } else {
@@ -42,4 +51,3 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
-

@@ -7,13 +7,15 @@ import { firstValueFrom } from 'rxjs';
 import { Vehicle } from '../entities/vehicle.entity';
 import { Student } from '../entities/student.entity';
 import { Academy } from '../entities/academy.entity';
-import { User } from '../entities/user.entity';
+import { User, UserRole } from '../entities/user.entity';
 import { OperationLog } from '../entities/operation-log.entity';
 import { ParentMessage } from '../entities/parent-message.entity';
 import { ScheduleOverride, OverrideType } from '../entities/schedule-override.entity';
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
 import { Notification } from '../entities/notification.entity';
 import { PickupPoint } from '../entities/pickup-point.entity';
+import { BoardPost } from '../entities/board-post.entity';
+import { BoardComment } from '../entities/board-comment.entity';
 import { Between } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 
@@ -40,6 +42,10 @@ export class RoutingService {
     private notificationRepository: Repository<Notification>,
     @InjectRepository(PickupPoint)
     private pickupPointRepository: Repository<PickupPoint>,
+    @InjectRepository(BoardPost)
+    private boardPostRepository: Repository<BoardPost>,
+    @InjectRepository(BoardComment)
+    private boardCommentRepository: Repository<BoardComment>,
     private httpService: HttpService,
     private configService: ConfigService,
   ) {}
@@ -344,7 +350,9 @@ export class RoutingService {
         raw: parsedRaw,
         schedules: st.schedules,
         isRegistered: !!st.studentUser || !!st.parentUser,
-        approvalStatus: st.approvalStatus
+        approvalStatus: st.approvalStatus,
+        teacherMemo: st.teacherMemo || '',
+        boardStatus: st.boardStatus || 'WAITING'
       };
     });
 
@@ -1082,71 +1090,68 @@ export class RoutingService {
       return '정규하원';
     };
 
-    // 1. First Sheet: Overall Student Roster (유치원부)
-    const masterSheet = workbook.addWorksheet('유치원부');
-    masterSheet.columns = columns;
-
-    for (const student of students) {
+    const mapStudentRow = (student: any, sched?: any) => {
       let raw: any = student.raw;
       if (typeof raw === 'string') {
         try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
       }
       raw = raw || {};
 
-      masterSheet.addRow({
-        className: raw['반명'] || '',
+      return {
+        className: raw['반명'] || '반 미지정',
         name: student.name || raw['원아명'] || raw['학생이름/영문이름'] || raw['이름'] || '',
         kindergartenName: raw['유치원명'] || raw['소속원명'] || raw['학교명'] || academy?.name || '',
-        age: raw['연령'] || raw['학년'] || '',
+        age: raw['연령'] || raw['학년'] || '연령 미입력',
         gender: raw['성별'] || '',
         parentName: raw['보호자 성함'] || '',
         parentPhone: raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || '',
         address: student.address || raw['주소'] || '',
-        inLocation: raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
-        outLocation: raw['하원지'] || student.boardingLocation || student.address || '',
+        inLocation: sched?.address || raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
+        outLocation: raw['하원지'] || sched?.address || student.boardingLocation || student.address || '',
         teacherName: raw['담임명'] || '',
         departureType: getDepartureType(raw),
-        inBus: raw['등원차량'] || student.assignedVehicle?.busNumber || '',
-        outBus: raw['하원차량'] || student.assignedVehicle?.busNumber || '',
+        inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || student.assignedVehicle?.busNumber || '배정 대기',
+        outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '배정 대기',
         inTime: raw['등원시간'] || '',
         outTime: raw['하원시간'] || '',
         note: raw['비고'] || '',
-      });
-    }
+      };
+    };
 
-    // 2. Day-specific sheets (월, 화, 수, 목, 금, 토, 일)
+    const allRows = students.map(st => mapStudentRow(st));
+
+    // 1. 전체 원아 명단
+    const masterSheet = workbook.addWorksheet('전체 원아 명단');
+    masterSheet.columns = columns;
+    allRows.forEach(row => masterSheet.addRow(row));
+
+    // 2. 반별 명단 (반명 정렬)
+    const classSheet = workbook.addWorksheet('반별 명단');
+    classSheet.columns = columns;
+    const classRows = [...allRows].sort((a, b) => String(a.className || "").localeCompare(String(b.className || "")));
+    classRows.forEach(row => classSheet.addRow(row));
+
+    // 3. 연령별 명단 (연령 정렬)
+    const ageSheet = workbook.addWorksheet('연령별 명단');
+    ageSheet.columns = columns;
+    const ageRows = [...allRows].sort((a, b) => String(a.age || "").localeCompare(String(b.age || "")));
+    ageRows.forEach(row => ageSheet.addRow(row));
+
+    // 4. 차량별 명단 (배정차량 정렬)
+    const busSheet = workbook.addWorksheet('차량별 명단');
+    busSheet.columns = columns;
+    const busRows = [...allRows].sort((a, b) => String(a.inBus || "").localeCompare(String(b.inBus || "")));
+    busRows.forEach(row => busSheet.addRow(row));
+
+    // 5. 요일별 운행 명단 (월, 화, 수, 목, 금, 토, 일)
     for (let i = 0; i < days.length; i++) {
-      const sheet = workbook.addWorksheet(`${days[i]} 유치원부`);
+      const sheet = workbook.addWorksheet(`${days[i]}요일 운행명단`);
       sheet.columns = columns;
 
       for (const student of students) {
         const sched = student.schedules?.find(s => s.dayOfWeek === daysEnglish[i]);
         if (sched || student.raw) {
-          let raw: any = student.raw;
-          if (typeof raw === 'string') {
-            try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
-          }
-          raw = raw || {};
-
-          sheet.addRow({
-            className: raw['반명'] || '',
-            name: student.name || raw['원아명'] || raw['학생이름/영문이름'] || raw['이름'] || '',
-            kindergartenName: raw['유치원명'] || raw['소속원명'] || raw['학교명'] || academy?.name || '',
-            age: raw['연령'] || raw['학년'] || '',
-            gender: raw['성별'] || '',
-            parentName: raw['보호자 성함'] || '',
-            parentPhone: raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || '',
-            address: student.address || raw['주소'] || '',
-            inLocation: sched?.address || raw['등원지'] || raw['탑승지'] || student.boardingLocation || student.address || '',
-            outLocation: raw['하원지'] || sched?.address || student.boardingLocation || student.address || '',
-            teacherName: raw['담임명'] || '',
-            departureType: getDepartureType(raw),
-            inBus: sched?.assignedVehicle?.busNumber || raw['등원차량'] || student.assignedVehicle?.busNumber || '',
-            outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '',
-            inTime: raw['등원시간'] || '',
-            outTime: raw['하원시간'] || '',
-            note: raw['비고'] || '',
-          });
+          sheet.addRow(mapStudentRow(student, sched));
         }
       }
     }
@@ -1212,6 +1217,19 @@ export class RoutingService {
     });
   }
 
+  async deleteHoliday(id: number) {
+    const holiday = await this.academyHolidayRepository.findOne({ where: { id } });
+    if (holiday) {
+      const msg = `[유치원 공지] ${holiday.startDate}부터 ${holiday.endDate}까지 예정되었던 유치원 휴원일 지정이 취소(정상 운영)되었습니다.`;
+      const notification = this.notificationRepository.create({
+        message: msg,
+      });
+      await this.notificationRepository.save(notification);
+      await this.academyHolidayRepository.delete(id);
+    }
+    return { success: true };
+  }
+
   async getAdminMessages() {
     return this.parentMessageRepository.createQueryBuilder('msg')
       .where('msg.targetRoles LIKE :role', { role: '%ACADEMY_ADMIN%' })
@@ -1267,5 +1285,251 @@ export class RoutingService {
   async deletePickupPoint(id: number) {
     await this.pickupPointRepository.delete(id);
     return { success: true };
+  }
+
+  // ===================== BOARD APIs =====================
+  async getBoardPosts(params: {
+    academyId?: number;
+    userId?: number;
+    visibility?: string;
+    targetClass?: string;
+    search?: string;
+  }) {
+    const { academyId, userId, visibility, targetClass, search } = params;
+    const academy = await this.getAcademy(academyId, userId);
+
+    const qb = this.boardPostRepository.createQueryBuilder('post')
+      .leftJoinAndSelect('post.comments', 'comment')
+      .orderBy('post.createdAt', 'DESC')
+      .addOrderBy('comment.createdAt', 'ASC');
+
+    if (academy) {
+      qb.where('(post.academyId = :academyId OR post.academyId IS NULL)', { academyId: academy.id });
+    }
+
+    if (visibility && visibility !== 'ALL_INCL') {
+      if (visibility === 'ALL') {
+        qb.andWhere('post.visibility = :v', { v: 'ALL' });
+      } else if (visibility === 'CLASS') {
+        qb.andWhere('post.visibility = :v', { v: 'CLASS' });
+      }
+    }
+
+    if (targetClass && targetClass !== 'ALL') {
+      qb.andWhere('(post.visibility = :allVis OR post.targetClass = :tc)', { allVis: 'ALL', tc: targetClass });
+    }
+
+    if (search && search.trim()) {
+      qb.andWhere('(post.title ILIKE :kw OR post.content ILIKE :kw OR post.authorName ILIKE :kw)', { kw: `%${search.trim()}%` });
+    }
+
+    return qb.getMany();
+  }
+
+  async getBoardPostById(id: number) {
+    const post = await this.boardPostRepository.findOne({
+      where: { id },
+      relations: { comments: true }
+    });
+    if (!post) throw new BadRequestException('게시글을 찾을 수 없습니다.');
+    return post;
+  }
+
+  async createBoardPost(body: {
+    title: string;
+    content: string;
+    imageUrl?: string;
+    images?: string[];
+    authorName?: string;
+    authorRole?: string;
+    visibility?: string;
+    targetClass?: string;
+    academyId?: number;
+  }, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(body.academyId || academyId, userId);
+    const post = this.boardPostRepository.create({
+      title: body.title,
+      content: body.content,
+      imageUrl: body.imageUrl || null,
+      images: body.images || [],
+      authorName: body.authorName || '원장선생님',
+      authorRole: body.authorRole || 'ADMIN',
+      visibility: body.visibility || 'ALL',
+      targetClass: body.targetClass || null,
+      academy: academy || undefined,
+      likeCount: 0,
+      likedUserIds: [],
+    } as any);
+    return this.boardPostRepository.save(post);
+  }
+
+  async updateBoardPost(id: number, body: {
+    title?: string;
+    content?: string;
+    imageUrl?: string;
+    images?: string[];
+    visibility?: string;
+    targetClass?: string;
+  }) {
+    const post = await this.getBoardPostById(id);
+    if (body.title !== undefined) post.title = body.title;
+    if (body.content !== undefined) post.content = body.content;
+    if (body.imageUrl !== undefined) post.imageUrl = body.imageUrl;
+    if (body.images !== undefined) post.images = body.images;
+    if (body.visibility !== undefined) post.visibility = body.visibility;
+    if (body.targetClass !== undefined) post.targetClass = body.targetClass;
+    return this.boardPostRepository.save(post);
+  }
+
+  async deleteBoardPost(id: number) {
+    await this.boardPostRepository.delete(id);
+    return { success: true };
+  }
+
+  async toggleBoardPostLike(id: number, userIdStr?: string) {
+    const post = await this.getBoardPostById(id);
+    const uid = userIdStr || 'admin';
+    let liked = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
+    const exists = liked.includes(uid);
+    if (exists) {
+      liked = liked.filter(u => u !== uid);
+      post.likeCount = Math.max(0, post.likeCount - 1);
+    } else {
+      liked.push(uid);
+      post.likeCount = (post.likeCount || 0) + 1;
+    }
+    post.likedUserIds = liked;
+    await this.boardPostRepository.save(post);
+    return { likeCount: post.likeCount, isLiked: !exists };
+  }
+
+  async addBoardComment(postId: number, body: {
+    content: string;
+    authorName?: string;
+    authorRole?: string;
+  }) {
+    const post = await this.getBoardPostById(postId);
+    const comment = this.boardCommentRepository.create({
+      post,
+      content: body.content,
+      authorName: body.authorName || '원장선생님',
+      authorRole: body.authorRole || 'ADMIN',
+    } as any);
+    return this.boardCommentRepository.save(comment);
+  }
+
+  async deleteBoardComment(commentId: number) {
+    await this.boardCommentRepository.delete(commentId);
+    return { success: true };
+  }
+
+  async updateStudentNote(studentId: number, memo: string) {
+    const student = await this.studentRepository.findOne({ where: { id: studentId } });
+    if (!student) throw new BadRequestException('원아를 찾을 수 없습니다.');
+    student.teacherMemo = memo;
+    await this.studentRepository.save(student);
+    return { success: true, studentId: student.id, teacherMemo: student.teacherMemo };
+  }
+
+  async updateStudentBoardStatus(studentId: number, boardStatus: string) {
+    const student = await this.studentRepository.findOne({ where: { id: studentId } });
+    if (!student) throw new BadRequestException('원아를 찾을 수 없습니다.');
+    student.boardStatus = boardStatus;
+    await this.studentRepository.save(student);
+    return { success: true, studentId: student.id, boardStatus: student.boardStatus };
+  }
+
+  async uploadMedia(data: { base64Data: string; filename?: string; mimeType?: string }, reqHost?: string) {
+    if (!data.base64Data) {
+      throw new BadRequestException('업로드할 미디어 데이터가 없습니다.');
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const crypto = require('crypto');
+
+    let base64String = data.base64Data;
+    let ext = 'jpg';
+    if (base64String.includes(';base64,')) {
+      const parts = base64String.split(';base64,');
+      const mime = parts[0].replace('data:', '');
+      if (mime.includes('png')) ext = 'png';
+      else if (mime.includes('webp')) ext = 'webp';
+      else if (mime.includes('gif')) ext = 'gif';
+      else if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
+      base64String = parts[1];
+    } else if (data.mimeType) {
+      if (data.mimeType.includes('png')) ext = 'png';
+      else if (data.mimeType.includes('webp')) ext = 'webp';
+      else if (data.mimeType.includes('gif')) ext = 'gif';
+    }
+
+    const buffer = Buffer.from(base64String, 'base64');
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'board');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const randomName = `${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${ext}`;
+    const filePath = path.join(uploadsDir, randomName);
+    fs.writeFileSync(filePath, buffer);
+
+    const host = reqHost || '52.63.245.203';
+    const protocol = host.includes('localhost') ? 'http' : 'http';
+    const url = `${protocol}://${host}/uploads/board/${randomName}`;
+
+    return {
+      success: true,
+      url,
+      filename: randomName,
+      size: buffer.length,
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  async getTeachers(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) return [];
+
+    const teachers = await this.userRepository.find({
+      where: {
+        role: UserRole.TEACHER,
+        academy: { id: academy.id }
+      },
+      order: { createdAt: 'DESC' }
+    });
+
+    return teachers.map(t => ({
+      id: t.id,
+      email: t.email,
+      name: t.name,
+      assignedClass: t.assignedClass || '',
+      createdAt: t.createdAt
+    }));
+  }
+
+  async assignTeacherClass(teacherId: number, assignedClass: string) {
+    const teacher = await this.userRepository.findOne({ where: { id: teacherId } });
+    if (!teacher) throw new BadRequestException('교사를 찾을 수 없습니다.');
+    teacher.assignedClass = assignedClass || '';
+    await this.userRepository.save(teacher);
+    return { success: true, teacherId: teacher.id, assignedClass: teacher.assignedClass };
+  }
+
+  async getTeacherProfile(teacherId: number) {
+    const teacher = await this.userRepository.findOne({
+      where: { id: teacherId },
+      relations: { academy: true }
+    });
+    if (!teacher) throw new BadRequestException('교사를 찾을 수 없습니다.');
+    return {
+      id: teacher.id,
+      email: teacher.email,
+      name: teacher.name,
+      role: teacher.role,
+      assignedClass: teacher.assignedClass || '',
+      academyId: teacher.academy?.id,
+      academyName: teacher.academy?.name
+    };
   }
 }

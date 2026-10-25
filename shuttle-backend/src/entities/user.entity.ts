@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { encryptionTransformer } from '../utils/crypto.util';
+import { Academy } from './academy.entity';
 
 export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
@@ -26,6 +27,16 @@ export class User {
 
   @Column({ nullable: true })
   name: string;
+
+  @Column({ nullable: true })
+  assignedClass: string; // 유치원 담당 반 (예: 햇살반)
+
+  @ManyToOne(() => Academy, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'academyId' })
+  academy: Academy;
+
+  @Column({ nullable: true })
+  academyId: number;
 
   @Column({ nullable: true, transformer: encryptionTransformer })
   otpSecret: string; // Google OTP secret (AES-256-GCM encrypted)
