@@ -1209,6 +1209,19 @@ export class RoutingService {
     });
   }
 
+  async deleteHoliday(id: number) {
+    const holiday = await this.academyHolidayRepository.findOne({ where: { id } });
+    if (holiday) {
+      const msg = `[유치원 공지] ${holiday.startDate}부터 ${holiday.endDate}까지 예정되었던 유치원 휴원일 지정이 취소(정상 운영)되었습니다.`;
+      const notification = this.notificationRepository.create({
+        message: msg,
+      });
+      await this.notificationRepository.save(notification);
+      await this.academyHolidayRepository.delete(id);
+    }
+    return { success: true };
+  }
+
   async getAdminMessages() {
     return this.parentMessageRepository.createQueryBuilder('msg')
       .where('msg.targetRoles LIKE :role', { role: '%ACADEMY_ADMIN%' })

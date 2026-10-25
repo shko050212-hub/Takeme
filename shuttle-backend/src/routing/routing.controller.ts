@@ -129,6 +129,11 @@ export class RoutingController {
     return this.routingService.getHolidays(academyId);
   }
 
+  @Delete('holiday/:id')
+  async deleteHoliday(@Param('id') id: string) {
+    return this.routingService.deleteHoliday(Number(id));
+  }
+
   @Post('delete-academy')
   async deleteAcademy(
     @Headers('x-academy-id') academyIdHeader?: string,
