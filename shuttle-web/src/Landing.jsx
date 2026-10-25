@@ -124,7 +124,7 @@ export default function Landing() {
       });
       const data = await res.json();
       if (res.ok) {
-        alert(data.message || '교사 회원가입이 완료되었습니다! 로그인해주세요.');
+        alert(data.message || '교사 회원가입이 완료되었습니다. 로그인해주세요.');
         setMode('login');
         setPassword('');
       } else {
@@ -157,7 +157,7 @@ export default function Landing() {
       body: JSON.stringify({ userId, token: otpToken })
     });
     if (res.ok) {
-      alert('OTP 연동이 완료되었습니다! 로그인해주세요.');
+      alert('OTP 연동이 완료되었습니다. 로그인해주세요.');
       setMode('login');
       setPassword('');
       setOtpToken('');
@@ -195,12 +195,6 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center relative overflow-hidden py-8 px-4">
-      {/* Background emojis */}
-      <div className="absolute top-10 left-10 text-6xl opacity-20">🚌</div>
-      <div className="absolute top-20 right-20 text-6xl opacity-20">🏫</div>
-      <div className="absolute bottom-20 left-1/4 text-6xl opacity-20">📚</div>
-      <div className="absolute bottom-10 right-10 text-6xl opacity-20">✏️</div>
-
       <div className="landing-glass w-full max-w-md p-8 relative z-10 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200">
         <h1 className="text-3xl font-extrabold text-center mb-1 text-blue-600 tracking-tight">Takeme</h1>
         <p className="text-center text-slate-500 mb-6 text-sm">유치원 안심 통학 셔틀 & 원아 안심 케어 시스템</p>
@@ -218,7 +212,7 @@ export default function Landing() {
             <button type="submit" className="btn-primary w-full py-3 text-base font-bold shadow-md shadow-blue-500/20">로그인</button>
             <div className="text-center mt-4">
               <button type="button" onClick={() => { setMode('signup'); setRole('ACADEMY_ADMIN'); }} className="text-sm font-medium text-blue-600 hover:underline">
-                신규 회원가입 (원장선생님 / 유치원 교사)
+                회원가입
               </button>
             </div>
           </form>
@@ -257,39 +251,37 @@ export default function Landing() {
                     setRole('ACADEMY_ADMIN');
                     setIsAuthCodeVerified(false);
                   }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${
                     role === 'ACADEMY_ADMIN'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <span>👑</span>
-                  <span>원장선생님</span>
+                  원장선생님
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setRole('TEACHER');
                   }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${
                     role === 'TEACHER'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <span>👩‍🏫</span>
-                  <span>유치원 교사</span>
+                  유치원 교사
                 </button>
               </div>
             </div>
 
             {role === 'ACADEMY_ADMIN' ? (
-              <p className="text-xs font-medium text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-100 flex items-center gap-2">
-                <span>ℹ️</span> 가입 즉시 새로운 유치원 관리 대시보드가 생성됩니다.
+              <p className="text-xs font-medium text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-100">
+                가입 즉시 새로운 유치원 관리 대시보드가 생성됩니다.
               </p>
             ) : (
-              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 py-2 px-3 rounded-lg border border-emerald-100 flex items-center gap-2">
-                <span>ℹ️</span> 원장선생님께 전달받은 <strong>원 인증코드</strong>를 입력해주세요.
+              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 py-2 px-3 rounded-lg border border-emerald-100">
+                원장선생님께 전달받은 <strong>원 인증코드</strong>를 입력해주세요.
               </p>
             )}
 
@@ -324,13 +316,12 @@ export default function Landing() {
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
                     >
-                      {isVerifyingAuthCode ? '확인 중...' : isAuthCodeVerified ? '인증완료 ✓' : '코드 확인'}
+                      {isVerifyingAuthCode ? '확인 중...' : isAuthCodeVerified ? '인증완료' : '코드 확인'}
                     </button>
                   </div>
                   {isAuthCodeVerified && (
-                    <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
-                      <span>✓</span>
-                      <span>소속: <strong>{verifiedAcademyName}</strong></span>
+                    <div className="mt-1.5 text-xs font-semibold text-emerald-600">
+                      소속: <strong>{verifiedAcademyName}</strong>
                     </div>
                   )}
                 </div>
@@ -386,7 +377,7 @@ export default function Landing() {
                   disabled={isEmailVerified || isEmailSending} 
                   className="px-3 py-2 bg-slate-200 text-xs font-bold rounded-xl shrink-0 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isEmailSending ? '전송중...' : isEmailVerified ? '인증완료 ✓' : '인증 발송'}
+                  {isEmailSending ? '전송중...' : isEmailVerified ? '인증완료' : '인증 발송'}
                 </button>
               </div>
             </div>
@@ -447,7 +438,7 @@ export default function Landing() {
               className="btn-primary w-full py-3 font-bold text-sm shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed" 
               disabled={!isEmailVerified || !validatePassword(password) || (role === 'TEACHER' && !isAuthCodeVerified)}
             >
-              {role === 'ACADEMY_ADMIN' ? '👑 원장선생님 가입 완료' : '👩‍🏫 유치원 교사 가입 완료'}
+              {role === 'ACADEMY_ADMIN' ? '원장선생님 가입 완료' : '유치원 교사 가입 완료'}
             </button>
             <div className="text-center mt-3">
               <button type="button" onClick={() => setMode('login')} className="text-xs font-semibold text-slate-500 hover:underline">
