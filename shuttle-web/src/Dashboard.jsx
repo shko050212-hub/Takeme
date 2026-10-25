@@ -245,6 +245,7 @@ export default function Dashboard() {
   const [selectedDay, setSelectedDay] = useState('ALL'); // 'ALL', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'
 
   const [busLocations, setBusLocations] = useState({});
+  const [operatingBuses, setOperatingBuses] = useState({}); // { [busId]: boolean }
 
   // Student Addition Modal State
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
@@ -386,16 +387,39 @@ export default function Dashboard() {
       }
     });
 
+    socket.on('allVehicleOperatingStatus', (statusMap) => {
+      console.log('All vehicle operating status:', statusMap);
+      if (statusMap) {
+        setOperatingBuses(prev => ({ ...prev, ...statusMap }));
+      }
+    });
+
+    socket.on('vehicleOperatingStatus', (data) => {
+      console.log('Vehicle operating status update:', data);
+      if (data && data.vehicleId) {
+        setOperatingBuses(prev => ({
+          ...prev,
+          [data.vehicleId]: !!data.isOperating
+        }));
+      }
+    });
+
     socket.on('locationUpdated', (data) => {
       console.log('Real-time bus location received:', data);
-      setBusLocations(prev => ({
-        ...prev,
-        [data.vehicleId]: {
-          lat: parseFloat(data.lat),
-          lng: parseFloat(data.lng),
-          timestamp: data.timestamp
-        }
-      }));
+      if (data && data.vehicleId) {
+        setBusLocations(prev => ({
+          ...prev,
+          [data.vehicleId]: {
+            lat: parseFloat(data.lat),
+            lng: parseFloat(data.lng),
+            timestamp: data.timestamp
+          }
+        }));
+        setOperatingBuses(prev => ({
+          ...prev,
+          [data.vehicleId]: true
+        }));
+      }
     });
 
     socket.on('authError', (err) => {
@@ -1746,7 +1770,14 @@ const parseKindergartenExcelSheet = (sheet) => {
                         <div className="w-4 h-4 rounded-full shadow-inner flex-shrink-0" style={{ backgroundColor: bus.color }}></div>
                         <div className="flex-1">
                           <div className="font-bold text-slate-800 flex items-center justify-between">
-                            {bus.name} 
+                            <span className="flex items-center gap-2">
+                              {bus.name}
+                              {operatingBuses[bus.id] && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white animate-pulse shadow-sm">
+                                  ● 운행중
+                                </span>
+                              )}
+                            </span>
                             {busStudents.length > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{busStudents.length}명</span>}
                           </div>
                           <div className="text-xs text-slate-500 mt-0.5">
@@ -2851,6 +2882,21 @@ const parseKindergartenExcelSheet = (sheet) => {
           </div>
         )}
 
+        {/* Top Active Operating Status Pill Banner */}
+        {Object.entries(operatingBuses).some(([_, isOp]) => isOp) && (
+          <div className="absolute top-4 left-16 z-[1000] bg-emerald-600/95 backdrop-blur-sm text-white px-4 py-2 rounded-xl shadow-xl flex items-center gap-2 border border-emerald-400 text-xs font-bold animate-pulse">
+            <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+            <span>
+              실시간 운행 중: {
+                buses
+                  .filter(b => operatingBuses[b.id])
+                  .map(b => b.name)
+                  .join(', ') || '차량'
+              }
+            </span>
+          </div>
+        )}
+
         {/* Top-Right Controls: SuperAdmin Switcher & Day Filter & Logout */}
         <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2">
           {isSuperAdmin && (
@@ -3134,13 +3180,49 @@ const parseKindergartenExcelSheet = (sheet) => {
             if (!bus || (selectedBusId && bus.id !== selectedBusId)) return null;
             const busIcon = L.divIcon({
               className: 'custom-bus-marker',
-              html: `<div style="background-color: ${bus.color || '#ef4444'}; font-size: 14px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">🚌</div>`,
-              iconSize: [28, 28],
-              iconAnchor: [14, 14]
+              html: `<div style="position: relative; display: flex; align-items: center; justify-content: center;">
+                <div style="background-color: ${bus.color || '#ef4444'}; font-size: 16px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">🚌</div>
+                <div style="position: absolute; top: -10px; right: -12px; background: #10b981; color: white; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 9999px; border: 1.5px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.25); white-space: nowrap;">● LIVE</div>
+              </div>`,
+              iconSize: [34, 34],
+              iconAnchor: [17, 17]
             });
             return (
               <Marker key={`realtime-bus-${vid}`} position={[loc.lat, loc.lng]} icon={busIcon}>
-                <Popup className="font-bold">{bus.name} 실시간 위치</Popup>
+                <Popup className="font-bold">
+                  <div className="text-center p-1">
+                    <div className="font-extrabold text-blue-800 text-sm">{bus.name}</div>
+                    <div className="text-xs text-emerald-600 font-bold mt-1">🟢 실시간 운행 중</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{new Date(loc.timestamp).toLocaleTimeString()} 수신</div>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
+          {/* If operating but no GPS points yet, show starting indicator */}
+          {buses.map(bus => {
+            if (!operatingBuses[bus.id] || busLocations[bus.id]) return null;
+            if (selectedBusId && bus.id !== selectedBusId) return null;
+            const initialPt = (bus.points && bus.points[0]) || (academy && !isNaN(academy.lat) ? [academy.lat, academy.lng] : null);
+            if (!initialPt) return null;
+            const startingIcon = L.divIcon({
+              className: 'custom-bus-marker-starting',
+              html: `<div style="position: relative; display: flex; align-items: center; justify-content: center;">
+                <div style="background-color: ${bus.color || '#3b82f6'}; font-size: 15px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2.5px dashed white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">🚌</div>
+                <div style="position: absolute; top: -8px; right: -10px; background: #f59e0b; color: white; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 9999px; border: 1.5px solid white; white-space: nowrap;">운행시작</div>
+              </div>`,
+              iconSize: [32, 32],
+              iconAnchor: [16, 16]
+            });
+            return (
+              <Marker key={`starting-bus-${bus.id}`} position={initialPt} icon={startingIcon}>
+                <Popup className="font-bold">
+                  <div className="text-center p-1">
+                    <div className="font-extrabold text-blue-800 text-sm">{bus.name}</div>
+                    <div className="text-xs text-amber-600 font-bold mt-1">🟡 운행 시작됨 (GPS 위치 수신 대기 중)</div>
+                  </div>
+                </Popup>
               </Marker>
             );
           })}

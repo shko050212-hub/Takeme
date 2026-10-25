@@ -53,6 +53,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
   const routeDataRef = useRef<any>({ stops: [] });
   const ttsAnnouncedRef = useRef<Set<any>>(new Set());
   const [isOperating, setIsOperating] = useState(false);
+  const isOperatingRef = useRef(false);
   const [reasonPrompt, setReasonPrompt] = useState<any>(null); // { id, name, text }
   const [memoPrompt, setMemoPrompt] = useState<any>(null); // { id, name, parentMessage, teacherMemo }
 
@@ -114,8 +115,8 @@ export default function TeacherDashboard({ email, name, role, token }) {
             const lng = loc.coords.longitude;
             setCurrentLoc({ latitude: lat, longitude: lng });
 
-            if (isOperating && socketRef.current) {
-              const targetVid = vehicleId || routeDataRef.current?.vehicleId || 1;
+            if ((isOperating || isOperatingRef.current) && socketRef.current) {
+              const targetVid = vehicleId || routeDataRef.current?.vehicleId || 18;
               socketRef.current.emit('driverLocationUpdate', {
                 vehicleId: targetVid, 
                 lat,
@@ -202,7 +203,7 @@ export default function TeacherDashboard({ email, name, role, token }) {
       if (res.ok) {
         setIsOperating(true);
         if (currentLoc && socketRef.current) {
-          const targetVid = vehicleId || routeDataRef.current?.vehicleId || 1;
+          const targetVid = vehicleId || routeDataRef.current?.vehicleId || 18;
           socketRef.current.emit('driverLocationUpdate', {
             vehicleId: targetVid,
             lat: currentLoc.latitude,

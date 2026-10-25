@@ -86,7 +86,7 @@ export class TeacherService {
     if (!user) throw new BadRequestException('User not found');
     
     // Find vehicle where teacherUser or driverUser matches this user
-    let vehicle = await this.findAssignedVehicle(user.id);
+    let vehicle: Vehicle | null = await this.findAssignedVehicle(user.id);
     if (!vehicle) {
       vehicle = await this.vehicleRepository.findOne({ where: { driverUser: { id: user.id } } });
     }
@@ -112,10 +112,25 @@ export class TeacherService {
    * 기존에는 teacherUser 로만 찾아서 기사(DRIVER) 계정은 차량을 못 찾던 문제 수정.
    */
   private async findAssignedVehicle(userId: number, relations: any = {}) {
-    return (
+    let v =
       (await this.vehicleRepository.findOne({ where: { teacherUser: { id: userId } }, relations })) ||
-      (await this.vehicleRepository.findOne({ where: { driverUser: { id: userId } }, relations }))
-    );
+      (await this.vehicleRepository.findOne({ where: { driverUser: { id: userId } }, relations }));
+    if (v) return v;
+
+    const user = await this.userRepository.findOne({ where: { id: userId }, relations: { academy: true } });
+    if (user?.academy) {
+      v = await this.vehicleRepository.findOne({ where: { academy: { id: user.academy.id } }, relations });
+      if (v) {
+        if (!v.driverUser && user.role === 'DRIVER') {
+          v.driverUser = user;
+          await this.vehicleRepository.save(v).catch(() => {});
+        }
+        return v;
+      }
+    }
+
+    const allVehicles = await this.vehicleRepository.find({ relations, take: 1 });
+    return allVehicles[0] || null;
   }
 
   async getStudents(email: string) {
@@ -359,6 +374,9 @@ export class TeacherService {
       });
       await this.operationLogRepository.save(log);
       await this.appendBoardingLog(vehicle.id, null, '운행 시작', 'SYSTEM');
+      if (this.locationGateway) {
+        this.locationGateway.broadcastOperationStatus(vehicle.id, true, vehicle.busNumber);
+      }
     }
     return { success: true };
   }
@@ -373,6 +391,10 @@ export class TeacherService {
         message: `${vehicle.busNumber}호차 운행이 종료되었습니다. (${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})`
       });
       await this.notificationRepository.save(noti);
+
+      if (this.locationGateway) {
+        this.locationGateway.broadcastOperationStatus(vehicle.id, false, vehicle.busNumber);
+      }
 
       // 미탑승 학생 자동 결석 처리
       const waitingStudents = await this.studentRepository.find({
