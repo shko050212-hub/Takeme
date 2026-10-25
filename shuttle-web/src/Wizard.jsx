@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { API_BASE_URL } from './config';
@@ -11,6 +11,25 @@ export default function Wizard() {
   
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+
+  const currentUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('takeme_user') || '{}');
+    } catch (e) {
+      return {};
+    }
+  })();
+  const isAuthenticated = Boolean(currentUser && currentUser.id && currentUser.role);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];

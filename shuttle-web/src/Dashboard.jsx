@@ -88,6 +88,13 @@ export default function Dashboard() {
       return {};
     }
   })();
+  const isAuthenticated = Boolean(currentUser && currentUser.id && currentUser.role);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
   const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
   const [allAcademies, setAllAcademies] = useState([]);
   const [selectedAcademyId, setSelectedAcademyId] = useState(
@@ -664,6 +671,7 @@ export default function Dashboard() {
   };
 
   const loadInitialState = async (overrideAcademyId) => {
+    if (!isAuthenticated) return;
     try {
       setIsInitializing(true);
       const targetAcademyId = overrideAcademyId !== undefined ? overrideAcademyId : (selectedAcademyId || currentUser.academyId);
@@ -1449,6 +1457,10 @@ const parseKindergartenExcelSheet = (sheet) => {
       setIsProcessing(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   if (isInitializing) {
     return (

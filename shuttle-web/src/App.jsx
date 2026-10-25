@@ -27,14 +27,44 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+function ProtectedRoute({ children }) {
+  const userStr = localStorage.getItem('takeme_user');
+  let user = null;
+  try {
+    user = userStr ? JSON.parse(userStr) : null;
+  } catch (e) {
+    user = null;
+  }
+
+  if (!user || !user.id || !user.role) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/wizard" element={<Wizard />} />
-        <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route 
+          path="/wizard" 
+          element={
+            <ProtectedRoute>
+              <Wizard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/dashboard" 
+          element={
+            <ProtectedRoute>
+              <ErrorBoundary><Dashboard /></ErrorBoundary>
+            </ProtectedRoute>
+          } 
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
