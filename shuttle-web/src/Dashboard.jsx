@@ -326,13 +326,61 @@ export default function Dashboard() {
     setCollapsedGroups(next);
   };
 
+  const socketRef = useRef(null);
+
   useEffect(() => {
-    const socket = io(API_BASE_URL);
-    socket.on('locationUpdated', (data) => {
-      setBusLocations(prev => ({ ...prev, [data.vehicleId]: data }));
+    let token = localStorage.getItem('takeme_token');
+    if (!token) {
+      try {
+        const u = JSON.parse(localStorage.getItem('takeme_user') || '{}');
+        token = u?.accessToken;
+      } catch (e) {}
+    }
+
+    const socket = io(API_BASE_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling']
     });
-    return () => socket.disconnect();
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('Manager socket connected:', socket.id);
+      if (buses && buses.length > 0) {
+        buses.forEach(b => {
+          socket.emit('joinVehicleRoom', { vehicleId: Number(b.id) });
+        });
+      }
+    });
+
+    socket.on('locationUpdated', (data) => {
+      console.log('Real-time bus location received:', data);
+      setBusLocations(prev => ({
+        ...prev,
+        [data.vehicleId]: {
+          lat: parseFloat(data.lat),
+          lng: parseFloat(data.lng),
+          timestamp: data.timestamp
+        }
+      }));
+    });
+
+    socket.on('authError', (err) => {
+      console.warn('Manager socket auth error:', err);
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
   }, []);
+
+  useEffect(() => {
+    if (socketRef.current && socketRef.current.connected && buses && buses.length > 0) {
+      buses.forEach(b => {
+        socketRef.current.emit('joinVehicleRoom', { vehicleId: Number(b.id) });
+      });
+    }
+  }, [buses]);
 
   const handleLogout = () => {
     if (window.confirm('로그아웃 하시겠습니까?')) {
