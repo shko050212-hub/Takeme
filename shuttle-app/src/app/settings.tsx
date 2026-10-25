@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { API_HOST, setAccessToken } from '../lib/api';
 import { ChevronLeft, Trash2 } from 'lucide-react-native';
 
-const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -51,10 +51,10 @@ export default function SettingsScreen() {
       if (res.ok) {
         if (Platform.OS === 'web') {
           window.alert('회원 탈퇴가 정상적으로 처리되었습니다.');
-          router.replace('/');
+          { setAccessToken(null); router.replace('/'); }
         } else {
           Alert.alert('탈퇴 완료', '회원 탈퇴가 정상적으로 처리되었습니다.', [
-            { text: '확인', onPress: () => router.replace('/') }
+            { text: '확인', onPress: () => { setAccessToken(null); router.replace('/'); } }
           ]);
         }
       } else {
