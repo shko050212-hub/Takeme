@@ -14,10 +14,17 @@ import { ScheduleOverride } from '../entities/schedule-override.entity';
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
 import { Notification } from '../entities/notification.entity';
 import { PickupPoint } from '../entities/pickup-point.entity';
+import { BoardPost } from '../entities/board-post.entity';
+import { BoardComment } from '../entities/board-comment.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Vehicle, Student, StudentSchedule, Academy, User, OperationLog, ParentMessage, ScheduleOverride, AcademyHoliday, Notification, PickupPoint]),
+    TypeOrmModule.forFeature([
+      Vehicle, Student, StudentSchedule, Academy, User,
+      OperationLog, ParentMessage, ScheduleOverride,
+      AcademyHoliday, Notification, PickupPoint,
+      BoardPost, BoardComment
+    ]),
     HttpModule
   ],
   controllers: [RoutingController],

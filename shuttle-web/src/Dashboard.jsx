@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, useMemo, Fragment } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -11,6 +11,8 @@ import MessagePanel from './MessagePanel';
 import DocumentManager from './documents/DocumentManager';
 import DocumentSidebar from './documents/DocumentSidebar';
 import { getOverallExpirySummary } from './documents/documentStorage';
+import BoardViewer from './board/BoardViewer';
+import BoardSidebar from './board/BoardSidebar';
 import { API_BASE_URL } from './config';
 
 
@@ -98,8 +100,29 @@ export default function Dashboard() {
   const [isLogClosing, setIsLogClosing] = useState(false);
   const [isMessageClosing, setIsMessageClosing] = useState(false);
   const [isDocumentsClosing, setIsDocumentsClosing] = useState(false);
+  const [isBoardClosing, setIsBoardClosing] = useState(false);
+  const [boardSelectedClass, setBoardSelectedClass] = useState('ALL');
+  const [boardSearchKeyword, setBoardSearchKeyword] = useState('');
+  const [isCreatingBoardPost, setIsCreatingBoardPost] = useState(false);
+  const [boardPosts, setBoardPosts] = useState([]);
   const [editingBus, setEditingBus] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Dynamic Kindergarten Classes Extractor
+  const availableClasses = useMemo(() => {
+    const classSet = new Set();
+    students.forEach(st => {
+      let raw = st?.raw;
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch(e) {}
+      }
+      if (raw && raw['반명'] && String(raw['반명']).trim()) {
+        classSet.add(String(raw['반명']).trim());
+      }
+    });
+    if (classSet.size === 0) return ['햇살반', '열매반', '풀잎반', '새싹반'];
+    return Array.from(classSet).sort();
+  }, [students]);
 
   // Messaging States
   const [msgSelectedBusId, setMsgSelectedBusId] = useState(null);
@@ -142,6 +165,12 @@ export default function Dashboard() {
       setIsDocumentsClosing(true);
       setTimeout(() => {
         setIsDocumentsClosing(false);
+        setActiveTab(newTab);
+      }, 300);
+    } else if (activeTab === 'board' && newTab !== 'board') {
+      setIsBoardClosing(true);
+      setTimeout(() => {
+        setIsBoardClosing(false);
         setActiveTab(newTab);
       }, 300);
     } else {
@@ -1493,6 +1522,15 @@ const parseKindergartenExcelSheet = (sheet) => {
             </span>
           )}
         </button>
+        <button 
+          onClick={() => handleTabChange('board')} 
+          className={`relative p-4 rounded-2xl transition-all ${activeTab === 'board' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} 
+          title="원아 앨범 & 게시판"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </button>
 
         <button onClick={() => handleTabChange('settings')} className={`p-4 rounded-2xl transition-all mt-auto ${activeTab === 'settings' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="환경설정">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
@@ -2380,6 +2418,18 @@ const parseKindergartenExcelSheet = (sheet) => {
               students={students}
             />
           )}
+
+          {activeTab === 'board' && (
+            <BoardSidebar 
+              selectedClass={boardSelectedClass}
+              setSelectedClass={setBoardSelectedClass}
+              availableClasses={availableClasses}
+              searchKeyword={boardSearchKeyword}
+              setSearchKeyword={setBoardSearchKeyword}
+              onOpenNewPost={() => setIsCreatingBoardPost(true)}
+              posts={boardPosts}
+            />
+          )}
         </div>
 
       {/* Map Area */}
@@ -2420,6 +2470,23 @@ const parseKindergartenExcelSheet = (sheet) => {
             isClosing={isDocumentsClosing}
             buses={buses}
             students={students}
+          />
+        )}
+
+        {activeTab === 'board' && (
+          <BoardViewer 
+            isClosing={isBoardClosing}
+            currentUser={currentUser}
+            selectedAcademyId={selectedAcademyId}
+            availableClasses={availableClasses}
+            selectedClass={boardSelectedClass}
+            setSelectedClass={setBoardSelectedClass}
+            searchKeyword={boardSearchKeyword}
+            setSearchKeyword={setBoardSearchKeyword}
+            isCreatingPost={isCreatingBoardPost}
+            setIsCreatingPost={setIsCreatingBoardPost}
+            posts={boardPosts}
+            setPosts={setBoardPosts}
           />
         )}
 

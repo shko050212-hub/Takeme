@@ -14,6 +14,8 @@ import { ScheduleOverride, OverrideType } from '../entities/schedule-override.en
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
 import { Notification } from '../entities/notification.entity';
 import { PickupPoint } from '../entities/pickup-point.entity';
+import { BoardPost } from '../entities/board-post.entity';
+import { BoardComment } from '../entities/board-comment.entity';
 import { Between } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 
@@ -40,6 +42,10 @@ export class RoutingService {
     private notificationRepository: Repository<Notification>,
     @InjectRepository(PickupPoint)
     private pickupPointRepository: Repository<PickupPoint>,
+    @InjectRepository(BoardPost)
+    private boardPostRepository: Repository<BoardPost>,
+    @InjectRepository(BoardComment)
+    private boardCommentRepository: Repository<BoardComment>,
     private httpService: HttpService,
     private configService: ConfigService,
   ) {}
@@ -1276,6 +1282,142 @@ export class RoutingService {
 
   async deletePickupPoint(id: number) {
     await this.pickupPointRepository.delete(id);
+    return { success: true };
+  }
+
+  // ===================== BOARD APIs =====================
+  async getBoardPosts(params: {
+    academyId?: number;
+    userId?: number;
+    visibility?: string;
+    targetClass?: string;
+    search?: string;
+  }) {
+    const { academyId, userId, visibility, targetClass, search } = params;
+    const academy = await this.getAcademy(academyId, userId);
+
+    const qb = this.boardPostRepository.createQueryBuilder('post')
+      .leftJoinAndSelect('post.comments', 'comment')
+      .orderBy('post.createdAt', 'DESC')
+      .addOrderBy('comment.createdAt', 'ASC');
+
+    if (academy) {
+      qb.where('(post.academyId = :academyId OR post.academyId IS NULL)', { academyId: academy.id });
+    }
+
+    if (visibility && visibility !== 'ALL_INCL') {
+      if (visibility === 'ALL') {
+        qb.andWhere('post.visibility = :v', { v: 'ALL' });
+      } else if (visibility === 'CLASS') {
+        qb.andWhere('post.visibility = :v', { v: 'CLASS' });
+      }
+    }
+
+    if (targetClass && targetClass !== 'ALL') {
+      qb.andWhere('(post.visibility = :allVis OR post.targetClass = :tc)', { allVis: 'ALL', tc: targetClass });
+    }
+
+    if (search && search.trim()) {
+      qb.andWhere('(post.title ILIKE :kw OR post.content ILIKE :kw OR post.authorName ILIKE :kw)', { kw: `%${search.trim()}%` });
+    }
+
+    return qb.getMany();
+  }
+
+  async getBoardPostById(id: number) {
+    const post = await this.boardPostRepository.findOne({
+      where: { id },
+      relations: ['comments']
+    });
+    if (!post) throw new BadRequestException('게시글을 찾을 수 없습니다.');
+    return post;
+  }
+
+  async createBoardPost(body: {
+    title: string;
+    content: string;
+    imageUrl?: string;
+    images?: string[];
+    authorName?: string;
+    authorRole?: string;
+    visibility?: string;
+    targetClass?: string;
+    academyId?: number;
+  }, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(body.academyId || academyId, userId);
+    const post = this.boardPostRepository.create({
+      title: body.title,
+      content: body.content,
+      imageUrl: body.imageUrl || null,
+      images: body.images || [],
+      authorName: body.authorName || '원장선생님',
+      authorRole: body.authorRole || 'ADMIN',
+      visibility: body.visibility || 'ALL',
+      targetClass: body.targetClass || null,
+      academy: academy || undefined,
+      likeCount: 0,
+      likedUserIds: [],
+    });
+    return this.boardPostRepository.save(post);
+  }
+
+  async updateBoardPost(id: number, body: {
+    title?: string;
+    content?: string;
+    imageUrl?: string;
+    images?: string[];
+    visibility?: string;
+    targetClass?: string;
+  }) {
+    const post = await this.getBoardPostById(id);
+    if (body.title !== undefined) post.title = body.title;
+    if (body.content !== undefined) post.content = body.content;
+    if (body.imageUrl !== undefined) post.imageUrl = body.imageUrl;
+    if (body.images !== undefined) post.images = body.images;
+    if (body.visibility !== undefined) post.visibility = body.visibility;
+    if (body.targetClass !== undefined) post.targetClass = body.targetClass;
+    return this.boardPostRepository.save(post);
+  }
+
+  async deleteBoardPost(id: number) {
+    await this.boardPostRepository.delete(id);
+    return { success: true };
+  }
+
+  async toggleBoardPostLike(id: number, userIdStr?: string) {
+    const post = await this.getBoardPostById(id);
+    const uid = userIdStr || 'admin';
+    let liked = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
+    const exists = liked.includes(uid);
+    if (exists) {
+      liked = liked.filter(u => u !== uid);
+      post.likeCount = Math.max(0, post.likeCount - 1);
+    } else {
+      liked.push(uid);
+      post.likeCount = (post.likeCount || 0) + 1;
+    }
+    post.likedUserIds = liked;
+    await this.boardPostRepository.save(post);
+    return { likeCount: post.likeCount, isLiked: !exists };
+  }
+
+  async addBoardComment(postId: number, body: {
+    content: string;
+    authorName?: string;
+    authorRole?: string;
+  }) {
+    const post = await this.getBoardPostById(postId);
+    const comment = this.boardCommentRepository.create({
+      post,
+      content: body.content,
+      authorName: body.authorName || '원장선생님',
+      authorRole: body.authorRole || 'ADMIN',
+    });
+    return this.boardCommentRepository.save(comment);
+  }
+
+  async deleteBoardComment(commentId: number) {
+    await this.boardCommentRepository.delete(commentId);
     return { success: true };
   }
 }

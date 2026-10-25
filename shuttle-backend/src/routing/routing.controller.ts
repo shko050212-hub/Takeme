@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Query, Res, Delete, Headers } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Query, Res, Delete, Headers, Put } from '@nestjs/common';
 import type { Response } from 'express';
 import { RoutingService } from './routing.service';
 
@@ -242,5 +242,66 @@ export class RoutingController {
   @Post('admin-messages/send')
   async sendAdminMessage(@Body() body: { targetRoles: string[], vehicleId: number | null, studentIds: number[], message: string }) {
     return this.routingService.sendAdminMessage(body);
+  }
+
+  // ===================== BOARD ROUTES =====================
+  @Get('board/posts')
+  async getBoardPosts(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+    @Query('visibility') visibility?: string,
+    @Query('targetClass') targetClass?: string,
+    @Query('search') search?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : (academyIdQuery ? Number(academyIdQuery) : undefined);
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.getBoardPosts({ academyId, userId, visibility, targetClass, search });
+  }
+
+  @Get('board/posts/:id')
+  async getBoardPostById(@Param('id') id: string) {
+    return this.routingService.getBoardPostById(Number(id));
+  }
+
+  @Post('board/posts')
+  async createBoardPost(
+    @Body() body: any,
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+  ) {
+    const academyId = academyIdHeader ? Number(academyIdHeader) : undefined;
+    const userId = userIdHeader ? Number(userIdHeader) : undefined;
+    return this.routingService.createBoardPost(body, academyId, userId);
+  }
+
+  @Put('board/posts/:id')
+  async updateBoardPost(@Param('id') id: string, @Body() body: any) {
+    return this.routingService.updateBoardPost(Number(id), body);
+  }
+
+  @Delete('board/posts/:id')
+  async deleteBoardPost(@Param('id') id: string) {
+    return this.routingService.deleteBoardPost(Number(id));
+  }
+
+  @Post('board/posts/:id/like')
+  async toggleBoardPostLike(
+    @Param('id') id: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Body('userId') userIdBody?: string,
+  ) {
+    const uid = userIdHeader || userIdBody;
+    return this.routingService.toggleBoardPostLike(Number(id), uid);
+  }
+
+  @Post('board/posts/:id/comments')
+  async addBoardComment(@Param('id') id: string, @Body() body: any) {
+    return this.routingService.addBoardComment(Number(id), body);
+  }
+
+  @Delete('board/posts/:postId/comments/:commentId')
+  async deleteBoardComment(@Param('commentId') commentId: string) {
+    return this.routingService.deleteBoardComment(Number(commentId));
   }
 }
