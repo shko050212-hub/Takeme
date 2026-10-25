@@ -108,6 +108,9 @@ export default function Dashboard() {
   const [boardPosts, setBoardPosts] = useState([]);
   const [editingBus, setEditingBus] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [teachers, setTeachers] = useState([]);
+  const [selectedTeacherClasses, setSelectedTeacherClasses] = useState({});
+  const [isAssigningClass, setIsAssigningClass] = useState(false);
 
   // Dynamic Kindergarten Classes Extractor
   const availableClasses = useMemo(() => {
@@ -466,6 +469,54 @@ export default function Dashboard() {
       alert('처리 중 오류가 발생했습니다.');
     }
   };
+
+  const fetchTeachers = async () => {
+    const targetAcademyId = selectedAcademyId || currentUser.academyId;
+    if (!targetAcademyId) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing/teachers?academyId=${targetAcademyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeachers(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch teachers', e);
+    }
+  };
+
+  const handleAssignClass = async (teacherId) => {
+    const assignedClass = selectedTeacherClasses[teacherId];
+    if (!assignedClass) {
+      alert('배정할 반을 선택해주세요.');
+      return;
+    }
+    setIsAssigningClass(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing/teacher/assign-class`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherId, assignedClass })
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        alert(`담당 반이 [${assignedClass}] (으)로 배정되었습니다.`);
+        fetchTeachers();
+      } else {
+        alert(result.message || '반 배정에 실패했습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('반 배정 처리 중 오류가 발생했습니다.');
+    } finally {
+      setIsAssigningClass(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'auth') {
+      fetchTeachers();
+    }
+  }, [activeTab, selectedAcademyId]);
 
   const handleDeleteAcademy = async () => {
     if (!window.confirm('정말 유치원 계정을 탈퇴(삭제)하시겠습니까?\n원아 명단, 통학차량 정보 등 모든 데이터가 영구적으로 삭제됩니다.')) return;
@@ -1412,92 +1463,20 @@ const parseKindergartenExcelSheet = (sheet) => {
 
   // Dedicated Teacher Dashboard Mode
   if (currentUser.role === 'TEACHER') {
-    if (activeTab === 'board') {
-      return (
-        <div className="flex h-screen w-full bg-slate-100 overflow-hidden font-sans">
-          {/* Simple Left Navigation Rail for Teacher */}
-          <div className="w-16 bg-blue-700 flex flex-col items-center py-6 gap-6 z-20 shadow-xl shrink-0">
-            <button 
-              onClick={() => handleTabChange('status')} 
-              className="p-3 rounded-2xl text-blue-200 hover:bg-blue-600 transition-all flex flex-col items-center gap-1"
-              title="우리 반 교실 홈"
-            >
-              <span className="text-xl">🏠</span>
-              <span className="text-[10px] font-bold">홈</span>
-            </button>
-            <button 
-              className="p-3 rounded-2xl bg-white text-blue-700 shadow-lg scale-105 flex flex-col items-center gap-1"
-              title="우리 반 앨범 / 게시판"
-            >
-              <span className="text-xl">📸</span>
-              <span className="text-[10px] font-bold">게시판</span>
-            </button>
-            <div className="mt-auto">
-              <button 
-                onClick={handleLogout}
-                className="p-3 rounded-2xl text-blue-200 hover:bg-blue-600 transition-all flex flex-col items-center gap-1"
-                title="로그아웃"
-              >
-                <span className="text-lg">🚪</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Board Sidebar */}
-          <BoardSidebar 
-            selectedClass={boardSelectedClass}
-            setSelectedClass={setBoardSelectedClass}
-            availableClasses={availableClasses}
-            searchKeyword={boardSearchKeyword}
-            setSearchKeyword={setBoardSearchKeyword}
-            onOpenNewPost={() => setIsCreatingBoardPost(true)}
-            posts={boardPosts}
-          />
-
-          {/* Board Main Area */}
-          <div className="flex-1 relative z-0 overflow-hidden">
-            <BoardViewer 
-              isClosing={false}
-              currentUser={currentUser}
-              selectedAcademyId={selectedAcademyId}
-              availableClasses={availableClasses}
-              selectedClass={boardSelectedClass}
-              setSelectedClass={setBoardSelectedClass}
-              searchKeyword={boardSearchKeyword}
-              setSearchKeyword={setBoardSearchKeyword}
-              isCreatingPost={isCreatingBoardPost}
-              setIsCreatingPost={setIsCreatingBoardPost}
-              posts={boardPosts}
-              setPosts={setBoardPosts}
-            />
-          </div>
-        </div>
-      );
-    }
-
     return (
       <TeacherDashboard
         currentUser={currentUser}
         academy={academy}
         buses={buses}
         students={students}
-        onOpenBoard={() => {
-          if (currentUser.assignedClass) {
-            setBoardSelectedClass(currentUser.assignedClass);
-          }
-          setActiveTab('board');
-        }}
-        onOpenNewPost={() => {
-          if (currentUser.assignedClass) {
-            setBoardSelectedClass(currentUser.assignedClass);
-          }
-          setIsCreatingBoardPost(true);
-          setActiveTab('board');
-        }}
+        availableClasses={availableClasses}
+        selectedAcademyId={selectedAcademyId}
         onLogout={handleLogout}
         onRefreshData={() => {
           loadInitialState(selectedAcademyId);
         }}
+        boardPosts={boardPosts}
+        setBoardPosts={setBoardPosts}
       />
     );
   }
@@ -2363,6 +2342,86 @@ const parseKindergartenExcelSheet = (sheet) => {
 
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* 유치원 담당 교사 관리 및 반 배정 섹션 */}
+            <div className="flex-1 flex flex-col overflow-hidden mt-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold text-slate-700 text-base">👩‍🏫 유치원 교사 관리 및 반 배정 ({teachers.length}명)</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">가입한 교사에게 담당 학급(반)을 배정하면 해당 교사의 웹/앱 화면에 우리 반 명단 및 앨범이 연동됩니다.</p>
+                </div>
+                <button
+                  onClick={fetchTeachers}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-sm"
+                >
+                  <span>🔄</span> 새로고침
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+                {teachers.map(teacher => {
+                  const currentClass = teacher.assignedClass;
+                  const selectedVal = selectedTeacherClasses[teacher.id] !== undefined 
+                    ? selectedTeacherClasses[teacher.id] 
+                    : (currentClass || '');
+
+                  return (
+                    <div key={teacher.id} className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm shrink-0 shadow-inner">
+                          {teacher.name?.[0] || '교'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 text-sm">{teacher.name} 선생님</span>
+                            {currentClass ? (
+                              <span className="text-[11px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-200">
+                                🌱 {currentClass} 담임
+                              </span>
+                            ) : (
+                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold border border-amber-200">
+                                ⏳ 반 미배정
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                            <span>📧 {teacher.email}</span>
+                            {teacher.phone && <span>• 📞 {teacher.phone}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          value={selectedVal}
+                          onChange={(e) => setSelectedTeacherClasses(prev => ({ ...prev, [teacher.id]: e.target.value }))}
+                          className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                          <option value="">-- 담당 반 선택 --</option>
+                          {availableClasses.map(cls => (
+                            <option key={cls} value={cls}>{cls}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleAssignClass(teacher.id)}
+                          disabled={isAssigningClass}
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition disabled:opacity-50"
+                        >
+                          {currentClass ? '반 변경' : '반 배정'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {teachers.length === 0 && (
+                  <div className="text-center text-slate-400 py-8 text-sm bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    아직 가입된 유치원 교사가 없습니다.<br />
+                    <span className="text-xs text-slate-400 mt-1 inline-block">교사가 회원가입 화면에서 '유치원 교사'를 선택하고 원 인증코드로 가입하면 여기에 표시됩니다.</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

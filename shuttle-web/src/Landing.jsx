@@ -17,9 +17,6 @@ export default function Landing() {
   const [isAuthCodeVerified, setIsAuthCodeVerified] = useState(false);
   const [isVerifyingAuthCode, setIsVerifyingAuthCode] = useState(false);
   const [verifiedAcademyName, setVerifiedAcademyName] = useState('');
-  const [verifiedClasses, setVerifiedClasses] = useState([]);
-  const [assignedClass, setAssignedClass] = useState('');
-  const [customClass, setCustomClass] = useState('');
 
   // Email Verification
   const [emailCode, setEmailCode] = useState('');
@@ -77,15 +74,9 @@ export default function Landing() {
       if (res.ok) {
         setIsAuthCodeVerified(true);
         setVerifiedAcademyName(data.academyName);
-        setVerifiedClasses(data.classes || []);
-        if (data.classes && data.classes.length > 0) {
-          setAssignedClass(data.classes[0]);
-        } else {
-          setAssignedClass('햇살반');
-        }
-        alert(`[${data.academyName}] 소속 유치원 확인이 완료되었습니다.`);
+        alert(`[${data.academyName}] 소속 인증이 완료되었습니다.`);
       } else {
-        alert(data.message || '인증코드 확인에 실패했습니다.');
+        alert(data.message || '원 인증코드 확인에 실패했습니다.');
       }
     } catch (err) {
       alert('인증코드 확인 중 서버 오류가 발생했습니다.');
@@ -106,9 +97,7 @@ export default function Landing() {
     if (!validatePassword(password)) return alert('비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다.');
 
     if (role === 'TEACHER') {
-      if (!isAuthCodeVerified) return alert('유치원 인증코드를 확인해주세요.');
-      const finalClass = assignedClass === '__custom__' ? customClass.trim() : assignedClass;
-      if (!finalClass) return alert('담당 반명을 선택하거나 입력해주세요.');
+      if (!isAuthCodeVerified) return alert('원 인증코드를 먼저 확인해주세요.');
 
       const res = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
@@ -118,13 +107,12 @@ export default function Landing() {
           password, 
           name, 
           role: 'TEACHER', 
-          authCode: authCode.trim().toUpperCase(), 
-          assignedClass: finalClass 
+          authCode: authCode.trim().toUpperCase()
         })
       });
       const data = await res.json();
       if (res.ok) {
-        alert(data.message || '교사 회원가입이 완료되었습니다. 로그인해주세요.');
+        alert(data.message || '교사 회원가입이 완료되었습니다! 원장선생님의 반 배정 후 이용 가능합니다.');
         setMode('login');
         setPassword('');
       } else {
@@ -251,108 +239,78 @@ export default function Landing() {
                     setRole('ACADEMY_ADMIN');
                     setIsAuthCodeVerified(false);
                   }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                     role === 'ACADEMY_ADMIN'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  원장선생님
+                  <span>👑</span>
+                  <span>원장선생님</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setRole('TEACHER');
                   }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center ${
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                     role === 'TEACHER'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  유치원 교사
+                  <span>👩‍🏫</span>
+                  <span>유치원 교사</span>
                 </button>
               </div>
             </div>
 
             {role === 'ACADEMY_ADMIN' ? (
-              <p className="text-xs font-medium text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-100">
-                가입 즉시 새로운 유치원 관리 대시보드가 생성됩니다.
+              <p className="text-xs font-medium text-blue-700 bg-blue-50 py-2 px-3 rounded-lg border border-blue-100 flex items-center gap-1.5">
+                <span>👑</span> 가입 즉시 새로운 유치원 관리 대시보드가 생성됩니다.
               </p>
             ) : (
-              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 py-2 px-3 rounded-lg border border-emerald-100">
-                원장선생님께 전달받은 <strong>원 인증코드</strong>를 입력해주세요.
+              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 py-2 px-3 rounded-lg border border-emerald-100 flex items-center gap-1.5">
+                <span>👩‍🏫</span> 원장선생님께 전달받은 <strong>원 인증코드</strong>를 입력해주세요.
               </p>
             )}
 
-            {/* Teacher Specific: Kindergarten Auth Code & Class Selection */}
+            {/* Teacher Specific: Kindergarten Auth Code */}
             {role === 'TEACHER' && (
-              <div className="space-y-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    유치원 인증코드 <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="인증코드 6자리 (예: K7B9X2)"
-                      value={authCode}
-                      onChange={e => {
-                        setAuthCode(e.target.value.toUpperCase());
-                        setIsAuthCodeVerified(false);
-                      }}
-                      disabled={isAuthCodeVerified || isVerifyingAuthCode}
-                      className="form-input uppercase tracking-wider font-mono font-semibold"
-                      maxLength={10}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={handleVerifyAuthCode}
-                      disabled={isAuthCodeVerified || isVerifyingAuthCode}
-                      className={`px-3 py-2 text-xs font-bold rounded-xl shrink-0 transition-colors ${
-                        isAuthCodeVerified 
-                          ? 'bg-emerald-100 text-emerald-800' 
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      {isVerifyingAuthCode ? '확인 중...' : isAuthCodeVerified ? '인증완료' : '코드 확인'}
-                    </button>
-                  </div>
-                  {isAuthCodeVerified && (
-                    <div className="mt-1.5 text-xs font-semibold text-emerald-600">
-                      소속: <strong>{verifiedAcademyName}</strong>
-                    </div>
-                  )}
+              <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  원 인증코드 <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="원 인증코드 6자리 (예: EOAUH2)"
+                    value={authCode}
+                    onChange={e => {
+                      setAuthCode(e.target.value.toUpperCase());
+                      setIsAuthCodeVerified(false);
+                    }}
+                    disabled={isAuthCodeVerified || isVerifyingAuthCode}
+                    className="form-input uppercase tracking-wider font-mono font-semibold"
+                    maxLength={10}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifyAuthCode}
+                    disabled={isAuthCodeVerified || isVerifyingAuthCode}
+                    className={`px-3 py-2 text-xs font-bold rounded-xl shrink-0 transition-colors ${
+                      isAuthCodeVerified 
+                        ? 'bg-emerald-100 text-emerald-800' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {isVerifyingAuthCode ? '확인 중...' : isAuthCodeVerified ? '인증완료' : '코드 확인'}
+                  </button>
                 </div>
-
                 {isAuthCodeVerified && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      담당 반 선택 <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={assignedClass}
-                      onChange={e => setAssignedClass(e.target.value)}
-                      className="form-input text-sm font-medium"
-                      required
-                    >
-                      {verifiedClasses.map(cls => (
-                        <option key={cls} value={cls}>{cls}</option>
-                      ))}
-                      <option value="__custom__">+ 직접 입력 (신설 반)</option>
-                    </select>
-
-                    {assignedClass === '__custom__' && (
-                      <input
-                        type="text"
-                        placeholder="담당 반명을 입력하세요 (예: 해오름반)"
-                        value={customClass}
-                        onChange={e => setCustomClass(e.target.value)}
-                        className="form-input text-sm mt-2"
-                        required
-                      />
-                    )}
+                  <div className="text-xs font-semibold text-emerald-600 pt-0.5">
+                    소속: <strong>{verifiedAcademyName}</strong> (가입 후 원장선생님께서 담당 반을 배정합니다)
                   </div>
                 )}
               </div>
@@ -438,7 +396,7 @@ export default function Landing() {
               className="btn-primary w-full py-3 font-bold text-sm shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed" 
               disabled={!isEmailVerified || !validatePassword(password) || (role === 'TEACHER' && !isAuthCodeVerified)}
             >
-              {role === 'ACADEMY_ADMIN' ? '원장선생님 가입 완료' : '유치원 교사 가입 완료'}
+              {role === 'ACADEMY_ADMIN' ? '👑 원장선생님 가입 완료' : '👩‍🏫 유치원 교사 가입 완료'}
             </button>
             <div className="text-center mt-3">
               <button type="button" onClick={() => setMode('login')} className="text-xs font-semibold text-slate-500 hover:underline">

@@ -322,4 +322,24 @@ export class RoutingController {
   ) {
     return this.routingService.uploadMedia(body, host);
   }
+
+  @Get('teachers')
+  async getTeachers(
+    @Query('academyId') academyId?: string,
+    @Headers('x-academy-id') headerA?: string,
+    @Headers('x-user-id') headerU?: string
+  ) {
+    const { academyId: aId, userId: uId } = this.resolveAcademyContext(headerA, academyId, headerU);
+    return this.routingService.getTeachers(aId, uId);
+  }
+
+  @Post('teacher/assign-class')
+  async assignTeacherClass(@Body() body: { teacherId: number; assignedClass: string }) {
+    return this.routingService.assignTeacherClass(Number(body.teacherId), body.assignedClass);
+  }
+
+  @Get('teacher/profile/:id')
+  async getTeacherProfile(@Param('id') teacherId: string) {
+    return this.routingService.getTeacherProfile(Number(teacherId));
+  }
 }

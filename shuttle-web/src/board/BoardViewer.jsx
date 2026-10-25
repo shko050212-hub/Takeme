@@ -463,6 +463,27 @@ export default function BoardViewer({
     return false;
   };
 
+
+  const handleDownloadCloudImage = async (e, imageUrl, title) => {
+    e.stopPropagation();
+    if (!imageUrl) return alert('다운로드할 사진이 없습니다.');
+    try {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      const cleanTitle = (title || '유치원_활동사진').replace(/[^a-zA-Z0-9가-힣_-]/g, '_');
+      link.download = `${cleanTitle}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      window.open(imageUrl, '_blank');
+    }
+  };
+
   const openEditModal = (post) => {
     setEditingPost(post);
     setPostForm({
@@ -498,6 +519,30 @@ export default function BoardViewer({
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
+          {/* Quick View Category Switcher */}
+          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
+            <button
+              onClick={() => setSelectedClass('ALL')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'ALL' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
+            >
+              전체 게시글
+            </button>
+            {teacherClass && (
+              <button
+                onClick={() => setSelectedClass(teacherClass)}
+                className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === teacherClass ? 'bg-white text-emerald-700 shadow-xs' : 'hover:text-slate-800'}`}
+              >
+                🌱 {teacherClass} 글
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedClass('PUBLIC_ONLY')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${selectedClass === 'PUBLIC_ONLY' ? 'bg-white text-blue-600 shadow-xs' : 'hover:text-slate-800'}`}
+            >
+              📢 전체 공개 공지
+            </button>
+          </div>
+
           {/* Sort Switcher */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
             <button
@@ -706,6 +751,17 @@ export default function BoardViewer({
                         >
                           <span>💬</span>
                           <span>댓글 {post.comments?.length || 0}</span>
+                        </button>
+
+                        {/* 클라우드 사진 원본 저장 버튼 */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDownloadCloudImage(e, post.imageUrl, post.title)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-50 text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200"
+                          title="클라우드 원본 사진 저장 (PC/휴대폰 다운로드)"
+                        >
+                          <span>💾</span>
+                          <span>사진 저장</span>
                         </button>
                       </div>
 

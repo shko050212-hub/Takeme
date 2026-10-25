@@ -381,15 +381,15 @@ export class AuthService {
         if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
         savedUser.academy = targetAcademy;
         savedUser.academyId = targetAcademy.id;
-        savedUser.assignedClass = data.assignedClass || '담당 반 미지정';
+        savedUser.assignedClass = data.assignedClass || '';
         await this.usersRepository.save(savedUser);
 
         return {
           success: true,
-          message: `${targetAcademy.name}의 ${savedUser.assignedClass} 교사로 등록되었습니다. 로그인해주세요!`,
+          message: `${targetAcademy.name} 교사로 등록되었습니다. 원장선생님의 반 배정 후 이용 가능합니다.`,
           userId: savedUser.id,
           role: UserRole.TEACHER,
-          assignedClass: savedUser.assignedClass,
+          assignedClass: savedUser.assignedClass || '',
           academyName: targetAcademy.name,
         };
       } else if (userRole === UserRole.DRIVER) {

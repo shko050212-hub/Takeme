@@ -7,7 +7,7 @@ import { firstValueFrom } from 'rxjs';
 import { Vehicle } from '../entities/vehicle.entity';
 import { Student } from '../entities/student.entity';
 import { Academy } from '../entities/academy.entity';
-import { User } from '../entities/user.entity';
+import { User, UserRole } from '../entities/user.entity';
 import { OperationLog } from '../entities/operation-log.entity';
 import { ParentMessage } from '../entities/parent-message.entity';
 import { ScheduleOverride, OverrideType } from '../entities/schedule-override.entity';
@@ -1484,6 +1484,52 @@ export class RoutingService {
       filename: randomName,
       size: buffer.length,
       createdAt: new Date().toISOString()
+    };
+  }
+
+  async getTeachers(academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) return [];
+
+    const teachers = await this.userRepository.find({
+      where: {
+        role: UserRole.TEACHER,
+        academy: { id: academy.id }
+      },
+      order: { createdAt: 'DESC' }
+    });
+
+    return teachers.map(t => ({
+      id: t.id,
+      email: t.email,
+      name: t.name,
+      assignedClass: t.assignedClass || '',
+      createdAt: t.createdAt
+    }));
+  }
+
+  async assignTeacherClass(teacherId: number, assignedClass: string) {
+    const teacher = await this.userRepository.findOne({ where: { id: teacherId } });
+    if (!teacher) throw new BadRequestException('교사를 찾을 수 없습니다.');
+    teacher.assignedClass = assignedClass || '';
+    await this.userRepository.save(teacher);
+    return { success: true, teacherId: teacher.id, assignedClass: teacher.assignedClass };
+  }
+
+  async getTeacherProfile(teacherId: number) {
+    const teacher = await this.userRepository.findOne({
+      where: { id: teacherId },
+      relations: { academy: true }
+    });
+    if (!teacher) throw new BadRequestException('교사를 찾을 수 없습니다.');
+    return {
+      id: teacher.id,
+      email: teacher.email,
+      name: teacher.name,
+      role: teacher.role,
+      assignedClass: teacher.assignedClass || '',
+      academyId: teacher.academy?.id,
+      academyName: teacher.academy?.name
     };
   }
 }
