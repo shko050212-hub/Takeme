@@ -1327,7 +1327,7 @@ export class RoutingService {
   async getBoardPostById(id: number) {
     const post = await this.boardPostRepository.findOne({
       where: { id },
-      relations: ['comments']
+      relations: { comments: true }
     });
     if (!post) throw new BadRequestException('게시글을 찾을 수 없습니다.');
     return post;
@@ -1357,7 +1357,7 @@ export class RoutingService {
       academy: academy || undefined,
       likeCount: 0,
       likedUserIds: [],
-    });
+    } as any);
     return this.boardPostRepository.save(post);
   }
 
@@ -1412,7 +1412,7 @@ export class RoutingService {
       content: body.content,
       authorName: body.authorName || '원장선생님',
       authorRole: body.authorRole || 'ADMIN',
-    });
+    } as any);
     return this.boardCommentRepository.save(comment);
   }
 
