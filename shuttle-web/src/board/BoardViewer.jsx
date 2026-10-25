@@ -123,7 +123,11 @@ export default function BoardViewer({
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
   const [commentInputs, setCommentInputs] = useState({});
   const [sortBy, setSortBy] = useState('LATEST'); // 'LATEST' | 'POPULAR'
-  const [previewImageUrl, setPreviewImageUrl] = useState(null);
+  const [previewGallery, setPreviewGallery] = useState(null); // { images: string[], index: number }
+  const setPreviewImageUrl = (url) => {
+    if (!url) setPreviewGallery(null);
+    else setPreviewGallery({ images: [url], index: 0 });
+  };
   const [postToDelete, setPostToDelete] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
 
@@ -138,10 +142,43 @@ export default function BoardViewer({
     visibility: isTeacher ? 'CLASS' : 'ALL',
     targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
     imageUrl: PRESET_PHOTOS[0].url,
+    images: [PRESET_PHOTOS[0].url],
     authorName: defaultAuthorName,
     authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
   });
   const fileInputRef = useRef(null);
+
+  const cloudStoredPhotos = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('takeme_teacher_cloud_photos');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  }, [isCreatingPost]);
+
+  // Keyboard navigation for multi-photo Lightbox
+  useEffect(() => {
+    if (!previewGallery) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setPreviewGallery(null);
+      if (e.key === 'ArrowLeft') {
+        setPreviewGallery(prev => (prev && prev.images.length > 1 ? {
+          ...prev,
+          index: (prev.index - 1 + prev.images.length) % prev.images.length
+        } : prev));
+      }
+      if (e.key === 'ArrowRight') {
+        setPreviewGallery(prev => (prev && prev.images.length > 1 ? {
+          ...prev,
+          index: (prev.index + 1) % prev.images.length
+        } : prev));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewGallery]);
 
   // Load posts from backend or fallback to localStorage
   const fetchPosts = async () => {
@@ -337,44 +374,99 @@ export default function BoardViewer({
     }
   };
 
-  // Handle File Upload to Cloud Storage API
+  // Handle Multiple Files Upload to Cloud Storage API
   const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 20 * 1024 * 1024) {
-      alert('사진 크기는 20MB 이하만 업로드 가능합니다.');
-      return;
-    }
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
 
     setIsUploadingToCloud(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64Data = reader.result;
-      try {
-        const res = await fetch(`${API_BASE_URL}/routing/board/upload`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            base64Data,
-            filename: file.name,
-            mimeType: file.type
-          })
-        });
-        const data = await res.json();
-        if (res.ok && data.url) {
-          setPostForm(prev => ({ ...prev, imageUrl: data.url }));
-        } else {
-          setPostForm(prev => ({ ...prev, imageUrl: base64Data }));
-        }
-      } catch (err) {
-        console.warn('Cloud upload failed, using local preview', err);
-        setPostForm(prev => ({ ...prev, imageUrl: base64Data }));
-      } finally {
-        setIsUploadingToCloud(false);
+    const newImageUrls = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('image/')) continue;
+      if (file.size > 20 * 1024 * 1024) {
+        alert(`${file.name}: 20MB 이하의 이미지만 업로드 가능합니다.`);
+        continue;
       }
-    };
-    reader.readAsDataURL(file);
+
+      try {
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        let finalUrl = base64Data;
+        try {
+          const res = await fetch(`${API_BASE_URL}/routing/board/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              base64Data,
+              filename: file.name,
+              mimeType: file.type
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.url) {
+            finalUrl = data.url;
+          }
+        } catch (netErr) {
+          console.warn('Cloud upload fallback to local base64', netErr);
+        }
+
+        newImageUrls.push(finalUrl);
+      } catch (err) {
+        console.error('File reading failed', file.name, err);
+      }
+    }
+
+    if (newImageUrls.length > 0) {
+      setPostForm(prev => {
+        const currentImages = Array.isArray(prev.images) ? prev.images : (prev.imageUrl ? [prev.imageUrl] : []);
+        const isPresetOnly = currentImages.length === 1 && PRESET_PHOTOS.some(p => p.url === currentImages[0]);
+        const updatedImages = isPresetOnly ? newImageUrls : [...currentImages, ...newImageUrls];
+        return {
+          ...prev,
+          images: updatedImages,
+          imageUrl: prev.imageUrl && !isPresetOnly ? prev.imageUrl : updatedImages[0]
+        };
+      });
+    }
+
+    setIsUploadingToCloud(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveImage = (indexToRemove) => {
+    setPostForm(prev => {
+      const currentImages = Array.isArray(prev.images) ? prev.images : [];
+      const updated = currentImages.filter((_, idx) => idx !== indexToRemove);
+      const isRemovedPrimary = prev.imageUrl === currentImages[indexToRemove];
+      return {
+        ...prev,
+        images: updated,
+        imageUrl: updated.length > 0 ? (isRemovedPrimary ? updated[0] : prev.imageUrl) : ''
+      };
+    });
+  };
+
+  const handleSetPrimaryImage = (url) => {
+    setPostForm(prev => ({ ...prev, imageUrl: url }));
+  };
+
+  const handleSelectPreset = (presetUrl) => {
+    setPostForm(prev => {
+      const currentImages = Array.isArray(prev.images) ? prev.images : [];
+      const updated = currentImages.includes(presetUrl) ? currentImages : [...currentImages, presetUrl];
+      return {
+        ...prev,
+        imageUrl: presetUrl,
+        images: updated
+      };
+    });
   };
 
   // Handle Save New or Edited Post
@@ -389,6 +481,10 @@ export default function BoardViewer({
     }
 
     const activeAcademyId = selectedAcademyId || localStorage.getItem('takeme_selected_academy_id') || undefined;
+    const formImages = Array.isArray(postForm.images) && postForm.images.length > 0
+      ? postForm.images
+      : (postForm.imageUrl ? [postForm.imageUrl] : [PRESET_PHOTOS[0].url]);
+    const primaryImageUrl = postForm.imageUrl || formImages[0] || PRESET_PHOTOS[0].url;
 
     if (editingPost) {
       // Edit mode
@@ -400,7 +496,8 @@ export default function BoardViewer({
           content: postForm.content.trim(),
           visibility: postForm.visibility,
           targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
-          imageUrl: postForm.imageUrl,
+          imageUrl: primaryImageUrl,
+          images: formImages,
           authorName: postForm.authorName || '원장선생님'
         };
       });
@@ -417,7 +514,8 @@ export default function BoardViewer({
             content: postForm.content.trim(),
             visibility: postForm.visibility,
             targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
-            imageUrl: postForm.imageUrl,
+            imageUrl: primaryImageUrl,
+            images: formImages,
           })
         });
       } catch (e) {
@@ -431,8 +529,8 @@ export default function BoardViewer({
         content: postForm.content.trim(),
         visibility: postForm.visibility,
         targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
-        imageUrl: postForm.imageUrl,
-        images: [],
+        imageUrl: primaryImageUrl,
+        images: formImages,
         authorName: postForm.authorName || defaultAuthorName,
         authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
         likeCount: 0,
@@ -455,8 +553,9 @@ export default function BoardViewer({
             visibility: newPost.visibility,
             targetClass: newPost.targetClass,
             imageUrl: newPost.imageUrl,
+            images: newPost.images,
             authorName: newPost.authorName,
-            authorRole: 'ADMIN',
+            authorRole: newPost.authorRole,
             academyId: activeAcademyId ? Number(activeAcademyId) : undefined
           })
         });
@@ -476,10 +575,12 @@ export default function BoardViewer({
     setPostForm({
       title: '',
       content: '',
-      visibility: 'ALL',
-      targetClass: availableClasses[0] || '햇살반',
+      visibility: isTeacher ? 'CLASS' : 'ALL',
+      targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
       imageUrl: PRESET_PHOTOS[0].url,
-      authorName: currentUser?.name ? `${currentUser.name} 원장선생님` : '원장선생님',
+      images: [PRESET_PHOTOS[0].url],
+      authorName: defaultAuthorName,
+      authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
     });
   };
 
@@ -516,13 +617,18 @@ export default function BoardViewer({
   };
 
   const openEditModal = (post) => {
+    const postImages = Array.isArray(post.images) && post.images.length > 0
+      ? post.images
+      : (post.imageUrl ? [post.imageUrl] : [PRESET_PHOTOS[0].url]);
+
     setEditingPost(post);
     setPostForm({
       title: post.title,
       content: post.content,
       visibility: post.visibility || (isTeacher ? 'CLASS' : 'ALL'),
       targetClass: post.targetClass || (isTeacher ? teacherClass : availableClasses[0]) || '햇살반',
-      imageUrl: post.imageUrl || PRESET_PHOTOS[0].url,
+      imageUrl: post.imageUrl || postImages[0] || PRESET_PHOTOS[0].url,
+      images: postImages,
       authorName: post.authorName || defaultAuthorName,
       authorRole: post.authorRole || (isTeacher ? 'TEACHER' : 'ADMIN')
     });
@@ -596,6 +702,7 @@ export default function BoardViewer({
                 visibility: isTeacher ? 'CLASS' : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? 'CLASS' : 'ALL'),
                 targetClass: (isTeacher && teacherClass) ? teacherClass : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? selectedClass : (availableClasses[0] || '햇살반')),
                 imageUrl: PRESET_PHOTOS[0].url,
+                images: [PRESET_PHOTOS[0].url],
                 authorName: defaultAuthorName,
                 authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
               });
@@ -654,6 +761,10 @@ export default function BoardViewer({
                 minute: '2-digit'
               });
 
+              const postImages = Array.isArray(post.images) && post.images.length > 0 
+                ? post.images 
+                : (post.imageUrl ? [post.imageUrl] : []);
+
               return (
                 <div
                   key={post.id}
@@ -704,7 +815,7 @@ export default function BoardViewer({
 
                   {/* [요구사항 반영 2] 메인 사진 이미지 영역 */}
                   <div 
-                    onClick={() => setPreviewImageUrl(post.imageUrl)}
+                    onClick={() => setPreviewGallery({ images: postImages, index: 0 })}
                     className="relative w-full aspect-[16/10] bg-slate-100 overflow-hidden cursor-zoom-in"
                   >
                     {post.imageUrl ? (
@@ -724,12 +835,46 @@ export default function BoardViewer({
                         <span className="text-xs mt-1 font-bold">등록된 사진 없음</span>
                       </div>
                     )}
+
+                    {postImages.length > 1 && (
+                      <div className="absolute top-2.5 right-2.5 bg-black/70 backdrop-blur-xs text-white text-[11px] font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-md z-10">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span>사진 {postImages.length}장</span>
+                      </div>
+                    )}
+
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                       <span className="opacity-0 group-hover:opacity-100 px-3 py-1.5 bg-black/60 text-white text-[11px] font-bold rounded-full backdrop-blur-xs transition-opacity shadow-sm">
-                        크게 보기
+                        {postImages.length > 1 ? `전체 ${postImages.length}장 크게 보기` : '크게 보기'}
                       </span>
                     </div>
                   </div>
+
+                  {/* 여러 장일 경우 작은 썸네일 스트립 표시 */}
+                  {postImages.length > 1 && (
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto">
+                      {postImages.slice(0, 6).map((imgUrl, idx) => (
+                        <div
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewGallery({ images: postImages, index: idx });
+                          }}
+                          className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200 hover:border-blue-500 hover:scale-105 transition-all cursor-pointer shadow-2xs"
+                          title={`사진 ${idx + 1} 크게 보기`}
+                        >
+                          <img src={imgUrl} alt={`사진 ${idx+1}`} className="w-full h-full object-cover" />
+                          {idx === 5 && postImages.length > 6 && (
+                            <div className="absolute inset-0 bg-black/60 text-white text-[10px] font-black flex items-center justify-center">
+                              +{postImages.length - 6}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* [요구사항 반영 3] 사진 아래 글 쓴이 & 본문 */}
                   <div className="p-4 flex-1 flex flex-col justify-between">
@@ -974,65 +1119,155 @@ export default function BoardViewer({
                 </div>
               )}
 
-              {/* 메인 사진 선택 (프리셋 or PC 업로드 or URL) */}
+              {/* 활동 사진 업로드 (다중 선택 지원) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-black text-slate-700">
-                    메인 활동 사진 선택 <span className="text-red-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 underline"
-                  >
-                    <span>내 컴퓨터에서 사진 올리기</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-black text-slate-700">
+                      활동 사진 업로드 <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                      총 {postForm.images?.length || (postForm.imageUrl ? 1 : 0)}장 선택됨
+                    </span>
+                  </div>
 
-                {/* 사진 미리보기 */}
-                <div className="w-full h-44 bg-slate-100 rounded-2xl overflow-hidden mb-3 border border-slate-200 relative group">
-                  {postForm.imageUrl ? (
-                    <img
-                      src={postForm.imageUrl}
-                      alt="미리보기"
-                      className="w-full h-full object-cover"
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {cloudStoredPhotos.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const urls = cloudStoredPhotos.map(p => p.url).filter(Boolean);
+                          setPostForm(prev => {
+                            const current = Array.isArray(prev.images) ? prev.images : [];
+                            const isPresetOnly = current.length === 1 && PRESET_PHOTOS.some(p => p.url === current[0]);
+                            const merged = isPresetOnly ? urls : Array.from(new Set([...current, ...urls]));
+                            return {
+                              ...prev,
+                              images: merged,
+                              imageUrl: prev.imageUrl && !isPresetOnly ? prev.imageUrl : (merged[0] || prev.imageUrl)
+                            };
+                          });
+                        }}
+                        className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold rounded-xl border border-amber-200 transition flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span>임시 보관함 사진 가져오기 ({cloudStoredPhotos.length}장)</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingToCloud}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>{isUploadingToCloud ? '업로드 중...' : '컴퓨터에서 사진 여러장 추가'}</span>
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
                     />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-                      <span>사진을 선택하세요</span>
-                    </div>
-                  )}
-                  <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2.5 py-1 rounded-full font-bold backdrop-blur-xs">
-                    메인 사진 미리보기
                   </div>
                 </div>
 
-                {/* 프리셋 선택지 */}
+                {/* 다중 사진 갤러리 그리드 미리보기 */}
+                {postForm.images && postForm.images.length > 0 ? (
+                  <div className="mb-3 space-y-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 max-h-56 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
+                      {postForm.images.map((imgUrl, idx) => {
+                        const isPrimary = (postForm.imageUrl === imgUrl) || (!postForm.imageUrl && idx === 0);
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => handleSetPrimaryImage(imgUrl)}
+                            className={`group relative rounded-xl overflow-hidden aspect-video border-2 cursor-pointer transition-all ${
+                              isPrimary
+                                ? 'border-blue-600 ring-2 ring-blue-400 shadow-sm'
+                                : 'border-slate-200 hover:border-slate-400 opacity-90 hover:opacity-100'
+                            }`}
+                          >
+                            <img src={imgUrl} alt={`업로드 사진 ${idx + 1}`} className="w-full h-full object-cover" />
+                            
+                            {/* 대표 뱃지 */}
+                            {isPrimary ? (
+                              <div className="absolute top-1 left-1 bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow-xs">
+                                대표 사진
+                              </div>
+                            ) : (
+                              <div className="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                클릭하여 대표 설정
+                              </div>
+                            )}
+
+                            {/* 개별 사진 삭제 버튼 */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveImage(idx);
+                              }}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 hover:bg-red-600 text-white flex items-center justify-center text-[11px] font-bold shadow-xs transition-colors"
+                              title="이 사진 제거"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      클릭한 사진이 게시글 목록에 나타나는 <strong>[대표 사진]</strong>으로 지정됩니다. (여러 장의 사진은 부모님 앱 및 게시판 상세에서 모두 볼 수 있습니다.)
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full h-36 bg-slate-50 hover:bg-blue-50/30 border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-2xl flex flex-col items-center justify-center text-slate-400 cursor-pointer mb-3 transition-colors"
+                  >
+                    <svg className="w-7 h-7 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-xs font-bold text-slate-600">클릭하여 사진을 여러 장 선택하세요</span>
+                    <span className="text-[11px] text-slate-400 mt-0.5">JPG, PNG, WEBP 다중 선택 지원 (장당 최대 20MB)</span>
+                  </div>
+                )}
+
+                {/* 추천 테마 사진 추가 */}
                 <div>
                   <span className="text-[11px] font-semibold text-slate-500 mb-1.5 block">
-                    추천 유치원 테마 사진 (클릭하여 즉시 적용):
+                    또는 추천 테마 사진 추가 (클릭하여 추가):
                   </span>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {PRESET_PHOTOS.map((preset, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setPostForm(prev => ({ ...prev, imageUrl: preset.url }))}
-                        className={`relative rounded-xl overflow-hidden aspect-video border-2 transition-all ${
-                          postForm.imageUrl === preset.url ? 'border-blue-600 ring-2 ring-blue-300' : 'border-transparent hover:border-slate-300'
-                        }`}
-                        title={preset.name}
-                      >
-                        <img src={preset.url} alt={preset.name} className="w-full h-full object-cover" />
-                      </button>
-                    ))}
+                    {PRESET_PHOTOS.map((preset, idx) => {
+                      const isAdded = postForm.images?.includes(preset.url);
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSelectPreset(preset.url)}
+                          className={`relative rounded-xl overflow-hidden aspect-video border-2 transition-all ${
+                            isAdded ? 'border-blue-600 ring-2 ring-blue-300' : 'border-transparent hover:border-slate-300'
+                          }`}
+                          title={preset.name}
+                        >
+                          <img src={preset.url} alt={preset.name} className="w-full h-full object-cover" />
+                          {isAdded && (
+                            <div className="absolute inset-0 bg-blue-900/40 flex items-center justify-center text-white text-[10px] font-black">
+                              추가됨
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1118,24 +1353,98 @@ export default function BoardViewer({
         </div>
       )}
 
-      {/* Lightbox Preview Modal */}
-      {previewImageUrl && (
+      {/* Lightbox Preview Modal with Multi-Photo Navigation */}
+      {previewGallery && previewGallery.images && previewGallery.images.length > 0 && (
         <div 
-          onClick={() => setPreviewImageUrl(null)}
-          className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in cursor-zoom-out"
+          onClick={() => setPreviewGallery(null)}
+          className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in"
         >
-          <div className="relative max-w-5xl max-h-[90vh] flex flex-col items-center">
-            <img
-              src={previewImageUrl}
-              alt="확대 이미지"
-              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl animate-scale-up"
-            />
-            <button
-              onClick={() => setPreviewImageUrl(null)}
-              className="mt-4 px-6 py-2 bg-white/20 hover:bg-white/30 text-white font-bold text-xs rounded-full backdrop-blur-sm transition-colors"
-            >
-              닫기 (클릭)
-            </button>
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-5xl max-h-[92vh] w-full flex flex-col items-center select-none"
+          >
+            {/* Top Bar inside modal */}
+            <div className="w-full flex items-center justify-between text-white text-xs font-bold pb-3 px-2">
+              <span className="bg-white/20 px-3 py-1 rounded-full backdrop-blur-xs">
+                {previewGallery.index + 1} / {previewGallery.images.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => handleDownloadCloudImage(e, previewGallery.images[previewGallery.index], `photo_${previewGallery.index + 1}`)}
+                  className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-full transition-colors flex items-center gap-1"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>다운로드</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewGallery(null)}
+                  className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-sm font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Main Image with Prev / Next Arrow */}
+            <div className="relative flex items-center justify-center w-full max-h-[75vh]">
+              {previewGallery.images.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewGallery(prev => ({
+                    ...prev,
+                    index: (prev.index - 1 + prev.images.length) % prev.images.length
+                  }))}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-all z-20 shadow-lg border border-white/20"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
+
+              <img
+                src={previewGallery.images[previewGallery.index]}
+                alt={`확대 이미지 ${previewGallery.index + 1}`}
+                className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl animate-scale-up"
+              />
+
+              {previewGallery.images.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewGallery(prev => ({
+                    ...prev,
+                    index: (prev.index + 1) % prev.images.length
+                  }))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-all z-20 shadow-lg border border-white/20"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Thumbnail Bottom Row */}
+            {previewGallery.images.length > 1 && (
+              <div className="flex items-center gap-2 mt-4 px-2 overflow-x-auto max-w-full py-1">
+                {previewGallery.images.map((img, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setPreviewGallery(prev => ({ ...prev, index: i }))}
+                    className={`w-12 h-12 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
+                      i === previewGallery.index ? 'border-blue-400 scale-105 ring-2 ring-blue-400/50' : 'border-white/30 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={img} alt={`썸네일 ${i + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

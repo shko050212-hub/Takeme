@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import BoardViewer from './board/BoardViewer';
@@ -31,8 +31,132 @@ export default function TeacherDashboard({
   boardPosts = [],
   setBoardPosts,
 }) {
-  // Navigation State on Left Rail: 'home' | 'board'
+  // Navigation State on Left Rail: 'home' | 'board' | 'cloud'
   const [activeNavTab, setActiveNavTab] = useState('home');
+
+  // Temporary Cloud Storage State
+  const cloudStorageKey = `takeme_teacher_cloud_${currentUser?.id || 'default'}`;
+  const [cloudPhotos, setCloudPhotos] = useState(() => {
+    try {
+      const saved = localStorage.getItem(cloudStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      {
+        id: 'sample-1',
+        name: '가을 소풍 단체 활동.jpg',
+        url: 'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?w=800&auto=format&fit=crop&q=80',
+        size: '1.40 MB',
+        uploadedAt: '오늘 10:30'
+      },
+      {
+        id: 'sample-2',
+        name: '미술 시간 블록 쌓기.jpg',
+        url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=80',
+        size: '2.10 MB',
+        uploadedAt: '어제 15:40'
+      }
+    ];
+  });
+
+  const [isUploadingToCloud, setIsUploadingToCloud] = useState(false);
+  const [isDraggingOverCloud, setIsDraggingOverCloud] = useState(false);
+  const cloudFileInputRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(cloudStorageKey, JSON.stringify(cloudPhotos));
+    } catch (e) {
+      console.error('Failed to save cloud photos', e);
+    }
+  }, [cloudPhotos, cloudStorageKey]);
+
+  const processCloudFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingToCloud(true);
+
+    const newPhotos = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('image/')) continue;
+      if (file.size > 20 * 1024 * 1024) {
+        alert(`${file.name}: 20MB 이하의 이미지만 업로드 가능합니다.`);
+        continue;
+      }
+
+      try {
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        let finalUrl = base64Data;
+        try {
+          const res = await fetch(`${API_BASE_URL}/routing/board/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              base64Data,
+              filename: file.name,
+              mimeType: file.type
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.url) {
+            finalUrl = data.url;
+          }
+        } catch (netErr) {
+          console.warn('Server upload fallback to local data', netErr);
+        }
+
+        newPhotos.unshift({
+          id: `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+          name: file.name,
+          url: finalUrl,
+          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          uploadedAt: '방금 전'
+        });
+      } catch (err) {
+        console.error('Failed to process file', file.name, err);
+      }
+    }
+
+    if (newPhotos.length > 0) {
+      setCloudPhotos(prev => [...newPhotos, ...prev]);
+    }
+    setIsUploadingToCloud(false);
+  };
+
+  const handleCloudFileChange = (e) => {
+    processCloudFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  const handleDeleteCloudPhoto = (photoId) => {
+    if (window.confirm('이 사진을 임시 클라우드에서 삭제하시겠습니까?')) {
+      setCloudPhotos(prev => prev.filter(p => p.id !== photoId));
+    }
+  };
+
+  const handleClearAllCloudPhotos = () => {
+    if (cloudPhotos.length === 0) return;
+    if (window.confirm('임시 클라우드에 보관된 모든 사진을 삭제하시겠습니까?')) {
+      setCloudPhotos([]);
+    }
+  };
+
+  const handleDownloadCloudPhoto = (photo) => {
+    const a = document.createElement('a');
+    a.href = photo.url;
+    a.download = photo.name || 'activity_photo.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   // Teacher Profile & Class State
   const [localTeacherUser, setLocalTeacherUser] = useState(currentUser);
@@ -98,16 +222,148 @@ export default function TeacherDashboard({
   }, [teacherClass]);
 
   // Daily Schedule Preset (Kindergarten daily timeline)
-  const scheduleItems = [
-    { time: '09:00 ~ 09:30', title: '등원 및 자유놀이', desc: '밝은 인사와 함께 원아 맞이 및 체온 점검' },
-    { time: '09:30 ~ 10:10', title: '오전 간식 & 아침 모임', desc: '제철 과일 간식 및 일과 소개' },
-    { time: '10:10 ~ 11:20', title: '가을 숲 생태 탐색 활동', desc: '야외 놀이터 자연물 관찰 활동' },
-    { time: '11:20 ~ 12:30', title: '점심 식사 및 양치 지도', desc: '식사 지도 및 올바른 양치 습관 형성' },
-    { time: '12:30 ~ 14:00', title: '낮잠 및 휴식 시간', desc: '정적인 실내 휴식 및 낮잠' },
-    { time: '14:00 ~ 15:00', title: '오후 간식 및 신체 율동 놀이', desc: '간식 섭취 및 신체 율동 시간' },
-    { time: '15:00 ~ 16:00', title: '1차 셔틀 하원 인솔', desc: '개인 물품 정리 및 1차 통학 차량 탑승' },
-    { time: '16:30 ~ 17:30', title: '2차 셔틀 하원 및 통합 보육', desc: '2차 하원 차량 탑승 및 연장 보육반 인계' },
+  const defaultSchedulePreset = [
+    { id: 1, time: '09:00 ~ 09:30', title: '등원 및 자유놀이', desc: '밝은 인사와 함께 원아 맞이 및 체온 점검' },
+    { id: 2, time: '09:30 ~ 10:10', title: '오전 간식 & 아침 모임', desc: '제철 과일 간식 및 일과 소개' },
+    { id: 3, time: '10:10 ~ 11:20', title: '가을 숲 생태 탐색 활동', desc: '야외 놀이터 자연물 관찰 활동' },
+    { id: 4, time: '11:20 ~ 12:30', title: '점심 식사 및 양치 지도', desc: '식사 지도 및 올바른 양치 습관 형성' },
+    { id: 5, time: '12:30 ~ 14:00', title: '낮잠 및 휴식 시간', desc: '정적인 실내 휴식 및 낮잠' },
+    { id: 6, time: '14:00 ~ 15:00', title: '오후 간식 및 신체 율동 놀이', desc: '간식 섭취 및 신체 율동 시간' },
+    { id: 7, time: '15:00 ~ 16:00', title: '1차 셔틀 하원 인솔', desc: '개인 물품 정리 및 1차 통학 차량 탑승' },
+    { id: 8, time: '16:30 ~ 17:30', title: '2차 셔틀 하원 및 통합 보육', desc: '2차 하원 차량 탑승 및 연장 보육반 인계' },
   ];
+
+  const scheduleStorageKey = `takeme_schedule_${teacherClass || 'default'}`;
+  const [scheduleItems, setScheduleItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem(scheduleStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return defaultSchedulePreset;
+  });
+
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [editingScheduleList, setEditingScheduleList] = useState([]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(scheduleStorageKey, JSON.stringify(scheduleItems));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [scheduleItems, scheduleStorageKey]);
+
+  const handleSaveSchedule = () => {
+    setScheduleItems(editingScheduleList);
+    setIsScheduleModalOpen(false);
+  };
+
+  const handleAddScheduleItem = () => {
+    setEditingScheduleList(prev => [
+      ...prev,
+      {
+        id: Date.now(),
+        time: '14:00 ~ 14:30',
+        title: '새 일과 활동',
+        desc: '일과 활동 내용을 입력하세요.'
+      }
+    ]);
+  };
+
+  const handleDeleteScheduleItem = (index) => {
+    setEditingScheduleList(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleResetSchedulePreset = () => {
+    if (window.confirm('기본 표준 유치원 일과로 초기화하시겠습니까?')) {
+      setEditingScheduleList(defaultSchedulePreset);
+    }
+  };
+
+  // Class Notice State (반 전체 알림장)
+  const [isClassNoticeModalOpen, setIsClassNoticeModalOpen] = useState(false);
+  const [classNoticeTitle, setClassNoticeTitle] = useState('');
+  const [classNoticeContent, setClassNoticeContent] = useState('');
+  const [isSendingClassNotice, setIsSendingClassNotice] = useState(false);
+  const classNoticeStorageKey = `takeme_class_notice_${teacherClass || 'default'}`;
+  const [latestClassNotice, setLatestClassNotice] = useState(() => {
+    try {
+      const saved = localStorage.getItem(classNoticeStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return null;
+  });
+
+  const handleSendClassNotice = async () => {
+    if (!classNoticeContent.trim()) {
+      alert('알림장 내용을 입력해주세요.');
+      return;
+    }
+    if (myStudents.length === 0) {
+      alert('반에 소속된 원아가 없습니다.');
+      return;
+    }
+
+    setIsSendingClassNotice(true);
+    const fullNoticeText = classNoticeTitle.trim() 
+      ? `[${classNoticeTitle.trim()}] ${classNoticeContent.trim()}`
+      : classNoticeContent.trim();
+
+    try {
+      // 1. Batch update notes for all students in my class
+      await Promise.all(
+        myStudents.map(st =>
+          fetch(`${API_BASE_URL}/routing/student/${st.id}/note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memo: `[반 전체 알림장] ${fullNoticeText}` })
+          }).catch(err => console.warn(`Failed note update for student ${st.id}`, err))
+        )
+      );
+
+      // 2. Broadcast message to parents
+      try {
+        await fetch(`${API_BASE_URL}/routing/admin/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetRoles: ['PARENT'],
+            vehicleId: null,
+            studentIds: myStudents.map(s => s.id),
+            message: `[${teacherClass} 반 전체 알림장] ${fullNoticeText}`
+          })
+        });
+      } catch (msgErr) {
+        console.warn('Failed admin message broadcast', msgErr);
+      }
+
+      // 3. Save latest notice for display banner
+      const noticeRecord = {
+        title: classNoticeTitle.trim() || '우리 반 공지',
+        content: classNoticeContent.trim(),
+        sentAt: new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        recipientCount: myStudents.length
+      };
+      setLatestClassNotice(noticeRecord);
+      localStorage.setItem(classNoticeStorageKey, JSON.stringify(noticeRecord));
+
+      alert(`${teacherClass} 학부모 전체(${myStudents.length}명)에게 알림장이 발송되었습니다.`);
+      setClassNoticeTitle('');
+      setClassNoticeContent('');
+      setIsClassNoticeModalOpen(false);
+
+      if (onRefreshData) onRefreshData();
+    } catch (e) {
+      console.error(e);
+      alert('알림장 발송 중 오류가 발생했습니다.');
+    } finally {
+      setIsSendingClassNotice(false);
+    }
+  };
 
   const currentHourMinute = useMemo(() => {
     const now = new Date();
@@ -256,17 +512,18 @@ export default function TeacherDashboard({
           </svg>
         </button>
 
-        {/* Tab 3: 새 사진 등록 바로가기 */}
+        {/* Tab 3: 임시 사진 클라우드 */}
         <button
-          onClick={() => {
-            setIsCreatingBoardPost(true);
-            setActiveNavTab('board');
-          }}
-          className="p-4 rounded-2xl text-blue-200 hover:bg-blue-600 transition-all"
-          title="새 활동 사진 등록"
+          onClick={() => setActiveNavTab('cloud')}
+          className={`p-4 rounded-2xl transition-all ${
+            activeNavTab === 'cloud'
+              ? 'bg-white text-blue-700 shadow-lg scale-110'
+              : 'text-blue-200 hover:bg-blue-600'
+          }`}
+          title="임시 사진 클라우드"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
         </button>
 
@@ -303,6 +560,162 @@ export default function TeacherDashboard({
               posts={boardPosts}
               setPosts={setBoardPosts}
             />
+          </div>
+        ) : activeNavTab === 'cloud' ? (
+          /* VIEW C: Temporary Photo Cloud Mode */
+          <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
+            {/* Cloud Header */}
+            <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl font-black text-slate-800 tracking-tight">임시 사진 클라우드</h1>
+                  <span className="text-xs bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200">
+                    총 {cloudPhotos.length}장 보관 중
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  모바일 앱이나 PC에서 촬영한 사진을 임시 보관하고, 원아 앨범 게시판 작성 및 알림장 작성 시 바로 다운로드하거나 활용할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  ref={cloudFileInputRef}
+                  onChange={handleCloudFileChange}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => cloudFileInputRef.current?.click()}
+                  disabled={isUploadingToCloud}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2 disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>{isUploadingToCloud ? '업로드 중...' : '사진 여러장 올리기'}</span>
+                </button>
+                {cloudPhotos.length > 0 && (
+                  <button
+                    onClick={handleClearAllCloudPhotos}
+                    className="px-3 py-2 bg-white border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200 rounded-xl text-xs font-semibold shadow-xs transition"
+                  >
+                    전체 비우기
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cloud Content Body */}
+            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+              {/* Drag & Drop Zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingOverCloud(true); }}
+                onDragLeave={() => setIsDraggingOverCloud(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingOverCloud(false);
+                  processCloudFiles(e.dataTransfer.files);
+                }}
+                onClick={() => cloudFileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                  isDraggingOverCloud
+                    ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
+                    : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/20 shadow-xs'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-2 shadow-xs">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <p className="text-sm font-bold text-slate-700">
+                  {isDraggingOverCloud ? '사진을 여기에 놓으세요' : '사진을 마우스로 끌어다 놓거나 여기를 클릭하여 선택하세요'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  JPG, PNG, WEBP 등 다중 사진 선택 지원 (최대 20MB)
+                </p>
+              </div>
+
+              {/* Photos Gallery */}
+              {cloudPhotos.length > 0 ? (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-700">임시 보관 사진 ({cloudPhotos.length})</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    {cloudPhotos.map(photo => (
+                      <div
+                        key={photo.id}
+                        className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md hover:border-slate-300 transition-all group flex flex-col"
+                      >
+                        {/* Thumbnail */}
+                        <div className="aspect-square relative bg-slate-100 overflow-hidden">
+                          <img
+                            src={photo.url}
+                            alt={photo.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                          {/* Hover Action Overlay */}
+                          <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2.5">
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteCloudPhoto(photo.id); }}
+                                className="w-7 h-7 bg-white/90 hover:bg-red-500 hover:text-white text-slate-700 rounded-lg flex items-center justify-center transition shadow-xs"
+                                title="사진 삭제"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDownloadCloudPhoto(photo); }}
+                              className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center justify-center gap-1"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                              <span>다운로드</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* File Details */}
+                        <div className="p-2.5 bg-white flex flex-col gap-0.5 min-w-0">
+                          <p className="text-xs font-bold text-slate-800 truncate" title={photo.name}>
+                            {photo.name}
+                          </p>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                            <span>{photo.size}</span>
+                            <span>{photo.uploadedAt}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-16 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h4 className="font-bold text-slate-700 text-sm mb-1">임시 보관된 사진이 없습니다</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    위 영역을 클릭하거나 사진 파일을 끌어다 놓아 임시 클라우드에 사진을 저장해보세요.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           /* VIEW B: Classroom Home Mode */
@@ -392,7 +805,19 @@ export default function TeacherDashboard({
                   {/* Left Column: 수업 일정 & 하루 일과 타임라인 */}
                   <section className="lg:col-span-7 bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col">
                     <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-                      <h3 className="font-extrabold text-slate-900 text-base">오늘의 수업 및 일과 일정</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-slate-900 text-base">오늘의 수업 및 일과 일정</h3>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingScheduleList([...scheduleItems]);
+                            setIsScheduleModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                        >
+                          일정 수정
+                        </button>
+                      </div>
                       <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-1 rounded-lg">
                         현재 시각: {currentHourMinute}
                       </span>
@@ -517,6 +942,17 @@ export default function TeacherDashboard({
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsClassNoticeModalOpen(true)}
+                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-blue-500/20 flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                        </svg>
+                        <span>우리 반 전체 알림장 작성</span>
+                      </button>
+
                       <div className="relative">
                         <input
                           type="text"
@@ -566,6 +1002,41 @@ export default function TeacherDashboard({
                       </div>
                     </div>
                   </div>
+
+                  {/* Class-wide Notice Banner (if any sent) */}
+                  {latestClassNotice && (
+                    <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-extrabold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-md">
+                              우리 반 전체 알림장
+                            </span>
+                            <span className="text-xs text-slate-400 font-medium">{latestClassNotice.sentAt}</span>
+                            <span className="text-xs text-slate-500 font-semibold">({latestClassNotice.recipientCount}명 학부모 발송 완료)</span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900 mt-1">{latestClassNotice.title}</h4>
+                          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{latestClassNotice.content}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClassNoticeTitle(latestClassNotice.title || '');
+                          setClassNoticeContent(latestClassNotice.content || '');
+                          setIsClassNoticeModalOpen(true);
+                        }}
+                        className="self-end sm:self-center px-3 py-1.5 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl transition-colors shrink-0 shadow-2xs"
+                      >
+                        내용 수정 후 재발송
+                      </button>
+                    </div>
+                  )}
 
                   {displayedStudents.length === 0 ? (
                     <div className="text-center py-12 text-slate-400">
@@ -666,11 +1137,11 @@ export default function TeacherDashboard({
                                 <div
                                   onClick={() => handleOpenMemoModal(student)}
                                   className="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 mb-3 cursor-pointer hover:bg-amber-100/70 transition-colors"
-                                  title="클릭하여 알림장 메모 수정"
+                                  title="클릭하여 개별 알림장 수정"
                                 >
                                   <div className="flex items-center justify-between mb-1">
                                     <span className="text-[11px] font-bold text-amber-800">
-                                      알림장 메모
+                                      개별 알림장 (1:1)
                                     </span>
                                     <span className="text-[10px] text-amber-600 font-semibold">수정</span>
                                   </div>
@@ -719,7 +1190,7 @@ export default function TeacherDashboard({
                                 onClick={() => handleOpenMemoModal(student)}
                                 className="w-full py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center transition-colors"
                               >
-                                {student.teacherMemo ? '알림장 메모 수정' : '+ 알림장 메모 작성'}
+                                {student.teacherMemo ? '개별 알림장 수정' : '+ 개별 알림장 작성'}
                               </button>
                             </div>
                           </div>
@@ -734,17 +1205,22 @@ export default function TeacherDashboard({
         )}
       </div>
 
-      {/* --- MODAL 1: Student Memo Modal --- */}
+      {/* --- MODAL 1: Individual Student Memo Modal (1:1 개별 알림장) --- */}
       {selectedStudentForMemo && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-scale-up">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="font-black text-slate-900 text-base">
-                  {selectedStudentForMemo.name} 원아 알림장 & 일일 메모
-                </h3>
-                <p className="text-xs text-slate-500">
-                  건강 상태, 투약, 식사량, 부모님 전달사항을 기록하세요.
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[11px] font-extrabold rounded-md">
+                    1:1 개별 전달
+                  </span>
+                  <h3 className="font-black text-slate-900 text-base">
+                    {selectedStudentForMemo.name} 원아 개별 알림장
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  이 알림장은 <strong>{selectedStudentForMemo.name} 원아의 학부모님께만 1:1로 전달</strong>됩니다.
                 </p>
               </div>
               <button
@@ -780,7 +1256,7 @@ export default function TeacherDashboard({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">메모 내용</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">개별 알림장 내용</label>
               <textarea
                 rows={4}
                 value={memoInput}
@@ -804,7 +1280,7 @@ export default function TeacherDashboard({
                 disabled={isSavingMemo}
                 className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 disabled:opacity-50"
               >
-                {isSavingMemo ? '저장 중...' : '알림장 저장 완료'}
+                {isSavingMemo ? '저장 중...' : '개별 알림장 저장 완료'}
               </button>
             </div>
           </div>
@@ -875,6 +1351,219 @@ export default function TeacherDashboard({
                 className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
               >
                 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 3: Class-wide Notice Modal (우리 반 전체 알림장) --- */}
+      {isClassNoticeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[11px] font-extrabold rounded-md">
+                    우리 반 전체 발송
+                  </span>
+                  <h3 className="font-black text-slate-900 text-base">
+                    {teacherClass} 전체 알림장 작성
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  작성하신 알림장은 <strong>{teacherClass} 소속 모든 원아({myStudents.length}명)의 학부모님</strong> 앱으로 일괄 발송됩니다.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsClassNoticeModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">알림장 제목</label>
+              <input
+                type="text"
+                value={classNoticeTitle}
+                onChange={e => setClassNoticeTitle(e.target.value)}
+                placeholder="예: [내일 야외 활동 준비물 안내] 편한 복장 및 물통 지참"
+                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+              />
+            </div>
+
+            <div>
+              <p className="text-xs font-bold text-slate-600 mb-1.5">자주 쓰는 전체 공지 문구</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  '내일은 숲 체험 활동이 예정되어 있으니 편한 운동화와 모자를 착용해 주세요.',
+                  '가정통신문 및 동의서가 배부되었으니 확인 후 회신 부탁드립니다.',
+                  '기온 변화가 심하니 얇은 겉옷을 가방에 챙겨 보내주시기 바랍니다.',
+                  '원아들의 개인 물품 및 식기류에 이름을 꼭 기재해 주시기 바랍니다.'
+                ].map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setClassNoticeContent(prev => (prev ? `${prev}\n${preset}` : preset));
+                    }}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg font-medium transition-colors text-left"
+                  >
+                    + {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">알림장 본문</label>
+              <textarea
+                rows={5}
+                value={classNoticeContent}
+                onChange={e => setClassNoticeContent(e.target.value)}
+                placeholder="학부모님들께 전달할 알림장 내용을 입력하세요."
+                className="w-full text-sm p-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+              />
+            </div>
+
+            <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
+              수신 대상: <strong>{teacherClass} 원아 {myStudents.length}명 전체 학부모</strong>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsClassNoticeModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSendClassNotice}
+                disabled={isSendingClassNotice}
+                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSendingClassNotice ? '전체 발송 중...' : '반 전체 발송하기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 4: Schedule Edit Modal (일과 및 수업 일정 수정) --- */}
+      {isScheduleModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-scale-up flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-900 text-base">
+                  오늘의 수업 및 일과 일정 편집 ({teacherClass})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  시간대별 일과 제목 및 세부 활동 내용을 자유롭게 수정하거나 추가할 수 있습니다.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleAddScheduleItem}
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition-colors flex items-center gap-1"
+              >
+                <span>+ 새 일정 추가</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleResetSchedulePreset}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded-xl transition-colors"
+              >
+                표준 일과로 초기화
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+              {editingScheduleList.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="w-6 h-6 rounded-md bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={item.time}
+                      onChange={e => {
+                        const newTime = e.target.value;
+                        setEditingScheduleList(prev =>
+                          prev.map((it, i) => (i === idx ? { ...it, time: newTime } : it))
+                        );
+                      }}
+                      placeholder="09:00 ~ 10:00"
+                      className="text-xs font-mono font-bold bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 w-36 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={item.title}
+                      onChange={e => {
+                        const newTitle = e.target.value;
+                        setEditingScheduleList(prev =>
+                          prev.map((it, i) => (i === idx ? { ...it, title: newTitle } : it))
+                        );
+                      }}
+                      placeholder="일과 제목"
+                      className="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 flex-1 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteScheduleItem(idx)}
+                      className="text-xs text-rose-500 hover:text-rose-700 p-1 font-bold shrink-0"
+                      title="삭제"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={item.desc}
+                    onChange={e => {
+                      const newDesc = e.target.value;
+                      setEditingScheduleList(prev =>
+                        prev.map((it, i) => (i === idx ? { ...it, desc: newDesc } : it))
+                      );
+                    }}
+                    placeholder="세부 활동 내용"
+                    className="w-full text-xs text-slate-600 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSchedule}
+                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20"
+              >
+                일정 저장 완료
               </button>
             </div>
           </div>
