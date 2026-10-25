@@ -1614,7 +1614,7 @@ const parseKindergartenExcelSheet = (sheet) => {
       </div>
 
       {/* Sidebar Content Panel */}
-      <div className={`bg-white shadow-lg z-10 flex flex-col transition-all duration-300 ease-in-out ${activeTab === 'auth' ? 'w-[480px]' : activeTab === 'students' ? 'w-[380px]' : 'w-80'}`}>
+      <div className={`bg-white shadow-lg z-10 flex flex-col transition-all duration-300 ease-in-out ${activeTab === 'auth' ? 'w-[520px]' : activeTab === 'students' ? 'w-[380px]' : 'w-80'}`}>
         {activeTab === 'status' && (
           <div className="p-6 h-full flex flex-col">
             <h2 className="text-xl font-bold text-slate-800 mb-4">차량 구역 현황</h2>
@@ -2374,7 +2374,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-2.5 pr-1">
                 {teachers.map(teacher => {
                   const currentClass = teacher.assignedClass;
                   const selectedVal = selectedTeacherClasses[teacher.id] !== undefined 
@@ -2382,36 +2382,39 @@ const parseKindergartenExcelSheet = (sheet) => {
                     : (currentClass || '');
 
                   return (
-                    <div key={teacher.id} className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm shrink-0 shadow-inner">
-                          {teacher.name?.[0] || '교'}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800 text-sm whitespace-nowrap">{teacher.name} 선생님</span>
-                            {currentClass ? (
-                              <span className="text-[11px] bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200 whitespace-nowrap shrink-0">
-                                {currentClass} 담임
-                              </span>
-                            ) : (
-                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200 whitespace-nowrap shrink-0">
-                                반 미배정
-                              </span>
-                            )}
+                    <div key={teacher.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col gap-2.5 hover:border-slate-300 transition-colors">
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                            {teacher.name?.[0] || '교'}
                           </div>
-                          <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                            <span>{teacher.email}</span>
-                            {teacher.phone && <span>• {teacher.phone}</span>}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-800 text-sm whitespace-nowrap">{teacher.name} 선생님</span>
+                              {currentClass ? (
+                                <span className="text-[11px] bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200 whitespace-nowrap shrink-0">
+                                  {currentClass} 담임
+                                </span>
+                              ) : (
+                                <span className="text-[11px] bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200 whitespace-nowrap shrink-0">
+                                  반 미배정
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5 truncate" title={`${teacher.email}${teacher.phone ? ` • ${teacher.phone}` : ''}`}>
+                              <span>{teacher.email}</span>
+                              {teacher.phone && <span className="text-slate-400"> • {teacher.phone}</span>}
+                            </div>
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                        <span className="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">담당 반:</span>
                         <select
                           value={selectedVal}
                           onChange={(e) => setSelectedTeacherClasses(prev => ({ ...prev, [teacher.id]: e.target.value }))}
-                          className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                          className="flex-1 min-w-0 px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 hover:bg-white text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition"
                         >
                           <option value="">-- 담당 반 선택 --</option>
                           {availableClasses.map(cls => (
@@ -2421,7 +2424,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                         <button
                           onClick={() => handleAssignClass(teacher.id)}
                           disabled={isAssigningClass}
-                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition disabled:opacity-50"
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition disabled:opacity-50 whitespace-nowrap shrink-0"
                         >
                           {currentClass ? '반 변경' : '반 배정'}
                         </button>
