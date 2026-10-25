@@ -566,6 +566,15 @@ export default function Dashboard() {
     }
   };
 
+  const refreshAllData = async () => {
+    try {
+      if (typeof loadInitialState === 'function') await loadInitialState();
+      if (typeof fetchTeachers === 'function') await fetchTeachers();
+    } catch (e) {
+      console.error('Refresh all data failed', e);
+    }
+  };
+
   const handleAssignClass = async (teacherId) => {
     const assignedClass = selectedTeacherClasses[teacherId];
     if (!assignedClass) {
@@ -2800,7 +2809,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             availableClasses={availableClasses}
             customClasses={customClasses}
             setCustomClasses={setCustomClasses}
-            onRefreshData={fetchAcademyData}
+            onRefreshData={refreshAllData}
             isClosing={isClassesClosing}
             onClose={() => handleTabChange('status')}
           />

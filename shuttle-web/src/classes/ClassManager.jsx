@@ -1,17 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 
-const API_BASE_URL = 'http://52.63.245.203:3000';
+import { API_BASE_URL } from '../config';
 
 export default function ClassManager({
   academyId,
   academy,
   currentUser,
-  students,
+  students = [],
   setStudents,
-  teachers,
+  teachers = [],
   setTeachers,
-  availableClasses,
-  customClasses,
+  availableClasses = [],
+  customClasses = [],
   setCustomClasses,
   onRefreshData,
   isClosing,
@@ -28,14 +28,14 @@ export default function ClassManager({
   // Combine custom classes and any classes found in students or teachers
   const allClassNames = useMemo(() => {
     const set = new Set();
-    customClasses.forEach(c => {
+    (customClasses || []).forEach(c => {
       if (c && String(c).trim()) set.add(String(c).trim());
     });
-    students.forEach(st => {
+    (students || []).forEach(st => {
       const cls = st.raw?.['반명'] || st.raw?.['반'] || '';
       if (cls && String(cls).trim() && cls !== '미배정') set.add(String(cls).trim());
     });
-    teachers.forEach(t => {
+    (teachers || []).forEach(t => {
       if (t.assignedClass && String(t.assignedClass).trim() && t.assignedClass !== '미배정') {
         set.add(String(t.assignedClass).trim());
       }
@@ -55,7 +55,7 @@ export default function ClassManager({
 
   // Unassigned Students
   const unassignedStudents = useMemo(() => {
-    return students.filter(st => {
+    return (students || []).filter(st => {
       const cls = (st.raw?.['반명'] || st.raw?.['반'] || '').trim();
       return !cls || cls === '미배정' || !allClassNames.includes(cls);
     });
@@ -78,7 +78,7 @@ export default function ClassManager({
     allClassNames.forEach(c => {
       map[c] = [];
     });
-    students.forEach(st => {
+    (students || []).forEach(st => {
       const cls = (st.raw?.['반명'] || st.raw?.['반'] || '').trim();
       if (cls && map[cls]) {
         map[cls].push(st);
@@ -91,7 +91,7 @@ export default function ClassManager({
   const classTeacherMap = useMemo(() => {
     const map = {};
     allClassNames.forEach(c => {
-      map[c] = teachers.find(t => t.assignedClass && t.assignedClass.trim() === c.trim()) || null;
+      map[c] = (teachers || []).find(t => t.assignedClass && t.assignedClass.trim() === c.trim()) || null;
     });
     return map;
   }, [allClassNames, teachers]);
