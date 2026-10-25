@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 
 const { height, width } = Dimensions.get('window');
 
-const API_HOST = Platform.OS === 'web' ? 'http://localhost:3000' : process.env.EXPO_PUBLIC_API_URL || 'http://192.168.35.233:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 const showAlert = (title, message) => {
   if (Platform.OS === 'web') {

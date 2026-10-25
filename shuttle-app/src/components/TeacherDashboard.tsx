@@ -14,7 +14,7 @@ if (Platform.OS !== 'web') {
   Polyline = Maps.Polyline;
 }
 
-const API_HOST = Platform.OS === 'web' ? 'http://localhost:3000' : process.env.EXPO_PUBLIC_API_URL || 'http://192.168.35.233:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Alert, Platform } from 'react-native';
 
-const API_HOST = Platform.OS === 'web' ? 'http://localhost:3000' : process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function AbsenceModal({ visible, onClose, email }) {
   const [overrideType, setOverrideType] = useState('ABSENCE');

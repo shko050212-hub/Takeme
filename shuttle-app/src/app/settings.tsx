@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, Trash2 } from 'lucide-react-native';
 
-const API_HOST = Platform.OS === 'web' ? 'http://localhost:3000' : process.env.EXPO_PUBLIC_API_URL || 'http://192.168.35.233:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function SettingsScreen() {
   const router = useRouter();

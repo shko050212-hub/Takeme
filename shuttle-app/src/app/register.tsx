@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 // API Host for development testing (Mobile needs IP instead of localhost)
-const API_HOST = 'http://192.168.35.233:3000';
+const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function RegisterScreen() {
   const router = useRouter();
