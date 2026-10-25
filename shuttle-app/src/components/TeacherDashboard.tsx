@@ -5,6 +5,7 @@ import QRCode from 'react-native-qrcode-svg';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import io from 'socket.io-client';
+import { API_HOST, authFetch, socketOptions } from '../lib/api';
 
 let MapView, Marker, Polyline;
 if (Platform.OS !== 'web') {
@@ -14,7 +15,6 @@ if (Platform.OS !== 'web') {
   Polyline = Maps.Polyline;
 }
 
-const API_HOST = Platform.OS === 'web' ? 'http://localhost:3000' : process.env.EXPO_PUBLIC_API_URL || 'http://192.168.35.233:3000';
 
 const haversineDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;
@@ -57,7 +57,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   useEffect(() => {
     // 소켓 연결
-    socketRef.current = io(API_HOST);
+    socketRef.current = io(API_HOST, socketOptions());
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
@@ -83,9 +83,10 @@ export default function TeacherDashboard({ email, name, role }) {
           const lng = loc.coords.longitude;
           setCurrentLoc({ latitude: lat, longitude: lng });
 
-          if (socketRef.current) {
+          // 차량 ID를 받은 뒤에만 전송 (서버가 내 배정 차량인지 토큰으로 확인)
+          if (socketRef.current && vehicleId) {
             socketRef.current.emit('driverLocationUpdate', {
-              vehicleId: vehicleId || 1, 
+              vehicleId, 
               lat,
               lng
             });
@@ -136,7 +137,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   const fetchStaffList = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/staff`);
+      const res = await authFetch(`${API_HOST}/teacher/staff`);
       const data = await res.json();
       if (res.ok) setStaffData(data);
     } catch(e) {}
@@ -146,7 +147,7 @@ export default function TeacherDashboard({ email, name, role }) {
     setIsLoading(true);
     try {
       const monthStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
-      const res = await fetch(`${API_HOST}/teacher/operation-logs?email=${email}&month=${monthStr}`);
+      const res = await authFetch(`${API_HOST}/teacher/operation-logs?email=${email}&month=${monthStr}`);
       const data = await res.json();
       if (res.ok) {
         setOperationLogs(data);
@@ -160,7 +161,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   const handleStartOperation = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/start-operation`, {
+      const res = await authFetch(`${API_HOST}/teacher/start-operation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -178,7 +179,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   const handleEndOperation = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/end-operation`, {
+      const res = await authFetch(`${API_HOST}/teacher/end-operation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -196,7 +197,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   const fetchRoute = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/route?email=${email}`);
+      const res = await authFetch(`${API_HOST}/teacher/route?email=${email}`);
       const data = await res.json();
       if (res.ok) {
         setRouteData(data);
@@ -221,7 +222,7 @@ export default function TeacherDashboard({ email, name, role }) {
   const fetchPassengers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_HOST}/teacher/students?email=${email}`);
+      const res = await authFetch(`${API_HOST}/teacher/students?email=${email}`);
       const data = await res.json();
       if (res.ok) {
         const sortedData = [...data].sort((a, b) => (a.expectedTime || '').localeCompare(b.expectedTime || ''));
@@ -237,7 +238,7 @@ export default function TeacherDashboard({ email, name, role }) {
   const fetchInbox = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_HOST}/teacher/inbox?email=${email}`);
+      const res = await authFetch(`${API_HOST}/teacher/inbox?email=${email}`);
       const data = await res.json();
       if (res.ok) {
         // [테스트용 임시 메세지 삽입]
@@ -266,7 +267,7 @@ export default function TeacherDashboard({ email, name, role }) {
     const { id, name, text } = reasonPrompt;
     setReasonPrompt(null);
     try {
-      const res = await fetch(`${API_HOST}/teacher/board`, {
+      const res = await authFetch(`${API_HOST}/teacher/board`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, studentId: id, reason: text })
@@ -300,7 +301,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
 
     try {
-      const res = await fetch(`${API_HOST}/teacher/student/${id}/memo`, {
+      const res = await authFetch(`${API_HOST}/teacher/student/${id}/memo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, memo: teacherMemo || '' })
@@ -320,7 +321,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   const handleSkipStudent = async (studentId, studentName) => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/skip-student`, {
+      const res = await authFetch(`${API_HOST}/teacher/skip-student`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, studentId })
@@ -713,7 +714,7 @@ export default function TeacherDashboard({ email, name, role }) {
     }
 
     try {
-      const res = await fetch(`${API_HOST}/teacher/send-message`, {
+      const res = await authFetch(`${API_HOST}/teacher/send-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
