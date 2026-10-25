@@ -595,7 +595,7 @@ export default function TeacherDashboard({
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  <span>{isUploadingToCloud ? '업로드 중...' : '사진 올리기'}</span>
+                  <span>{isUploadingToCloud ? '업로드 중...' : '사진 여러장 올리기'}</span>
                 </button>
                 {cloudPhotos.length > 0 && (
                   <button
