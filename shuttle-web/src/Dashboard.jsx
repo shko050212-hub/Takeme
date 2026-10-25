@@ -391,33 +391,60 @@ export default function Dashboard() {
       console.log('All vehicle operating status:', statusMap);
       if (statusMap) {
         setOperatingBuses(prev => ({ ...prev, ...statusMap }));
+        setBusLocations(prev => {
+          const next = { ...prev };
+          Object.entries(statusMap).forEach(([vid, isOp]) => {
+            if (!isOp) {
+              delete next[vid];
+              delete next[Number(vid)];
+            }
+          });
+          return next;
+        });
       }
     });
 
     socket.on('vehicleOperatingStatus', (data) => {
       console.log('Vehicle operating status update:', data);
       if (data && data.vehicleId) {
+        const isOp = Boolean(data.isOperating);
+        const vidNum = Number(data.vehicleId);
+        const vidStr = data.vehicleId.toString();
         setOperatingBuses(prev => ({
           ...prev,
-          [data.vehicleId]: !!data.isOperating
+          [vidNum]: isOp,
+          [vidStr]: isOp
         }));
+
+        if (!isOp) {
+          // Immediately remove bus marker from map in real-time
+          setBusLocations(prev => {
+            const next = { ...prev };
+            delete next[vidNum];
+            delete next[vidStr];
+            return next;
+          });
+        }
       }
     });
 
     socket.on('locationUpdated', (data) => {
       console.log('Real-time bus location received:', data);
       if (data && data.vehicleId) {
+        const vidNum = Number(data.vehicleId);
+        const vidStr = data.vehicleId.toString();
+        setOperatingBuses(prev => ({
+          ...prev,
+          [vidNum]: true,
+          [vidStr]: true
+        }));
         setBusLocations(prev => ({
           ...prev,
-          [data.vehicleId]: {
+          [vidNum]: {
             lat: parseFloat(data.lat),
             lng: parseFloat(data.lng),
             timestamp: data.timestamp
           }
-        }));
-        setOperatingBuses(prev => ({
-          ...prev,
-          [data.vehicleId]: true
         }));
       }
     });
@@ -3178,6 +3205,7 @@ const parseKindergartenExcelSheet = (sheet) => {
           {Object.entries(busLocations).map(([vid, loc]) => {
             const bus = buses.find(b => b.id.toString() === vid.toString());
             if (!bus || (selectedBusId && bus.id !== selectedBusId)) return null;
+            if (operatingBuses[bus.id] === false) return null; // Immediately remove if stopped!
             const busIcon = L.divIcon({
               className: 'custom-bus-marker',
               html: `<div style="position: relative; display: flex; align-items: center; justify-content: center;">
