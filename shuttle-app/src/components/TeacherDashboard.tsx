@@ -86,7 +86,6 @@ export default function TeacherDashboard({ email, name, role, token }) {
           console.warn('위치 권한이 거부되었습니다.');
           return;
         }
-        }
 
         // 1) 화면 진입 즉시 현재 위치 한번 가져와서 지도에 즉시 표시
         try {
