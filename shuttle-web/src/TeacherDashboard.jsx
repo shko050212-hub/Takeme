@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import BoardViewer from './board/BoardViewer';
@@ -31,8 +31,132 @@ export default function TeacherDashboard({
   boardPosts = [],
   setBoardPosts,
 }) {
-  // Navigation State on Left Rail: 'home' | 'board'
+  // Navigation State on Left Rail: 'home' | 'board' | 'cloud'
   const [activeNavTab, setActiveNavTab] = useState('home');
+
+  // Temporary Cloud Storage State
+  const cloudStorageKey = `takeme_teacher_cloud_${currentUser?.id || 'default'}`;
+  const [cloudPhotos, setCloudPhotos] = useState(() => {
+    try {
+      const saved = localStorage.getItem(cloudStorageKey);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      {
+        id: 'sample-1',
+        name: '가을 소풍 단체 활동.jpg',
+        url: 'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?w=800&auto=format&fit=crop&q=80',
+        size: '1.40 MB',
+        uploadedAt: '오늘 10:30'
+      },
+      {
+        id: 'sample-2',
+        name: '미술 시간 블록 쌓기.jpg',
+        url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=80',
+        size: '2.10 MB',
+        uploadedAt: '어제 15:40'
+      }
+    ];
+  });
+
+  const [isUploadingToCloud, setIsUploadingToCloud] = useState(false);
+  const [isDraggingOverCloud, setIsDraggingOverCloud] = useState(false);
+  const cloudFileInputRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(cloudStorageKey, JSON.stringify(cloudPhotos));
+    } catch (e) {
+      console.error('Failed to save cloud photos', e);
+    }
+  }, [cloudPhotos, cloudStorageKey]);
+
+  const processCloudFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingToCloud(true);
+
+    const newPhotos = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('image/')) continue;
+      if (file.size > 20 * 1024 * 1024) {
+        alert(`${file.name}: 20MB 이하의 이미지만 업로드 가능합니다.`);
+        continue;
+      }
+
+      try {
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        let finalUrl = base64Data;
+        try {
+          const res = await fetch(`${API_BASE_URL}/routing/board/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              base64Data,
+              filename: file.name,
+              mimeType: file.type
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.url) {
+            finalUrl = data.url;
+          }
+        } catch (netErr) {
+          console.warn('Server upload fallback to local data', netErr);
+        }
+
+        newPhotos.unshift({
+          id: `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+          name: file.name,
+          url: finalUrl,
+          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          uploadedAt: '방금 전'
+        });
+      } catch (err) {
+        console.error('Failed to process file', file.name, err);
+      }
+    }
+
+    if (newPhotos.length > 0) {
+      setCloudPhotos(prev => [...newPhotos, ...prev]);
+    }
+    setIsUploadingToCloud(false);
+  };
+
+  const handleCloudFileChange = (e) => {
+    processCloudFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  const handleDeleteCloudPhoto = (photoId) => {
+    if (window.confirm('이 사진을 임시 클라우드에서 삭제하시겠습니까?')) {
+      setCloudPhotos(prev => prev.filter(p => p.id !== photoId));
+    }
+  };
+
+  const handleClearAllCloudPhotos = () => {
+    if (cloudPhotos.length === 0) return;
+    if (window.confirm('임시 클라우드에 보관된 모든 사진을 삭제하시겠습니까?')) {
+      setCloudPhotos([]);
+    }
+  };
+
+  const handleDownloadCloudPhoto = (photo) => {
+    const a = document.createElement('a');
+    a.href = photo.url;
+    a.download = photo.name || 'activity_photo.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   // Teacher Profile & Class State
   const [localTeacherUser, setLocalTeacherUser] = useState(currentUser);
@@ -256,17 +380,18 @@ export default function TeacherDashboard({
           </svg>
         </button>
 
-        {/* Tab 3: 새 사진 등록 바로가기 */}
+        {/* Tab 3: 임시 사진 클라우드 */}
         <button
-          onClick={() => {
-            setIsCreatingBoardPost(true);
-            setActiveNavTab('board');
-          }}
-          className="p-4 rounded-2xl text-blue-200 hover:bg-blue-600 transition-all"
-          title="새 활동 사진 등록"
+          onClick={() => setActiveNavTab('cloud')}
+          className={`p-4 rounded-2xl transition-all ${
+            activeNavTab === 'cloud'
+              ? 'bg-white text-blue-700 shadow-lg scale-110'
+              : 'text-blue-200 hover:bg-blue-600'
+          }`}
+          title="임시 사진 클라우드"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
         </button>
 
@@ -303,6 +428,162 @@ export default function TeacherDashboard({
               posts={boardPosts}
               setPosts={setBoardPosts}
             />
+          </div>
+        ) : activeNavTab === 'cloud' ? (
+          /* VIEW C: Temporary Photo Cloud Mode */
+          <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
+            {/* Cloud Header */}
+            <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl font-black text-slate-800 tracking-tight">임시 사진 클라우드</h1>
+                  <span className="text-xs bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200">
+                    총 {cloudPhotos.length}장 보관 중
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  모바일 앱이나 PC에서 촬영한 사진을 임시 보관하고, 원아 앨범 게시판 작성 및 알림장 작성 시 바로 다운로드하거나 활용할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  ref={cloudFileInputRef}
+                  onChange={handleCloudFileChange}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => cloudFileInputRef.current?.click()}
+                  disabled={isUploadingToCloud}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2 disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>{isUploadingToCloud ? '업로드 중...' : '사진 올리기'}</span>
+                </button>
+                {cloudPhotos.length > 0 && (
+                  <button
+                    onClick={handleClearAllCloudPhotos}
+                    className="px-3 py-2 bg-white border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200 rounded-xl text-xs font-semibold shadow-xs transition"
+                  >
+                    전체 비우기
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cloud Content Body */}
+            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+              {/* Drag & Drop Zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingOverCloud(true); }}
+                onDragLeave={() => setIsDraggingOverCloud(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingOverCloud(false);
+                  processCloudFiles(e.dataTransfer.files);
+                }}
+                onClick={() => cloudFileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                  isDraggingOverCloud
+                    ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
+                    : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/20 shadow-xs'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-2 shadow-xs">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <p className="text-sm font-bold text-slate-700">
+                  {isDraggingOverCloud ? '사진을 여기에 놓으세요' : '사진을 마우스로 끌어다 놓거나 여기를 클릭하여 선택하세요'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  JPG, PNG, WEBP 등 다중 사진 선택 지원 (최대 20MB)
+                </p>
+              </div>
+
+              {/* Photos Gallery */}
+              {cloudPhotos.length > 0 ? (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-700">임시 보관 사진 ({cloudPhotos.length})</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    {cloudPhotos.map(photo => (
+                      <div
+                        key={photo.id}
+                        className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md hover:border-slate-300 transition-all group flex flex-col"
+                      >
+                        {/* Thumbnail */}
+                        <div className="aspect-square relative bg-slate-100 overflow-hidden">
+                          <img
+                            src={photo.url}
+                            alt={photo.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                          {/* Hover Action Overlay */}
+                          <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2.5">
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteCloudPhoto(photo.id); }}
+                                className="w-7 h-7 bg-white/90 hover:bg-red-500 hover:text-white text-slate-700 rounded-lg flex items-center justify-center transition shadow-xs"
+                                title="사진 삭제"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDownloadCloudPhoto(photo); }}
+                              className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center justify-center gap-1"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                              <span>다운로드</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* File Details */}
+                        <div className="p-2.5 bg-white flex flex-col gap-0.5 min-w-0">
+                          <p className="text-xs font-bold text-slate-800 truncate" title={photo.name}>
+                            {photo.name}
+                          </p>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                            <span>{photo.size}</span>
+                            <span>{photo.uploadedAt}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-16 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h4 className="font-bold text-slate-700 text-sm mb-1">임시 보관된 사진이 없습니다</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    위 영역을 클릭하거나 사진 파일을 끌어다 놓아 임시 클라우드에 사진을 저장해보세요.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           /* VIEW B: Classroom Home Mode */
