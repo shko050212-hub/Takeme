@@ -1614,7 +1614,7 @@ const parseKindergartenExcelSheet = (sheet) => {
       </div>
 
       {/* Sidebar Content Panel */}
-      <div className="w-80 bg-white shadow-lg z-10 flex flex-col">
+      <div className={`bg-white shadow-lg z-10 flex flex-col transition-all duration-300 ease-in-out ${activeTab === 'auth' ? 'w-[480px]' : activeTab === 'students' ? 'w-[380px]' : 'w-80'}`}>
         {activeTab === 'status' && (
           <div className="p-6 h-full flex flex-col">
             <h2 className="text-xl font-bold text-slate-800 mb-4">차량 구역 현황</h2>
@@ -2242,30 +2242,44 @@ const parseKindergartenExcelSheet = (sheet) => {
               
               <div className="flex-1 overflow-y-auto space-y-2 pr-2">
                 {students.map(st => (
-                  <div key={st.id} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-between">
-                    <div>
+                  <div key={st.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex items-center justify-between gap-3 hover:border-slate-300 transition-colors">
+                    <div className="min-w-0 flex-1">
                       <div className="font-bold text-slate-800 flex items-center gap-2">
-                        {st.name} 
+                        <span className="text-sm font-bold text-slate-900 whitespace-nowrap">{st.name}</span>
+                        {st.className && (
+                          <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100 font-medium whitespace-nowrap shrink-0">
+                            {st.className}
+                          </span>
+                        )}
                         {st.approvalStatus === 'APPROVED' ? (
-                          <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 font-bold">승인완료</span>
+                          <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full border border-green-200 font-bold whitespace-nowrap shrink-0">
+                            승인완료
+                          </span>
                         ) : st.approvalStatus === 'PENDING' ? (
-                          <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200 font-bold">승인대기</span>
+                          <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full border border-orange-200 font-bold whitespace-nowrap shrink-0">
+                            승인대기
+                          </span>
                         ) : (
-                          <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">미가입</span>
+                          <span className="text-[11px] bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium whitespace-nowrap shrink-0">
+                            미가입
+                          </span>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">{st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 안됨'} • {st.address}</div>
+                      <div className="text-xs text-slate-500 mt-1 truncate" title={`${st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 안됨'} • ${st.address}`}>
+                        <span className="font-medium text-slate-600">{st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 안됨'}</span>
+                        {st.address && <span className="text-slate-400"> • {st.address}</span>}
+                      </div>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {st.approvalStatus === 'PENDING' && (
                         <>
-                          <button onClick={() => handleApproveStudent(st.id)} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700">승인</button>
-                          <button onClick={() => handleRevokeStudent(st.id, true)} className="px-3 py-1.5 bg-slate-200 text-slate-600 text-xs font-bold rounded shadow-sm hover:bg-slate-300">거절</button>
+                          <button onClick={() => handleApproveStudent(st.id)} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-green-700 transition whitespace-nowrap shrink-0">승인</button>
+                          <button onClick={() => handleRevokeStudent(st.id, true)} className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition whitespace-nowrap shrink-0">거절</button>
                         </>
                       )}
                       {st.approvalStatus === 'APPROVED' && (
-                        <button onClick={() => handleRevokeStudent(st.id, false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded hover:bg-red-50">연동 해제</button>
+                        <button onClick={() => handleRevokeStudent(st.id, false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0">연동 해제</button>
                       )}
                     </div>
                   </div>
@@ -2283,58 +2297,58 @@ const parseKindergartenExcelSheet = (sheet) => {
               
               <div className="flex-1 overflow-y-auto space-y-2 pr-2">
                 {buses.map(bus => (
-                  <div key={bus.id} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col gap-3">
+                  <div key={bus.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col gap-3">
                     <div className="font-bold text-slate-800 text-sm border-b pb-2">{bus.name} ({bus.plateNumber})</div>
                     
                     <div className="flex flex-col gap-2">
-                      <div className="text-sm flex items-center gap-2">
-                        <span className="text-slate-500 w-14 shrink-0 whitespace-nowrap">기사님</span>
-                        <span className="font-bold text-slate-700 whitespace-nowrap text-base">{bus.driverName}</span>
-                      </div>
-                      <div className="flex items-center gap-3 ml-16">
-                        {bus.driverApprovalStatus === 'APPROVED' ? (
-                          <span className="text-[11px] bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200 font-bold">승인완료</span>
-                        ) : bus.driverApprovalStatus === 'PENDING' ? (
-                          <span className="text-[11px] bg-orange-100 text-orange-700 px-2 py-1 rounded border border-orange-200 font-bold">승인대기</span>
-                        ) : (
-                          <span className="text-[11px] bg-slate-100 text-slate-500 px-2 py-1 rounded border border-slate-200">미가입</span>
-                        )}
-                        <div className="flex gap-2">
+                      <div className="text-sm flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-slate-500 text-xs w-14 shrink-0 whitespace-nowrap">기사님</span>
+                          <span className="font-bold text-slate-800 whitespace-nowrap text-sm">{bus.driverName || '미지정'}</span>
+                          {bus.driverApprovalStatus === 'APPROVED' ? (
+                            <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full border border-green-200 font-bold whitespace-nowrap shrink-0">승인완료</span>
+                          ) : bus.driverApprovalStatus === 'PENDING' ? (
+                            <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full border border-orange-200 font-bold whitespace-nowrap shrink-0">승인대기</span>
+                          ) : (
+                            <span className="text-[11px] bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium whitespace-nowrap shrink-0">미가입</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {bus.driverApprovalStatus === 'PENDING' && (
                             <>
-                              <button onClick={() => handleApproveStaff(bus.id, 'DRIVER')} className="px-4 py-1.5 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700">승인</button>
-                              <button onClick={() => handleRevokeStaff(bus.id, 'DRIVER', true)} className="px-4 py-1.5 bg-slate-200 text-slate-600 text-xs font-bold rounded shadow-sm hover:bg-slate-300">거절</button>
+                              <button onClick={() => handleApproveStaff(bus.id, 'DRIVER')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-green-700 transition whitespace-nowrap shrink-0">승인</button>
+                              <button onClick={() => handleRevokeStaff(bus.id, 'DRIVER', true)} className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition whitespace-nowrap shrink-0">거절</button>
                             </>
                           )}
                           {bus.driverApprovalStatus === 'APPROVED' && (
-                            <button onClick={() => handleRevokeStaff(bus.id, 'DRIVER', false)} className="px-4 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded hover:bg-red-50">연동 해제</button>
+                            <button onClick={() => handleRevokeStaff(bus.id, 'DRIVER', false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0">연동 해제</button>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 pt-3 border-t border-slate-100">
-                      <div className="text-sm flex items-center gap-2">
-                        <span className="text-slate-500 w-14 shrink-0 whitespace-nowrap">지도교사</span>
-                        <span className="font-bold text-slate-700 whitespace-nowrap text-base">{bus.teacherName}</span>
-                      </div>
-                      <div className="flex items-center gap-3 ml-16">
-                        {bus.teacherApprovalStatus === 'APPROVED' ? (
-                          <span className="text-[11px] bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200 font-bold">승인완료</span>
-                        ) : bus.teacherApprovalStatus === 'PENDING' ? (
-                          <span className="text-[11px] bg-orange-100 text-orange-700 px-2 py-1 rounded border border-orange-200 font-bold">승인대기</span>
-                        ) : (
-                          <span className="text-[11px] bg-slate-100 text-slate-500 px-2 py-1 rounded border border-slate-200">미가입</span>
-                        )}
-                        <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 pt-2.5 border-t border-slate-100">
+                      <div className="text-sm flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-slate-500 text-xs w-14 shrink-0 whitespace-nowrap">지도교사</span>
+                          <span className="font-bold text-slate-800 whitespace-nowrap text-sm">{bus.teacherName || '미지정'}</span>
+                          {bus.teacherApprovalStatus === 'APPROVED' ? (
+                            <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full border border-green-200 font-bold whitespace-nowrap shrink-0">승인완료</span>
+                          ) : bus.teacherApprovalStatus === 'PENDING' ? (
+                            <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full border border-orange-200 font-bold whitespace-nowrap shrink-0">승인대기</span>
+                          ) : (
+                            <span className="text-[11px] bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium whitespace-nowrap shrink-0">미가입</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {bus.teacherApprovalStatus === 'PENDING' && (
                             <>
-                              <button onClick={() => handleApproveStaff(bus.id, 'TEACHER')} className="px-4 py-1.5 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700">승인</button>
-                              <button onClick={() => handleRevokeStaff(bus.id, 'TEACHER', true)} className="px-4 py-1.5 bg-slate-200 text-slate-600 text-xs font-bold rounded shadow-sm hover:bg-slate-300">거절</button>
+                              <button onClick={() => handleApproveStaff(bus.id, 'TEACHER')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-green-700 transition whitespace-nowrap shrink-0">승인</button>
+                              <button onClick={() => handleRevokeStaff(bus.id, 'TEACHER', true)} className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition whitespace-nowrap shrink-0">거절</button>
                             </>
                           )}
                           {bus.teacherApprovalStatus === 'APPROVED' && (
-                            <button onClick={() => handleRevokeStaff(bus.id, 'TEACHER', false)} className="px-4 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded hover:bg-red-50">연동 해제</button>
+                            <button onClick={() => handleRevokeStaff(bus.id, 'TEACHER', false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0">연동 해제</button>
                           )}
                         </div>
                       </div>
@@ -2375,13 +2389,13 @@ const parseKindergartenExcelSheet = (sheet) => {
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800 text-sm">{teacher.name} 선생님</span>
+                            <span className="font-bold text-slate-800 text-sm whitespace-nowrap">{teacher.name} 선생님</span>
                             {currentClass ? (
-                              <span className="text-[11px] bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200">
+                              <span className="text-[11px] bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200 whitespace-nowrap shrink-0">
                                 {currentClass} 담임
                               </span>
                             ) : (
-                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200">
+                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200 whitespace-nowrap shrink-0">
                                 반 미배정
                               </span>
                             )}
@@ -2686,7 +2700,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2">
           {isSuperAdmin && (
             <div className="flex items-center gap-2 bg-indigo-700 text-white px-3 py-1.5 rounded-lg shadow-lg text-xs font-bold border border-indigo-500">
-              <span className="whitespace-nowrap">🏛️ 유치원 선택:</span>
+              <span className="whitespace-nowrap">유치원 선택:</span>
               <select
                 value={selectedAcademyId || ''}
                 onChange={(e) => handleSwitchAcademy(Number(e.target.value))}
