@@ -8,19 +8,13 @@ import TeacherDashboard from '../components/TeacherDashboard';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import io from 'socket.io-client';
 
-let MapView, Marker, Polyline;
-if (Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-  Polyline = Maps.Polyline;
-}
+import KakaoMap from '../components/KakaoMap';
 
 const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { email, role, name } = useLocalSearchParams();
+  const { email, role, name, token } = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState('goto');
   const [hasStarted, setHasStarted] = useState(false);
   const [isAbsenceModalVisible, setIsAbsenceModalVisible] = useState(false);
@@ -43,7 +37,8 @@ export default function HomeScreen() {
 
   const fetchRoute = async () => {
     try {
-      const res = await fetch(`${API_HOST}/parent/route?email=${email}`);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${API_HOST}/parent/route?email=${email}`, { headers });
       const data = await res.json();
       if (res.ok) {
         setRouteData(data);
@@ -70,7 +65,8 @@ export default function HomeScreen() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch(`${API_HOST}/parent/notifications?email=${email}`);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${API_HOST}/parent/notifications?email=${email}`, { headers });
       const data = await res.json();
       if (res.ok) {
         setNotifications(data);
@@ -187,60 +183,12 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.mapContainer}>
-        {Platform.OS === 'web' ? (
-          <View style={styles.mapPlaceholder}>
-            <Navigation size={48} color="#94a3b8" style={{ opacity: 0.5 }} />
-            <Text style={styles.mapPlaceholderText}>웹 브라우저에서는 지도를 표시할 수 없습니다.</Text>
-            <Text style={styles.mapPlaceholderText}>Expo Go 앱에서 확인해주세요.</Text>
-          </View>
-        ) : MapView ? (
-          <MapView
-            style={StyleSheet.absoluteFillObject}
-            initialRegion={{
-              latitude: routeData.academy?.latitude || 37.558,
-              longitude: routeData.academy?.longitude || 126.824,
-              latitudeDelta: 0.03,
-              longitudeDelta: 0.03,
-            }}
-          >
-            {routeData.routePoints.length > 0 && (
-              <Polyline
-                coordinates={routeData.routePoints.map(p => ({ latitude: p.latitude, longitude: p.longitude }))}
-                strokeColor="#2563eb"
-                strokeWidth={4}
-              />
-            )}
-            
-            {routeData.academy && (
-              <Marker
-                coordinate={{ latitude: routeData.academy.latitude, longitude: routeData.academy.longitude }}
-                title="유치원"
-                pinColor="red"
-              />
-            )}
-
-            {routeData.stops.map((stop, index) => (
-              <Marker 
-                key={index} 
-                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
-                title={stop.name}
-                description={stop.address}
-              >
-                <View style={styles.markerContainer}>
-                  <Text style={styles.markerText}>{index + 1}</Text>
-                </View>
-              </Marker>
-            ))}
-
-            {busLocation && (
-              <Marker coordinate={busLocation} title="셔틀버스 현재 위치">
-                <View style={[styles.markerContainer, { backgroundColor: '#ef4444', borderColor: '#b91c1c' }]}>
-                  <Text style={[styles.markerText, { fontSize: 16 }]}>🚌</Text>
-                </View>
-              </Marker>
-            )}
-          </MapView>
-        ) : null}
+        <KakaoMap
+          routePoints={routeData?.routePoints || []}
+          stops={routeData?.stops || []}
+          busLocation={busLocation}
+          academy={routeData?.academy}
+        />
       </View>
 
       {role !== 'STUDENT' ? (
@@ -287,14 +235,14 @@ export default function HomeScreen() {
   // DRIVER HOME
   // ----------------------------------------------------
   const renderDriverHome = () => (
-    <TeacherDashboard email={email} name={name} role="DRIVER" />
+    <TeacherDashboard email={email} name={name} role="DRIVER" token={token} />
   );
 
   // ----------------------------------------------------
   // TEACHER HOME
   // ----------------------------------------------------
   const renderTeacherHome = () => (
-    <TeacherDashboard email={email} name={name} role="TEACHER" />
+    <TeacherDashboard email={email} name={name} role="TEACHER" token={token} />
   );
 
   return (

@@ -44,7 +44,9 @@ const SplashSequence = ({ onFinish, loginOpacity }) => {
 
     // 3. Cleanup splash overlay
     setTimeout(() => {
-      runOnJS(onFinish)();
+      if (onFinish) {
+        onFinish();
+      }
     }, 3000);
   }, []);
 
@@ -145,7 +147,7 @@ const LoginScreen = ({ onLoginSuccess, onPending }) => {
       if (data.requireApproval) {
         onPending(data.user.name, email, data.user.role);
       } else {
-        onLoginSuccess(data.user.name, email, data.user.role);
+        onLoginSuccess(data.user.name, email, data.user.role, data.accessToken);
       }
     } catch (e) {
       console.error(e);
@@ -269,6 +271,7 @@ export default function AppIndex() {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('STUDENT');
+  const [userToken, setUserToken] = useState('');
   const loginOpacity = useSharedValue(0);
 
   const loginStyle = useAnimatedStyle(() => ({
@@ -276,16 +279,17 @@ export default function AppIndex() {
     opacity: loginOpacity.value
   }));
 
-  const handleLoginSuccess = (name, email, role) => {
+  const handleLoginSuccess = (name, email, role, token) => {
     setUserName(name);
     setUserEmail(email);
     setUserRole(role);
+    setUserToken(token || '');
     setAppState('welcome');
   };
 
   const handleWelcomeFinish = () => {
     // Navigate to home immediately after welcome animation finishes dropping
-    router.replace(`/home?email=${encodeURIComponent(userEmail)}&name=${encodeURIComponent(userName)}&role=${userRole}`);
+    router.replace(`/home?email=${encodeURIComponent(userEmail)}&name=${encodeURIComponent(userName)}&role=${userRole}&token=${encodeURIComponent(userToken)}`);
   };
 
   return (
@@ -306,7 +310,10 @@ export default function AppIndex() {
       {appState === 'splash' && (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <SplashSequence 
-            onFinish={() => setAppState('login')} 
+            onFinish={() => {
+              loginOpacity.value = 1;
+              setAppState('login');
+            }} 
             loginOpacity={loginOpacity} 
           />
         </View>

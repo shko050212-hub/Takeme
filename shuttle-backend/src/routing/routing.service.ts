@@ -48,7 +48,7 @@ export class RoutingService {
     private boardCommentRepository: Repository<BoardComment>,
     private httpService: HttpService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   public async checkArrivalAndNotify(vehicleId: number, lat: number, lng: number): Promise<any[]> {
     const students = await this.studentRepository.find({
@@ -92,9 +92,9 @@ export class RoutingService {
           headers: { Authorization: `KakaoAK ${apiKey}` }
         })
       );
-      
+
       let documents = response.data?.documents;
-      
+
       // Fallback to keyword search if address search fails (e.g., for POIs like "사동슈퍼 앞")
       if (!documents || documents.length === 0) {
         console.log('Geocoding address failed, trying keyword fallback for:', address);
@@ -186,16 +186,16 @@ export class RoutingService {
     await this.studentRepository.query(
       `DELETE FROM student_schedules WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.query(
       `DELETE FROM operation_logs WHERE "vehicleId" IN (SELECT id FROM vehicles WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.query(
       `DELETE FROM pickup_point WHERE "academy_id" = $1`,
       [academy.id]
-    ).catch(() => {});
-    
+    ).catch(() => { });
+
     // Delete students and vehicles belonging to this academy
     await this.studentRepository.delete({ academy: { id: academy.id } });
     await this.vehicleRepository.delete({ academy: { id: academy.id } });
@@ -219,7 +219,7 @@ export class RoutingService {
         academy: academy,
       });
       const saved = await this.vehicleRepository.save(newVehicle);
-      
+
       savedVehicles.push({
         id: saved.id,
         name: saved.busNumber,
@@ -298,16 +298,16 @@ export class RoutingService {
     if (!academy) {
       return { academy: null, buses: [], students: [] };
     }
-    const vehicles = await this.vehicleRepository.find({ 
+    const vehicles = await this.vehicleRepository.find({
       where: { academy: { id: academy.id } },
-      relations: { driverUser: true, teacherUser: true } 
+      relations: { driverUser: true, teacherUser: true }
     });
     const formattedVehicles = vehicles.map(v => {
       let parsedPoints = [];
       try {
         parsedPoints = typeof v.polygonCoordinates === 'string' ? JSON.parse(v.polygonCoordinates) : (v.polygonCoordinates || []);
-      } catch(e) {}
-      
+      } catch (e) { }
+
       return {
         id: v.id,
         name: v.busNumber,
@@ -326,16 +326,16 @@ export class RoutingService {
         isTeacherRegistered: !!v.teacherUser
       };
     });
-    
-    const dbStudents = await this.studentRepository.find({ 
+
+    const dbStudents = await this.studentRepository.find({
       where: { academy: { id: academy.id } },
-      relations: { assignedVehicle: true, studentUser: true, parentUser: true, schedules: { assignedVehicle: true } } 
+      relations: { assignedVehicle: true, studentUser: true, parentUser: true, schedules: { assignedVehicle: true } }
     });
     const formattedStudents = dbStudents.map(st => {
       let parsedRaw = {};
       try {
         parsedRaw = typeof st.raw === 'string' ? JSON.parse(st.raw) : (st.raw || {});
-      } catch(e) {}
+      } catch (e) { }
 
       return {
         id: st.id,
@@ -364,7 +364,7 @@ export class RoutingService {
     if (!academy) {
       throw new BadRequestException('유치원 정보가 설정되지 않았습니다.');
     }
-    
+
     // Generate a random 6-character alphanumeric code
     let code = Math.random().toString(36).substring(2, 8).toUpperCase();
     while (await this.academyRepository.findOne({ where: { authCode: code } })) {
@@ -372,14 +372,14 @@ export class RoutingService {
     }
     academy.authCode = code;
     await this.academyRepository.save(academy);
-    
+
     return { success: true, authCode: code };
   }
 
   async approveStudent(studentId: number) {
     const student = await this.studentRepository.findOne({ where: { id: studentId } });
     if (!student) throw new BadRequestException('원생을 찾을 수 없습니다.');
-    
+
     student.approvalStatus = 'APPROVED';
     await this.studentRepository.save(student);
     return { success: true };
@@ -388,7 +388,7 @@ export class RoutingService {
   async revokeStudent(studentId: number) {
     const student = await this.studentRepository.findOne({ where: { id: studentId }, relations: { studentUser: true, parentUser: true } });
     if (!student) throw new BadRequestException('원생을 찾을 수 없습니다.');
-    
+
     const sUser = student.studentUser;
     const pUser = student.parentUser;
 
@@ -401,17 +401,17 @@ export class RoutingService {
     // Completely delete the user account
     if (sUser) await this.userRepository.remove(sUser);
     if (pUser) await this.userRepository.remove(pUser);
-    
+
     return { success: true };
   }
 
   async approveStaff(vehicleId: number, role: 'DRIVER' | 'TEACHER') {
     const vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId } });
     if (!vehicle) throw new BadRequestException('차량을 찾을 수 없습니다.');
-    
+
     if (role === 'DRIVER') vehicle.driverApprovalStatus = 'APPROVED';
     if (role === 'TEACHER') vehicle.teacherApprovalStatus = 'APPROVED';
-    
+
     await this.vehicleRepository.save(vehicle);
     return { success: true };
   }
@@ -419,7 +419,7 @@ export class RoutingService {
   async revokeStaff(vehicleId: number, role: 'DRIVER' | 'TEACHER') {
     const vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId }, relations: { driverUser: true, teacherUser: true } });
     if (!vehicle) throw new BadRequestException('차량을 찾을 수 없습니다.');
-    
+
     let userToDelete = null;
 
     if (role === 'DRIVER') {
@@ -433,11 +433,11 @@ export class RoutingService {
     }
 
     await this.vehicleRepository.save(vehicle);
-    
+
     if (userToDelete) {
       await this.userRepository.remove(userToDelete);
     }
-    
+
     return { success: true };
   }
 
@@ -480,8 +480,8 @@ export class RoutingService {
 
     // Log this change so admin can see it in Calendar Log
     const todayStr = new Date().toISOString().split('T')[0];
-    let log = await this.operationLogRepository.findOne({ 
-      where: { vehicle: { id: vehicleId }, dateString: todayStr } 
+    let log = await this.operationLogRepository.findOne({
+      where: { vehicle: { id: vehicleId }, dateString: todayStr }
     });
 
     if (!log) {
@@ -504,7 +504,7 @@ export class RoutingService {
     });
 
     await this.operationLogRepository.save(log);
-    
+
     return { success: true };
   }
 
@@ -515,15 +515,15 @@ export class RoutingService {
     await this.studentRepository.query(
       `DELETE FROM student_schedules WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.query(
       `DELETE FROM operation_logs WHERE "vehicleId" IN (SELECT id FROM vehicles WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.query(
       `DELETE FROM pickup_point WHERE "academy_id" = $1`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.delete({ academy: { id: academy.id } });
     await this.vehicleRepository.delete({ academy: { id: academy.id } });
     await this.academyRepository.delete(academy.id);
@@ -532,7 +532,7 @@ export class RoutingService {
 
   private computeConvexHull(points: [number, number][]): [number, number][] {
     if (points.length <= 3) return points;
-    
+
     // Deduplicate points
     const pointMap = new Map<string, [number, number]>();
     for (const p of points) {
@@ -588,9 +588,9 @@ export class RoutingService {
     const R = 6371; // Earth radius in km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
+    const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
@@ -604,15 +604,15 @@ export class RoutingService {
     await this.studentRepository.query(
       `DELETE FROM student_schedules WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.query(
       `DELETE FROM schedule_overrides WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.query(
       `DELETE FROM parent_messages WHERE "studentId" IN (SELECT id FROM students WHERE "academyId" = $1)`,
       [academy.id]
-    ).catch(() => {});
+    ).catch(() => { });
     await this.studentRepository.delete({ academy: { id: academy.id } });
 
     const vehicles = await this.vehicleRepository.find({ where: { academy: { id: academy.id } } });
@@ -620,7 +620,7 @@ export class RoutingService {
     vehicles.forEach(v => vehicleMap.set(v.id, v));
 
     const nameCounts: Record<string, number> = {};
-    
+
     // First pass to count names
     students.forEach(st => {
       if (!nameCounts[st.name]) nameCounts[st.name] = 0;
@@ -633,7 +633,7 @@ export class RoutingService {
     const newStudents = students.map(st => {
       const vehicle = st.assignedBusId ? vehicleMap.get(st.assignedBusId) : null;
       let adminDisplayName = st.name;
-      
+
       if (multipleNames.has(st.name)) {
         if (!currentNameIndex[st.name]) currentNameIndex[st.name] = 0;
         const index = currentNameIndex[st.name];
@@ -643,7 +643,7 @@ export class RoutingService {
 
       let rawObj = st.raw;
       if (typeof rawObj === 'string') {
-        try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+        try { rawObj = JSON.parse(rawObj); } catch (e) { rawObj = {}; }
       }
       if (rawObj && typeof rawObj === 'object') {
         const kName = rawObj['유치원명'] || rawObj['소속원명'] || rawObj['학교명'] || academy.name || '';
@@ -682,13 +682,13 @@ export class RoutingService {
       if (assignedStudents.length > 0) {
         let existingPoints: [number, number][] = [];
         try {
-          const rawPts = typeof vehicle.polygonCoordinates === 'string' 
-            ? JSON.parse(vehicle.polygonCoordinates) 
+          const rawPts = typeof vehicle.polygonCoordinates === 'string'
+            ? JSON.parse(vehicle.polygonCoordinates)
             : vehicle.polygonCoordinates;
           if (Array.isArray(rawPts)) {
             existingPoints = rawPts.filter(p => Array.isArray(p) && p.length >= 2 && !isNaN(p[0]) && !isNaN(p[1])) as [number, number][];
           }
-        } catch (e) {}
+        } catch (e) { }
 
         const studentBufferedPoints: [number, number][] = [];
         const dLat = 0.0008;
@@ -744,8 +744,8 @@ export class RoutingService {
       }
     }
 
-    const vehicles = await this.vehicleRepository.find({ 
-      where: { academy: { id: academy.id } } 
+    const vehicles = await this.vehicleRepository.find({
+      where: { academy: { id: academy.id } }
     });
 
     let vehicle: Vehicle | null = null;
@@ -760,7 +760,7 @@ export class RoutingService {
         let pts: [number, number][] = [];
         try {
           pts = typeof v.polygonCoordinates === 'string' ? JSON.parse(v.polygonCoordinates) : (v.polygonCoordinates || []);
-        } catch (e) {}
+        } catch (e) { }
         if (Array.isArray(pts) && pts.length >= 3 && this.isPointInPolygon([lat, lng], pts)) {
           vehicle = v;
           break;
@@ -774,7 +774,7 @@ export class RoutingService {
           let pts: [number, number][] = [];
           try {
             pts = typeof v.polygonCoordinates === 'string' ? JSON.parse(v.polygonCoordinates) : (v.polygonCoordinates || []);
-          } catch (e) {}
+          } catch (e) { }
           if (Array.isArray(pts) && pts.length > 0) {
             for (const pt of pts) {
               const dist = this.getDistanceKm(lat, lng, pt[0], pt[1]);
@@ -799,13 +799,13 @@ export class RoutingService {
     if (vehicle && lat !== undefined && lng !== undefined) {
       let existingPoints: [number, number][] = [];
       try {
-        const rawPts = typeof vehicle.polygonCoordinates === 'string' 
-          ? JSON.parse(vehicle.polygonCoordinates) 
+        const rawPts = typeof vehicle.polygonCoordinates === 'string'
+          ? JSON.parse(vehicle.polygonCoordinates)
           : vehicle.polygonCoordinates;
         if (Array.isArray(rawPts)) {
           existingPoints = rawPts.filter(p => Array.isArray(p) && p.length >= 2 && !isNaN(p[0]) && !isNaN(p[1])) as [number, number][];
         }
-      } catch (e) {}
+      } catch (e) { }
 
       // Buffer ~80m around the student coordinates so the boundary comfortably encloses the student
       const dLat = 0.0008;
@@ -980,12 +980,12 @@ export class RoutingService {
           icon: '🚌'
         });
       }
-      
+
       let boardings = [];
       try {
         boardings = typeof opLog.boardingRecords === 'string' ? JSON.parse(opLog.boardingRecords) : (opLog.boardingRecords || []);
-      } catch(e){}
-      
+      } catch (e) { }
+
       boardings.forEach((b: any) => {
         if (b.action === 'ADMIN_MSG_SENT') {
           logs.push({
@@ -1017,7 +1017,7 @@ export class RoutingService {
     // 2. Get ParentMessages for students in this vehicle on this date
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
-    
+
     // adjust for KST (+9 hours) to UTC matching, actually let's assume the DB uses UTC and the date parameter is local date.
     // If the date parameter is KST '2026-07-27', then in UTC it's '2026-07-26T15:00' to '2026-07-27T14:59'
     // To keep it simple, we can just query using Between with the date string if DB is setup with local timezone,
@@ -1052,15 +1052,15 @@ export class RoutingService {
 
   async generateExcelBuffer(academyId?: number, userId?: number): Promise<Buffer> {
     const academy = await this.getAcademy(academyId, userId);
-    const students = await this.studentRepository.find({ 
+    const students = await this.studentRepository.find({
       where: academy ? { academy: { id: academy.id } } : {},
-      relations: { assignedVehicle: true, schedules: { assignedVehicle: true } } 
+      relations: { assignedVehicle: true, schedules: { assignedVehicle: true } }
     });
     const workbook = new ExcelJS.Workbook();
-    
+
     const days = ['월', '화', '수', '목', '금', '토', '일'];
     const daysEnglish = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-    
+
     const columns = [
       { header: '반명', key: 'className', width: 15 },
       { header: '원아명', key: 'name', width: 20 },
@@ -1093,7 +1093,7 @@ export class RoutingService {
     const mapStudentRow = (student: any, sched?: any) => {
       let raw: any = student.raw;
       if (typeof raw === 'string') {
-        try { raw = JSON.parse(raw); } catch(e) { raw = {}; }
+        try { raw = JSON.parse(raw); } catch (e) { raw = {}; }
       }
       raw = raw || {};
 
@@ -1162,7 +1162,7 @@ export class RoutingService {
   async createAbsence(body: { studentId: number, startDate: string, endDate: string }) {
     const student = await this.studentRepository.findOne({ where: { id: body.studentId } });
     if (!student) throw new BadRequestException('Student not found');
-    
+
     const override = this.scheduleOverrideRepository.create({
       student,
       startDate: body.startDate,
@@ -1176,12 +1176,12 @@ export class RoutingService {
     const query = this.scheduleOverrideRepository.createQueryBuilder('override')
       .leftJoinAndSelect('override.student', 'student')
       .where('override.overrideType = :type', { type: OverrideType.ABSENCE });
-      
+
     if (vehicleId) {
       query.leftJoin('student.assignedVehicle', 'vehicle')
-           .andWhere('vehicle.id = :vehicleId', { vehicleId });
+        .andWhere('vehicle.id = :vehicleId', { vehicleId });
     }
-    
+
     return query.getMany();
   }
 
@@ -1204,16 +1204,16 @@ export class RoutingService {
       message: msg
     });
     await this.notificationRepository.save(notification);
-    
+
     return holiday;
   }
 
   async getHolidays(academyId?: number, userId?: number) {
     const academy = await this.getAcademy(academyId, userId);
     if (!academy) return this.academyHolidayRepository.find({ order: { startDate: 'DESC' } });
-    return this.academyHolidayRepository.find({ 
+    return this.academyHolidayRepository.find({
       where: { academy: { id: academy.id } },
-      order: { startDate: 'DESC' } 
+      order: { startDate: 'DESC' }
     });
   }
 
@@ -1247,14 +1247,14 @@ export class RoutingService {
     // In a full implementation, we'd loop through studentIds to send individual messages or use notification entity.
     // For now, save a broadcast record.
     await this.parentMessageRepository.save(adminMsg);
-    
+
     // Also log it
     const log = this.operationLogRepository.create({
-       dateString: new Date().toISOString().split('T')[0],
-       boardingRecords: [{ action: 'ADMIN_MSG_SENT', message, targetRoles, vehicleId, studentIds }]
+      dateString: new Date().toISOString().split('T')[0],
+      boardingRecords: [{ action: 'ADMIN_MSG_SENT', message, targetRoles, vehicleId, studentIds }]
     });
     if (vehicleId) {
-      const vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId }});
+      const vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId } });
       if (vehicle) {
         log.vehicle = vehicle;
       }

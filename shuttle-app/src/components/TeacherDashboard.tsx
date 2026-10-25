@@ -6,13 +6,7 @@ import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import io from 'socket.io-client';
 
-let MapView, Marker, Polyline;
-if (Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-  Polyline = Maps.Polyline;
-}
+import KakaoMap from './KakaoMap';
 
 const API_HOST = process.env.EXPO_PUBLIC_API_URL || 'http://52.63.245.203:3000';
 
@@ -27,101 +21,137 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-export default function TeacherDashboard({ email, name, role }) {
+export default function TeacherDashboard({ email, name, role, token }) {
+  const getAuthHeaders = () => token ? { 'Authorization': `Bearer ${token}` } : {};
   const [activeView, setActiveView] = useState(role === 'DRIVER' ? 'passengers' : 'dashboard'); // dashboard, passengers, scanner, send_message, inbox
-  const [students, setStudents] = useState([]);
-  const [messages, setMessages] = useState([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [operationLogs, setOperationLogs] = useState([]);
+  const [operationLogs, setOperationLogs] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
   const [customMessage, setCustomMessage] = useState('');
-  const [selectedStudents, setSelectedStudents] = useState(new Set());
-  const [selectedParents, setSelectedParents] = useState(new Set());
-  const [staffData, setStaffData] = useState(null);
-  const [selectedStaff, setSelectedStaff] = useState(new Set());
-  const [messageTargetTab, setMessageTargetTab] = useState('STUDENT'); // 'STUDENT' or 'STAFF'
-  const socketRef = useRef(null);
-  const locationSubRef = useRef(null);
-  const mapRef = useRef(null);
-  const [vehicleId, setVehicleId] = useState(null);
+  const [selectedStudents, setSelectedStudents] = useState<Set<any>>(new Set());
+  const [selectedParents, setSelectedParents] = useState<Set<any>>(new Set());
+  const [staffData, setStaffData] = useState<any>(null);
+  const [selectedStaff, setSelectedStaff] = useState<Set<any>>(new Set());
+  const [messageTargetTab, setMessageTargetTab] = useState<'STUDENT' | 'STAFF'>('STUDENT');
+  const socketRef = useRef<any>(null);
+  const locationSubRef = useRef<any>(null);
+  const mapRef = useRef<any>(null);
+  const [vehicleId, setVehicleId] = useState<any>(null);
   const [currentRunNumber, setCurrentRunNumber] = useState(1);
   
   // Driver specific state
-  const routeDataRef = useRef({ stops: [] });
-  const ttsAnnouncedRef = useRef(new Set());
+  const [routeData, setRouteData] = useState<any>({ stops: [], routePoints: [], academy: null });
+  const [currentLoc, setCurrentLoc] = useState<any>(null);
+  const [ttsAnnounced, setTtsAnnounced] = useState<Set<any>>(new Set());
+  const routeDataRef = useRef<any>({ stops: [] });
+  const ttsAnnouncedRef = useRef<Set<any>>(new Set());
   const [isOperating, setIsOperating] = useState(false);
-  const [reasonPrompt, setReasonPrompt] = useState(null); // { id, name, text }
-  const [memoPrompt, setMemoPrompt] = useState(null); // { id, name, parentMessage, teacherMemo }
+  const [reasonPrompt, setReasonPrompt] = useState<any>(null); // { id, name, text }
+  const [memoPrompt, setMemoPrompt] = useState<any>(null); // { id, name, parentMessage, teacherMemo }
 
   useEffect(() => {
-    // 소켓 연결
-    socketRef.current = io(API_HOST);
+    // 소켓 연결 (JWT 인증 토큰 포함)
+    socketRef.current = io(API_HOST, {
+      auth: { token },
+      transports: ['websocket', 'polling']
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('Driver socket connected! ID:', socketRef.current?.id);
+    });
+
+    socketRef.current.on('authError', (err: any) => {
+      console.warn('Driver socket auth error:', err);
+    });
+
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
-  }, []);
+  }, [token]);
 
   useEffect(() => {
-    
     // 위치 권한 요청 및 추적 시작
     const startTracking = async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('권한 오류', '위치 권한이 필요합니다.');
-        return;
-      }
-      
-      // 서버에서 차량 ID를 가져온 후 위치 전송 (임시로 1이라고 가정, 실서비스에선 /teacher/vehicle-info 등으로 가져와야 함)
-      // fetchPassengers() 시 vehicle 정보를 가져오는 것으로 로직 변경 가능. 일단 1로 세팅 후 통신.
-      
-      locationSubRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
-        (loc) => {
-          const lat = loc.coords.latitude;
-          const lng = loc.coords.longitude;
-          setCurrentLoc({ latitude: lat, longitude: lng });
-
-          if (socketRef.current) {
-            socketRef.current.emit('driverLocationUpdate', {
-              vehicleId: vehicleId || 1, 
-              lat,
-              lng
-            });
-          }
-
-          // Proximity TTS Logic for Driver
-          if (role === 'DRIVER') {
-            const stops = routeDataRef.current.stops;
-            const announced = ttsAnnouncedRef.current;
-            stops.forEach(stop => {
-              if (stop.latitude && stop.longitude && !announced.has(stop.id)) {
-                const dist = haversineDistance(lat, lng, stop.latitude, stop.longitude);
-                if (dist <= 500) {
-                  // Trigger TTS: Intro once, student info twice
-                  const intro = "지금부터 탑승지 안내를 시작하겠습니다.";
-                  const studentInfo = `${stop.name} 원아 ${stop.expectedTime}까지 ${stop.address}에서 탑승 예정입니다.`;
-                  Speech.speak(`${intro} ${studentInfo} ${studentInfo}`);
-                  const newAnnounced = new Set(announced).add(stop.id);
-                  ttsAnnouncedRef.current = newAnnounced;
-                  setTtsAnnounced(newAnnounced);
-                }
-              }
-            });
-          }
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.warn('위치 권한이 거부되었습니다.');
+          return;
         }
-      );
+
+        // 1) 화면 진입 즉시 현재 위치 한번 가져와서 지도에 즉시 표시
+        try {
+          const initialLoc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          if (initialLoc?.coords) {
+            const lat = initialLoc.coords.latitude;
+            const lng = initialLoc.coords.longitude;
+            setCurrentLoc({ latitude: lat, longitude: lng });
+          }
+        } catch (err) {
+          console.log('Failed to get initial location', err);
+        }
+
+        // 2) 지속적 위치 추적
+        if (locationSubRef.current) {
+          locationSubRef.current.remove();
+          locationSubRef.current = null;
+        }
+
+        locationSubRef.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 3 },
+          (loc) => {
+            const lat = loc.coords.latitude;
+            const lng = loc.coords.longitude;
+            setCurrentLoc({ latitude: lat, longitude: lng });
+
+            if (isOperating && socketRef.current) {
+              const targetVid = vehicleId || routeDataRef.current?.vehicleId || 1;
+              socketRef.current.emit('driverLocationUpdate', {
+                vehicleId: targetVid, 
+                lat,
+                lng
+              });
+            }
+
+            // Proximity TTS Logic for Driver (운행 중일 때)
+            if (role === 'DRIVER' && isOperating) {
+              const stops = routeDataRef.current.stops;
+              const announced = ttsAnnouncedRef.current;
+              stops.forEach(stop => {
+                if (stop.latitude && stop.longitude && !announced.has(stop.id)) {
+                  const dist = haversineDistance(lat, lng, stop.latitude, stop.longitude);
+                  if (dist <= 500) {
+                    const intro = "지금부터 탑승지 안내를 시작하겠습니다.";
+                    const studentInfo = `${stop.name} 원아 ${stop.expectedTime}까지 ${stop.address}에서 탑승 예정입니다.`;
+                    Speech.speak(`${intro} ${studentInfo} ${studentInfo}`);
+                    const newAnnounced = new Set(announced).add(stop.id);
+                    ttsAnnouncedRef.current = newAnnounced;
+                    setTtsAnnounced(newAnnounced);
+                  }
+                }
+              });
+            }
+          }
+        );
+      } catch (e) {
+        console.warn('Location tracking error:', e);
+      }
     };
 
-    if (Platform.OS !== 'web' && isOperating) {
+    if (Platform.OS !== 'web') {
       startTracking();
     }
 
     return () => {
       if (locationSubRef.current) {
-         locationSubRef.current.remove();
-         locationSubRef.current = null;
+        locationSubRef.current.remove();
+        locationSubRef.current = null;
       }
     };
   }, [vehicleId, isOperating]);
@@ -131,12 +161,12 @@ export default function TeacherDashboard({ email, name, role }) {
     if (activeView === 'send_message') fetchStaffList();
     if (activeView === 'inbox') fetchInbox();
     if (activeView === 'calendar') fetchOperationLogs();
-    if (role === 'DRIVER') fetchRoute();
+    if (role === 'DRIVER' || role === 'TEACHER') fetchRoute();
   }, [activeView, currentMonth]);
 
   const fetchStaffList = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/staff`);
+      const res = await fetch(`${API_HOST}/teacher/staff`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (res.ok) setStaffData(data);
     } catch(e) {}
@@ -146,7 +176,7 @@ export default function TeacherDashboard({ email, name, role }) {
     setIsLoading(true);
     try {
       const monthStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
-      const res = await fetch(`${API_HOST}/teacher/operation-logs?email=${email}&month=${monthStr}`);
+      const res = await fetch(`${API_HOST}/teacher/operation-logs?email=${email}&month=${monthStr}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (res.ok) {
         setOperationLogs(data);
@@ -162,11 +192,19 @@ export default function TeacherDashboard({ email, name, role }) {
     try {
       const res = await fetch(`${API_HOST}/teacher/start-operation`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email })
       });
       if (res.ok) {
         setIsOperating(true);
+        if (currentLoc && socketRef.current) {
+          const targetVid = vehicleId || routeDataRef.current?.vehicleId || 1;
+          socketRef.current.emit('driverLocationUpdate', {
+            vehicleId: targetVid,
+            lat: currentLoc.latitude,
+            lng: currentLoc.longitude
+          });
+        }
         Alert.alert('운행 시작', '위치 공유와 안전 운행 관제가 시작되었습니다.');
         Speech.speak('운행을 시작합니다. 오늘도 안전 운행 부탁드립니다.');
         if (activeView === 'calendar') fetchOperationLogs();
@@ -180,7 +218,7 @@ export default function TeacherDashboard({ email, name, role }) {
     try {
       const res = await fetch(`${API_HOST}/teacher/end-operation`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email })
       });
       if (res.ok) {
@@ -196,7 +234,7 @@ export default function TeacherDashboard({ email, name, role }) {
 
   const fetchRoute = async () => {
     try {
-      const res = await fetch(`${API_HOST}/teacher/route?email=${email}`);
+      const res = await fetch(`${API_HOST}/teacher/route?email=${email}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (res.ok) {
         setRouteData(data);
@@ -204,12 +242,18 @@ export default function TeacherDashboard({ email, name, role }) {
         if (data.vehicleId) setVehicleId(data.vehicleId);
         
         // Fit map bounds
-        if (mapRef.current && data.routePoints.length > 0 && Platform.OS !== 'web') {
+        if (mapRef.current && data.routePoints?.length > 0 && Platform.OS !== 'web') {
           setTimeout(() => {
-            mapRef.current.fitToCoordinates(data.routePoints, {
-              edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-              animated: true,
-            });
+            const validPoints = data.routePoints.map(p => ({
+              latitude: parseFloat(p.latitude),
+              longitude: parseFloat(p.longitude)
+            })).filter(p => !isNaN(p.latitude) && !isNaN(p.longitude));
+            if (validPoints.length > 0 && mapRef.current?.fitToCoordinates) {
+              mapRef.current.fitToCoordinates(validPoints, {
+                edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+                animated: true,
+              });
+            }
           }, 1000);
         }
       }
@@ -221,7 +265,7 @@ export default function TeacherDashboard({ email, name, role }) {
   const fetchPassengers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_HOST}/teacher/students?email=${email}`);
+      const res = await fetch(`${API_HOST}/teacher/students?email=${email}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (res.ok) {
         const sortedData = [...data].sort((a, b) => (a.expectedTime || '').localeCompare(b.expectedTime || ''));
@@ -237,7 +281,7 @@ export default function TeacherDashboard({ email, name, role }) {
   const fetchInbox = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_HOST}/teacher/inbox?email=${email}`);
+      const res = await fetch(`${API_HOST}/teacher/inbox?email=${email}`, { headers: getAuthHeaders() });
       const data = await res.json();
       if (res.ok) {
         // [테스트용 임시 메세지 삽입]
@@ -268,7 +312,7 @@ export default function TeacherDashboard({ email, name, role }) {
     try {
       const res = await fetch(`${API_HOST}/teacher/board`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, studentId: id, reason: text })
       });
       if (res.ok) {
@@ -302,7 +346,7 @@ export default function TeacherDashboard({ email, name, role }) {
     try {
       const res = await fetch(`${API_HOST}/teacher/student/${id}/memo`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, memo: teacherMemo || '' })
       });
       if (res.ok) {
@@ -322,7 +366,7 @@ export default function TeacherDashboard({ email, name, role }) {
     try {
       const res = await fetch(`${API_HOST}/teacher/skip-student`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, studentId })
       });
       if (res.ok) {
@@ -424,47 +468,16 @@ export default function TeacherDashboard({ email, name, role }) {
           </View>
         )}
 
-        {!isAllView && role === 'DRIVER' && MapView && (
+        {!isAllView && role === 'DRIVER' && (
           <View style={{ height: '35%', backgroundColor: '#f1f5f9', borderBottomWidth: 1, borderColor: '#cbd5e1' }}>
-            <MapView
+            <KakaoMap
               ref={mapRef}
-              style={StyleSheet.absoluteFillObject}
-              initialRegion={{
-                latitude: routeData.academy?.latitude || 37.558,
-                longitude: routeData.academy?.longitude || 126.824,
-                latitudeDelta: 0.05,
-                longitudeDelta: 0.05,
-              }}
-            >
-              {routeData.routePoints.length > 0 && (
-                <Polyline
-                  coordinates={routeData.routePoints.map(p => ({ latitude: p.latitude, longitude: p.longitude }))}
-                  strokeColor="#2563eb"
-                  strokeWidth={5}
-                />
-              )}
-              {routeData.stops.map((stop, index) => (
-                <Marker key={index} coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}>
-                  <View style={[styles.markerContainer, { backgroundColor: ttsAnnounced.has(stop.id) ? '#94a3b8' : '#3b82f6' }]}>
-                    <Text style={styles.markerText}>{index + 1}</Text>
-                  </View>
-                </Marker>
-              ))}
-              {currentLoc && (
-                <Marker coordinate={currentLoc} title="내 차량 (기사님 위치)">
-                  <View style={[styles.markerContainer, { backgroundColor: '#ef4444', borderColor: '#b91c1c' }]}>
-                    <Text style={[styles.markerText, { fontSize: 16 }]}>🚌</Text>
-                  </View>
-                </Marker>
-              )}
-            </MapView>
-          </View>
-        )}
-
-        {!isAllView && role === 'DRIVER' && !MapView && (
-          <View style={{ height: '35%', backgroundColor: '#f1f5f9', borderBottomWidth: 1, borderColor: '#cbd5e1', justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ color: '#64748b', fontSize: 16 }}>지도는 모바일(iOS/Android) 기기에서만 렌더링됩니다.</Text>
-            <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>웹 브라우저에서는 노출되지 않습니다.</Text>
+              routePoints={routeData?.routePoints || []}
+              stops={routeData?.stops || []}
+              announcedStops={ttsAnnounced}
+              busLocation={currentLoc}
+              academy={routeData?.academy}
+            />
           </View>
         )}
 

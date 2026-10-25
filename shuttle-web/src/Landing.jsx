@@ -173,7 +173,13 @@ export default function Landing() {
       } else {
         localStorage.removeItem('takeme_academy');
         localStorage.removeItem('takeme_buses');
-        localStorage.setItem('takeme_user', JSON.stringify(data.user));
+        if (data.accessToken) {
+          localStorage.setItem('takeme_token', data.accessToken);
+        }
+        localStorage.setItem('takeme_user', JSON.stringify({
+          ...data.user,
+          accessToken: data.accessToken || null
+        }));
         navigate('/dashboard');
       }
     } else {
