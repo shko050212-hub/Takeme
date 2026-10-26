@@ -120,9 +120,9 @@ export default function AuthViewer({
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-              {currentTab === 'STUDENT' && <span>🎒 원생·학부모 키 인증 및 승인</span>}
-              {currentTab === 'STAFF' && <span>🚌 차량 스태프 (기사·교사) 승인</span>}
-              {currentTab === 'TEACHER' && <span>👩‍🏫 유치원 교사 가입 및 승인 현황</span>}
+              {currentTab === 'STUDENT' && <span>원생·학부모 키 인증 및 승인</span>}
+              {currentTab === 'STAFF' && <span>차량 스태프 (기사·교사) 승인</span>}
+              {currentTab === 'TEACHER' && <span>유치원 교사 가입 및 승인 현황</span>}
             </h1>
             <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
               원 인증: {academy?.authCode || '미발급'}
@@ -147,7 +147,7 @@ export default function AuthViewer({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>🎒 전체 원생</span>
+              <span>전체 원생</span>
               <span className="text-[10px] bg-slate-200 px-1.5 py-0.2 rounded-full font-bold">
                 {studentCounts.total}
               </span>
@@ -164,7 +164,7 @@ export default function AuthViewer({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>🚌 차량 스태프</span>
+              <span>차량 스태프</span>
               <span className="text-[10px] bg-slate-200 px-1.5 py-0.2 rounded-full font-bold">
                 {buses.length}호차
               </span>
@@ -178,7 +178,7 @@ export default function AuthViewer({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>👩‍🏫 유치원 교사</span>
+              <span>유치원 교사</span>
               <span className="text-[10px] bg-slate-200 px-1.5 py-0.2 rounded-full font-bold">
                 {teachers.length}명
               </span>
@@ -396,7 +396,7 @@ export default function AuthViewer({
                           <span className="text-slate-400 w-16 shrink-0">배정 차량</span>
                           {assignedBus ? (
                             <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                              🚌 {assignedBus.name} ({assignedBus.plateNumber || '차량'})
+                              {assignedBus.name} ({assignedBus.plateNumber || '차량'})
                             </span>
                           ) : (
                             <span className="text-slate-400 font-medium">차량 미배정 (도보 등)</span>
@@ -433,7 +433,6 @@ export default function AuthViewer({
                             onClick={() => handleApproveStudent(st.id)}
                             className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1"
                           >
-                            <span>✓</span>
                             <span>가입 승인</span>
                           </button>
                         </>
@@ -461,7 +460,7 @@ export default function AuthViewer({
 
             {filteredStudents.length === 0 && (
               <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
-                <span className="text-3xl block mb-2">🔍</span>
+                
                 <p className="font-bold text-slate-600">조건에 일치하는 원아가 없습니다.</p>
                 <p className="text-xs text-slate-400 mt-1">필터나 검색어를 변경해보세요.</p>
               </div>
@@ -493,8 +492,8 @@ export default function AuthViewer({
                       {/* Bus Header */}
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 font-black text-sm flex items-center justify-center">
-                            🚌
+                          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
+                            차량
                           </div>
                           <div>
                             <div className="text-base font-bold text-slate-900">{bus.name}</div>
@@ -639,7 +638,7 @@ export default function AuthViewer({
 
             {filteredBuses.length === 0 && (
               <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
-                <span className="text-3xl block mb-2">🚌</span>
+                
                 <p className="font-bold text-slate-600">등록된 통학차량이 없습니다.</p>
               </div>
             )}
@@ -696,7 +695,7 @@ export default function AuthViewer({
                       <div>
                         {currentClass && currentClass !== '미배정' ? (
                           <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-bold border border-blue-100">
-                            🏫 {currentClass} 담임교사
+                            {currentClass} 담임교사
                           </span>
                         ) : (
                           <span className="text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg font-medium border border-slate-200">
@@ -719,7 +718,7 @@ export default function AuthViewer({
 
             {filteredTeachers.length === 0 && (
               <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
-                <span className="text-3xl block mb-2">👩‍🏫</span>
+                
                 <p className="font-bold text-slate-600">등록된 유치원 교사가 없습니다.</p>
                 <p className="text-xs text-slate-400 mt-1">교사가 회원가입 시 '유치원 교사'를 선택하고 원 코드로 가입하면 여기에 표시됩니다.</p>
               </div>

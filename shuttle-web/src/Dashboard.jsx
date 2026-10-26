@@ -1908,13 +1908,13 @@ const parseKindergartenExcelSheet = (sheet) => {
             {setupStep === 1 && (
               <>
                 <div className="text-center mb-6">
-                  <div className="text-5xl mb-4">🗺️</div>
+                  
                   <h2 className="text-2xl font-bold text-slate-800">초기 구역 설정</h2>
                   <p className="text-slate-500 text-sm mt-2">전년도 배차 기준 파일을 업로드하여 기본 구역을 세팅해주세요.</p>
                 </div>
                 
                 <div className="p-3 bg-red-100/50 rounded-lg mb-4 text-left">
-                  <p className="text-xs text-red-800 font-bold">💡 작성 안내</p>
+                  <p className="text-xs text-red-800 font-bold">작성 안내</p>
                   <p className="text-xs text-red-700 mt-1">
                     아래에서 양식을 다운로드한 후, <b>하이라이트 표시된 필수 항목(등원지, 하원지, 차량)</b>만 채워주시면 됩니다.<br/>해당 장소들을 바탕으로 자동으로 픽업/드랍 구역이 나뉩니다.
                   </p>
@@ -1938,7 +1938,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             {setupStep === 2 && (
               <>
                 <div className="text-center mb-6">
-                  <div className="text-5xl mb-4">🏫</div>
+                  
                   <h2 className="text-2xl font-bold text-slate-800">유치원 위치 확인</h2>
                   <p className="text-slate-500 text-sm mt-2">지도의 중심이 될 유치원의 위치를 등록해주세요.</p>
                 </div>
@@ -2685,7 +2685,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             {/* Header */}
             <div className="p-5 border-b border-slate-100 bg-white">
               <h2 className="text-xl font-black text-slate-800 mb-1 flex items-center gap-2">
-                <span>🔑</span> 키 인증 관리
+                키 인증 관리
               </h2>
               <p className="text-xs text-slate-500 font-medium">원생, 차량 스태프, 교사의 앱 연동과 승인을 관리합니다.</p>
             </div>
@@ -2695,7 +2695,7 @@ const parseKindergartenExcelSheet = (sheet) => {
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50/60 border border-blue-200/80 rounded-2xl p-4 text-center shadow-xs">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
-                    <span>🏢</span> 원 인증코드
+                    원 인증코드
                   </span>
                   <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">공용</span>
                 </div>
@@ -2746,7 +2746,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xl shrink-0">🎒</span>
+                    
                     <div className="min-w-0">
                       <div className="text-sm font-bold truncate">전체 원생</div>
                       <div className={`text-[11px] ${authTab === 'STUDENT' ? 'text-blue-100' : 'text-slate-500'} truncate`}>
@@ -2777,7 +2777,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xl shrink-0">🚌</span>
+                    
                     <div className="min-w-0">
                       <div className="text-sm font-bold truncate">차량 스태프</div>
                       <div className={`text-[11px] ${authTab === 'STAFF' ? 'text-emerald-100' : 'text-slate-500'} truncate`}>
@@ -2808,7 +2808,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xl shrink-0">👩‍🏫</span>
+                    
                     <div className="min-w-0">
                       <div className="text-sm font-bold truncate">유치원 교사</div>
                       <div className={`text-[11px] ${authTab === 'TEACHER' ? 'text-indigo-100' : 'text-slate-500'} truncate`}>
@@ -2829,7 +2829,7 @@ const parseKindergartenExcelSheet = (sheet) => {
               {/* 하단 팁 */}
               <div className="mt-auto p-3.5 bg-slate-50 rounded-xl border border-slate-200/70 text-xs text-slate-500 space-y-1">
                 <div className="font-bold text-slate-700 flex items-center gap-1">
-                  <span>💡</span> 인증 안내
+                  인증 안내
                 </div>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   상단 버튼을 누르면 우측 화면에 각 대상별 상세 승인 및 연동 목록이 나타납니다.
@@ -3018,14 +3018,14 @@ const parseKindergartenExcelSheet = (sheet) => {
             <div className="flex flex-col h-full">
               <div className="p-5 border-b border-slate-100 bg-white">
                 <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-2">
-                  <span>📅</span> 캘린더 및 로그
+                  캘린더 및 로그
                 </h2>
                 <p className="text-sm text-slate-500 font-medium">원생의 출결과 로그를 확인하세요.</p>
               </div>
               <div className="p-4 flex flex-col gap-3">
                 <button onClick={() => setLogTab('LOG')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'LOG' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>로그보기</button>
                 <button onClick={() => setLogTab('ABSENCE')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'ABSENCE' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>원생 결석관리</button>
-                <button onClick={() => setLogTab('HOLIDAY')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'HOLIDAY' ? 'bg-orange-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🎉 휴업일 설정</button>
+                <button onClick={() => setLogTab('HOLIDAY')} className={`w-full py-3 rounded-xl font-bold transition-all ${logTab === 'HOLIDAY' ? 'bg-orange-500 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>휴업일 설정</button>
               </div>
             </div>
           )}
@@ -3179,7 +3179,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                   disabled={isProcessing}
                   className="w-full py-2.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-md hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
-                  {isProcessing ? '저장 중...' : '✅ 수정 내역 저장'}
+                  {isProcessing ? '저장 중...' : '수정 내역 저장'}
                 </button>
               </div>
             )}
@@ -3497,7 +3497,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                 <Popup className="font-bold">
                   <div className="text-center p-1">
                     <div className="font-extrabold text-blue-800 text-sm">{bus.name}</div>
-                    <div className="text-xs text-emerald-600 font-bold mt-1">🟢 실시간 운행 중</div>
+                    <div className="text-xs text-emerald-600 font-bold mt-1">실시간 운행 중</div>
                     <div className="text-[10px] text-slate-400 mt-0.5">{new Date(loc.timestamp).toLocaleTimeString()} 수신</div>
                   </div>
                 </Popup>
@@ -3525,7 +3525,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                 <Popup className="font-bold">
                   <div className="text-center p-1">
                     <div className="font-extrabold text-blue-800 text-sm">{bus.name}</div>
-                    <div className="text-xs text-amber-600 font-bold mt-1">🟡 운행 시작됨 (GPS 위치 수신 대기 중)</div>
+                    <div className="text-xs text-amber-600 font-bold mt-1">운행 시작됨 (GPS 위치 수신 대기 중)</div>
                   </div>
                 </Popup>
               </Marker>
