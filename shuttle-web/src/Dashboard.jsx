@@ -2614,13 +2614,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleTabChange('classes')}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition whitespace-nowrap shrink-0 shadow-2xs"
-                      >
-                        반 배정 이동
-                      </button>
+
                     </div>
                   );
                 })}
