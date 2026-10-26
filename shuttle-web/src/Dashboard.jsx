@@ -2182,7 +2182,7 @@ const parseKindergartenExcelSheet = (sheet) => {
           <div className="p-4 h-full flex flex-col">
             <h2 className="text-lg font-bold text-slate-800 mb-1 text-center">원아 정보</h2>
             <p className="text-xs text-slate-500 mb-3 text-center">
-              원아를 직접 추가하거나 엑셀 파일로 일괄 등록 및 다운로드할 수 있습니다.
+              원아를 직접 추가하거나 엑셀 파일로 일괄 등록할 수 있습니다.
             </p>
 
             <input 
@@ -2204,29 +2204,16 @@ const parseKindergartenExcelSheet = (sheet) => {
               원아 추가
             </button>
 
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessing}
-                className="w-full py-2.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-200 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm flex items-center justify-center gap-1.5"
-              >
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
-                </svg>
-                {isProcessing ? '처리 중...' : '원아 엑셀 업로드'}
-              </button>
-              
-              <button 
-                onClick={handleExportExcel}
-                disabled={isProcessing}
-                className="w-full py-2.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-colors disabled:opacity-50 text-center text-xs sm:text-sm flex items-center justify-center gap-1.5"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                {isProcessing ? '준비 중...' : '엑셀 다운로드'}
-              </button>
-            </div>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessing}
+              className="w-full py-2.5 px-3 mb-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-200 transition-colors disabled:opacity-50 text-center text-xs sm:text-sm flex items-center justify-center gap-1.5"
+            >
+              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+              </svg>
+              {isProcessing ? '처리 중...' : '원아 엑셀 업로드'}
+            </button>
 
             <a 
               href="/원아_정보_입력_시트.xlsx" 
