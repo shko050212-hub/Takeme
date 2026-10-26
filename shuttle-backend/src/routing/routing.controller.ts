@@ -85,6 +85,11 @@ export class RoutingController {
     return this.routingService.revokeStaff(body.vehicleId, body.role);
   }
 
+  @Post('revoke-teacher')
+  async revokeTeacher(@Body() body: { teacherId: number }) {
+    return this.routingService.revokeTeacher(Number(body.teacherId));
+  }
+
   @Post('setup-academy')
   async setupAcademy(
     @Body() body: { name: string, address: string, lat: number, lng: number, academyId?: number },

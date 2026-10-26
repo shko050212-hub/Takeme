@@ -603,6 +603,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleRevokeTeacher = async (teacherId) => {
+    if (!window.confirm('이 교사의 앱 연동 권한을 해제(탈퇴)하시겠습니까?')) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing/revoke-teacher`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherId })
+      });
+      if (res.ok) {
+        setTeachers(prev => prev.filter(t => t.id !== teacherId));
+        if (typeof refreshAllData === 'function') {
+          await refreshAllData();
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || '교사 연동 해제 처리 중 오류가 발생했습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('처리 중 오류가 발생했습니다.');
+    }
+  };
+
   const fetchTeachers = async () => {
     const targetAcademyId = selectedAcademyId || currentUser.academyId;
     if (!targetAcademyId) return;
@@ -2614,7 +2637,12 @@ const parseKindergartenExcelSheet = (sheet) => {
                         </div>
                       </div>
 
-
+                      <button
+                        onClick={() => handleRevokeTeacher(teacher.id)}
+                        className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0"
+                      >
+                        연동 해제
+                      </button>
                     </div>
                   );
                 })}

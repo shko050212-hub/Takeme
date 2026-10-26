@@ -441,6 +441,25 @@ export class RoutingService {
     return { success: true };
   }
 
+  async revokeTeacher(teacherId: number) {
+    const teacher = await this.userRepository.findOne({ where: { id: teacherId, role: UserRole.TEACHER } });
+    if (!teacher) throw new BadRequestException('교사를 찾을 수 없습니다.');
+
+    // If teacher is associated with any vehicle as teacherUser, unlink
+    const vehicles = await this.vehicleRepository.find({
+      where: { teacherUser: { id: teacherId } },
+      relations: { teacherUser: true }
+    });
+    for (const vehicle of vehicles) {
+      vehicle.teacherUser = null as any;
+      vehicle.teacherApprovalStatus = 'UNREGISTERED';
+      await this.vehicleRepository.save(vehicle);
+    }
+
+    await this.userRepository.remove(teacher);
+    return { success: true };
+  }
+
   async setupAcademy(data: { name: string, address: string, lat: number, lng: number }, academyId?: number, userId?: number) {
     let academy = await this.getAcademy(academyId, userId);
     if (!academy) {
