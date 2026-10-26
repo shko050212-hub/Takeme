@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, Modal, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MapPin, Navigation, Settings, Bell, CalendarClock, QrCode } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -23,6 +23,12 @@ export default function HomeScreen() {
   const [busLocation, setBusLocation] = useState(null);
   const socketRef = require('react').useRef(null);
 
+  // Child & Allergy state
+  const [childInfo, setChildInfo] = useState<any>(null);
+  const [isAllergyModalVisible, setIsAllergyModalVisible] = useState(false);
+  const [allergyInput, setAllergyInput] = useState('');
+  const [isSavingAllergy, setIsSavingAllergy] = useState(false);
+
   // Camera state for student boarding
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
@@ -32,8 +38,66 @@ export default function HomeScreen() {
     if (role === 'PARENT' || role === 'STUDENT' || !role) {
       fetchNotifications();
       fetchRoute();
+      fetchChildInfo();
     }
   }, [role]);
+
+  const fetchChildInfo = async () => {
+    try {
+      const res = await authFetch(`${API_HOST}/parent/my-child?email=${email}`);
+      if (res.ok) {
+        const data = await res.json();
+        setChildInfo(data);
+        if (data && data.allergies) {
+          setAllergyInput(data.allergies);
+        }
+      }
+    } catch (e) {
+      console.log('Failed to fetch child info', e);
+    }
+  };
+
+  const commonAllergies = ['땅콩', '견과류', '우유', '복숭아', '계란', '갑각류', '대두', '밀가루', '생선'];
+
+  const toggleAllergyChip = (chip: string) => {
+    let current = allergyInput ? allergyInput.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (current.includes(chip)) {
+      current = current.filter(c => c !== chip);
+    } else {
+      current.push(chip);
+    }
+    setAllergyInput(current.join(', '));
+  };
+
+  const handleSaveAllergy = async () => {
+    setIsSavingAllergy(true);
+    try {
+      const res = await authFetch(`${API_HOST}/parent/my-child/allergies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, allergies: allergyInput.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setChildInfo((prev: any) => prev ? { ...prev, allergies: allergyInput.trim() } : prev);
+        setIsAllergyModalVisible(false);
+        if (Platform.OS === 'web') {
+          window.alert('알레르기 정보가 저장되었습니다.');
+        } else {
+          Alert.alert('저장 완료', '알레르기 정보가 저장되었습니다.');
+        }
+      } else {
+        const msg = data.message || '저장에 실패했습니다.';
+        if (Platform.OS === 'web') window.alert(msg);
+        else Alert.alert('오류', msg);
+      }
+    } catch (e) {
+      if (Platform.OS === 'web') window.alert('서버 통신에 실패했습니다.');
+      else Alert.alert('오류', '서버 통신에 실패했습니다.');
+    } finally {
+      setIsSavingAllergy(false);
+    }
+  };
 
   const fetchRoute = async () => {
     try {
@@ -157,16 +221,50 @@ export default function HomeScreen() {
           style={[styles.tab, activeTab === 'goto' && styles.activeTab]}
           onPress={() => setActiveTab('goto')}
         >
-          <Text style={[styles.tabText, activeTab === 'goto' && styles.activeTabText]}>🏫 등원</Text>
+          <Text style={[styles.tabText, activeTab === 'goto' && styles.activeTabText]}>등원</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'gohome' && styles.activeTab]}
           onPress={() => setActiveTab('gohome')}
         >
-          <Text style={[styles.tabText, activeTab === 'gohome' && styles.activeTabText]}>🏠 하원</Text>
+          <Text style={[styles.tabText, activeTab === 'gohome' && styles.activeTabText]}>하원</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Child & Allergy Info Card */}
+      {role !== 'STUDENT' && childInfo && (
+        <View style={styles.childCard}>
+          <View style={styles.childHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.childName}>
+                {childInfo.name} 원아{childInfo.className ? ` (${childInfo.className})` : ''}
+              </Text>
+              <Text style={styles.childSub}>
+                {childInfo.academyName || '소속 원'} · {childInfo.vehicleName}
+              </Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.allergyEditBtn} 
+              onPress={() => {
+                setAllergyInput(childInfo.allergies || '');
+                setIsAllergyModalVisible(true);
+              }}
+            >
+              <Text style={styles.allergyEditBtnText}>
+                {childInfo.allergies ? '알레르기 수정' : '알레르기 등록'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.allergyBox, childInfo.allergies ? styles.allergyBoxAlert : styles.allergyBoxSafe]}>
+            <Text style={styles.allergyLabel}>알레르기 정보</Text>
+            <Text style={[styles.allergyValue, childInfo.allergies ? styles.allergyValueAlert : styles.allergyValueSafe]}>
+              {childInfo.allergies ? childInfo.allergies : '등록된 알레르기가 없습니다.'}
+            </Text>
+          </View>
+        </View>
+      )}
 
       <View style={styles.guideCard}>
         <MapPin size={24} color="#2563eb" />
@@ -200,7 +298,7 @@ export default function HomeScreen() {
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.actionBtn} onPress={() => { setScanned(false); setIsScanning(true); }}>
             <QrCode size={20} color="#2563eb" />
-            <Text style={styles.actionBtnText}>📷 탑승 QR 스캔하기</Text>
+            <Text style={styles.actionBtnText}>탑승 QR 스캔하기</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -220,6 +318,68 @@ export default function HomeScreen() {
           )}
         </ScrollView>
       </View>
+
+      {/* Allergy Edit Modal */}
+      <Modal visible={isAllergyModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>원아 알레르기 관리</Text>
+            <Text style={styles.modalSub}>
+              식품이나 약품 등 주의해야 할 알레르기를 등록해주세요. 버스 지도교사 및 기사님께 실시간 공유됩니다.
+            </Text>
+
+            <Text style={styles.modalSectionLabel}>빠른 선택 태그</Text>
+            <View style={styles.chipRow}>
+              {commonAllergies.map(chip => {
+                const isSelected = allergyInput.split(',').map(s => s.trim()).includes(chip);
+                return (
+                  <TouchableOpacity
+                    key={chip}
+                    onPress={() => toggleAllergyChip(chip)}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                      {chip}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.modalSectionLabel}>상세 알레르기 및 유의사항</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={allergyInput}
+              onChangeText={setAllergyInput}
+              placeholder="직접 입력 (예: 복숭아 먹으면 두드러기, 견과류 절대 금지 등)"
+              placeholderTextColor="#94a3b8"
+              multiline
+              numberOfLines={3}
+            />
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setIsAllergyModalVisible(false)}
+                disabled={isSavingAllergy}
+              >
+                <Text style={styles.modalCancelBtnText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                onPress={handleSaveAllergy}
+                disabled={isSavingAllergy}
+              >
+                {isSavingAllergy ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.modalSaveBtnText}>알레르기 저장</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <AbsenceModal 
         visible={isAbsenceModalVisible} 
@@ -462,5 +622,183 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     fontSize: 15,
+  },
+  childCard: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 24,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 20,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  childHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  childName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  childSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  allergyEditBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  allergyEditBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  allergyBox: {
+    padding: 10,
+    borderRadius: 12,
+  },
+  allergyBoxAlert: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  allergyBoxSafe: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  allergyLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+    marginBottom: 2,
+  },
+  allergyValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  allergyValueAlert: {
+    color: '#dc2626',
+  },
+  allergyValueSafe: {
+    color: '#10b981',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#ffffff',
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  modalSectionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 8,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 16,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  chipSelected: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#3b82f6',
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  chipTextSelected: {
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  modalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 13,
+    color: '#1e293b',
+    minHeight: 70,
+    textAlignVertical: 'top',
+    marginBottom: 18,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  modalSaveBtn: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+  },
+  modalSaveBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
   }
 });

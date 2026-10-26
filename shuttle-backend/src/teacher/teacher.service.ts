@@ -155,6 +155,7 @@ export class TeacherService {
       boarded: s.boardStatus === 'BOARDED',
       absent: s.boardStatus === 'ABSENT',
       expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30',
+      allergies: s.allergies || (s.raw ? s.raw['알레르기'] : '') || '',
       teacherMemo: s.teacherMemo,
       runNumber: s.runNumber || 1,
       isOverride: (s as any).isOverride || false

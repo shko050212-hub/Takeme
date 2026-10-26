@@ -363,4 +363,81 @@ export class ParentService {
 
     return result;
   }
+
+  async getMyChild(email: string) {
+    let student = await this.studentRepository.createQueryBuilder('student')
+      .leftJoinAndSelect('student.parentUser', 'parentUser')
+      .leftJoinAndSelect('student.studentUser', 'studentUser')
+      .leftJoinAndSelect('student.assignedVehicle', 'vehicle')
+      .leftJoinAndSelect('student.academy', 'academy')
+      .where('parentUser.email = :email OR studentUser.email = :email', { email })
+      .getOne();
+
+    if (!student) {
+      student = await this.studentRepository.findOne({
+        where: { raw: { email } },
+        relations: { assignedVehicle: true, academy: true }
+      });
+    }
+
+    if (!student) return null;
+
+    let rawObj: any = {};
+    if (typeof student.raw === 'string') {
+      try { rawObj = JSON.parse(student.raw); } catch (e) { rawObj = {}; }
+    } else if (student.raw && typeof student.raw === 'object') {
+      rawObj = student.raw;
+    }
+
+    const allergies = student.allergies || rawObj['알레르기'] || rawObj['알러지'] || '';
+
+    return {
+      id: student.id,
+      name: student.adminDisplayName || student.name,
+      realName: student.name,
+      address: student.address,
+      boardingLocation: student.boardingLocation || student.address,
+      allergies,
+      className: rawObj['반명'] || rawObj['반'] || '',
+      academyName: student.academy?.name || rawObj['유치원명'] || '',
+      vehicleName: student.assignedVehicle?.busNumber || '차량 미배정',
+      approvalStatus: student.approvalStatus
+    };
+  }
+
+  async updateChildAllergies(email: string, allergies: string) {
+    let student = await this.studentRepository.createQueryBuilder('student')
+      .leftJoinAndSelect('student.parentUser', 'parentUser')
+      .leftJoinAndSelect('student.studentUser', 'studentUser')
+      .where('parentUser.email = :email OR studentUser.email = :email', { email })
+      .getOne();
+
+    if (!student) {
+      student = await this.studentRepository.findOne({
+        where: { raw: { email } }
+      });
+    }
+
+    if (!student) {
+      throw new BadRequestException('연결된 원아 정보를 찾을 수 없습니다.');
+    }
+
+    student.allergies = (allergies || '').trim();
+
+    let rawObj: any = student.raw;
+    if (typeof rawObj === 'string') {
+      try { rawObj = JSON.parse(rawObj); } catch (e) { rawObj = {}; }
+    }
+    if (!rawObj || typeof rawObj !== 'object') rawObj = {};
+    rawObj['알레르기'] = student.allergies;
+    student.raw = rawObj;
+
+    await this.studentRepository.save(student);
+
+    return {
+      success: true,
+      studentId: student.id,
+      allergies: student.allergies
+    };
+  }
 }

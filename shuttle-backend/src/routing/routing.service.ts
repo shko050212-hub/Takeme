@@ -332,7 +332,7 @@ export class RoutingService {
       relations: { assignedVehicle: true, studentUser: true, parentUser: true, schedules: { assignedVehicle: true } } 
     });
     const formattedStudents = dbStudents.map(st => {
-      let parsedRaw = {};
+      let parsedRaw: any = {};
       try {
         parsedRaw = typeof st.raw === 'string' ? JSON.parse(st.raw) : (st.raw || {});
       } catch(e) {}
@@ -347,6 +347,7 @@ export class RoutingService {
         lng: st.longitude,
         assignedBusId: st.assignedVehicle ? st.assignedVehicle.id : null,
         color: st.assignedVehicle ? (st.assignedVehicle.colorHex || '#64748b') : '#64748b',
+        allergies: st.allergies || parsedRaw['알레르기'] || parsedRaw['알러지'] || '',
         raw: parsedRaw,
         schedules: st.schedules,
         isRegistered: !!st.studentUser || !!st.parentUser,
@@ -678,6 +679,7 @@ export class RoutingService {
         rawObj['하원구분'] = depType;
       }
 
+      const allergyVal = rawObj ? (rawObj['알레르기'] || rawObj['알러지'] || rawObj['특이사항(알레르기)'] || '') : '';
       return this.studentRepository.create({
         name: st.name,
         adminDisplayName,
@@ -685,6 +687,7 @@ export class RoutingService {
         boardingLocation: st.boardingLocation || st.address,
         latitude: st.lat !== undefined && st.lat !== null ? parseFloat(st.lat) : undefined,
         longitude: st.lng !== undefined && st.lng !== null ? parseFloat(st.lng) : undefined,
+        allergies: allergyVal || st.allergies || '',
         raw: rawObj || st.raw,
         assignedVehicle: vehicle || undefined,
         academy: academy
@@ -904,6 +907,9 @@ export class RoutingService {
       adminDisplayName = `${studentData.name} ${String.fromCharCode(65 + existingSameName.length)}`;
     }
 
+    if (studentData.allergies) {
+      raw['알레르기'] = studentData.allergies;
+    }
     const student = this.studentRepository.create({
       name: studentData.name,
       adminDisplayName,
@@ -911,6 +917,7 @@ export class RoutingService {
       boardingLocation: studentData.inLocation || studentData.boardingLocation || studentData.address,
       latitude: lat,
       longitude: lng,
+      allergies: studentData.allergies || studentData.raw?.['알레르기'] || '',
       raw,
       assignedVehicle: vehicle || undefined,
       academy
@@ -1097,6 +1104,7 @@ export class RoutingService {
       { header: '하원차량', key: 'outBus', width: 15 },
       { header: '등원시간', key: 'inTime', width: 15 },
       { header: '하원시간', key: 'outTime', width: 15 },
+      { header: '알레르기', key: 'allergies', width: 20 },
       { header: '비고', key: 'note', width: 25 },
     ];
 
@@ -1133,6 +1141,7 @@ export class RoutingService {
         outBus: raw['하원차량'] || sched?.assignedVehicle?.busNumber || student.assignedVehicle?.busNumber || '배정 대기',
         inTime: raw['등원시간'] || '',
         outTime: raw['하원시간'] || '',
+        allergies: student.allergies || raw['알레르기'] || raw['알러지'] || '',
         note: raw['비고'] || '',
       };
     };
@@ -1456,6 +1465,21 @@ export class RoutingService {
     student.boardStatus = boardStatus;
     await this.studentRepository.save(student);
     return { success: true, studentId: student.id, boardStatus: student.boardStatus };
+  }
+
+  async updateStudentAllergies(studentId: number, allergies: string) {
+    const student = await this.studentRepository.findOne({ where: { id: studentId } });
+    if (!student) throw new BadRequestException('원아를 찾을 수 없습니다.');
+    student.allergies = (allergies || '').trim();
+    let rawObj = student.raw;
+    if (typeof rawObj === 'string') {
+      try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+    }
+    if (!rawObj || typeof rawObj !== 'object') rawObj = {};
+    rawObj['알레르기'] = student.allergies;
+    student.raw = rawObj;
+    await this.studentRepository.save(student);
+    return { success: true, studentId: student.id, allergies: student.allergies };
   }
 
   async updateStudentClass(studentId: number, className: string) {

@@ -22,6 +22,9 @@ export class Student {
   @Column({ nullable: true })
   boardingLocation: string;
 
+  @Column({ type: 'text', nullable: true })
+  allergies: string;
+
   @Column({ type: 'float', nullable: true })
   latitude: number;
 

@@ -320,6 +320,11 @@ export class RoutingController {
     return this.routingService.updateStudentBoardStatus(Number(studentId), boardStatus);
   }
 
+  @Post('student/:id/allergies')
+  async updateStudentAllergies(@Param('id') studentId: number, @Body('allergies') allergies: string) {
+    return this.routingService.updateStudentAllergies(Number(studentId), allergies);
+  }
+
   @Post('student/:id/class')
   async updateStudentClass(@Param('id') studentId: number, @Body('className') className: string) {
     return this.routingService.updateStudentClass(Number(studentId), className);

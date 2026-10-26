@@ -276,6 +276,7 @@ export default function Dashboard() {
     assignedBusId: '',
     inTime: '',
     outTime: '',
+    allergies: '',
     note: ''
   });
 
@@ -748,9 +749,9 @@ export default function Dashboard() {
       // 1. 학생(원생) 데이터 - '원아_정보_입력_시트.xlsx' 2행 헤더 공식 규격 적용
       const aoaData = [
         // Row 0 (헤더 1행)
-        ['반명', '학생이름/영문이름', '유치원명', '연령', '성별', '보호자 성함', '부모연락처', '주소', '담임명', '하원정보', '', '', '등원시간', '하원시간', '비고'],
+        ['반명', '학생이름/영문이름', '유치원명', '연령', '성별', '보호자 성함', '부모연락처', '주소', '담임명', '하원정보', '', '', '등원시간', '하원시간', '알레르기', '비고'],
         // Row 1 (헤더 2행 - 하원정보 서브헤더)
-        ['', '', '', '', '', '', '', '', '', '정규하원', '방과후하원', '종일반하원', '', '', '']
+        ['', '', '', '', '', '', '', '', '', '정규하원', '방과후하원', '종일반하원', '', '', '', '']
       ];
 
       students.forEach(st => {
@@ -796,6 +797,7 @@ export default function Dashboard() {
         if (raw['비고']) noteParts.push(raw['비고']);
         const note = noteParts.join(' / ');
 
+        const allergies = st.allergies || raw['알레르기'] || raw['알러지'] || '';
         aoaData.push([
           className,
           studentName,
@@ -811,6 +813,7 @@ export default function Dashboard() {
           fullDayDrop,
           pickupTime,
           dropoffTime,
+          allergies,
           note
         ]);
       });
@@ -896,7 +899,8 @@ export default function Dashboard() {
         { s: { r: 0, c: 9 }, e: { r: 0, c: 11 } },  // 하원정보 (정규하원, 방과후하원, 종일반하원 상위 병합)
         { s: { r: 0, c: 12 }, e: { r: 1, c: 12 } }, // 등원시간
         { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // 하원시간
-        { s: { r: 0, c: 14 }, e: { r: 1, c: 14 } }  // 비고
+        { s: { r: 0, c: 14 }, e: { r: 1, c: 14 } }, // 알레르기
+        { s: { r: 0, c: 15 }, e: { r: 1, c: 15 } }  // 비고
       ];
       wsStudents['!cols'] = [
         { wch: 12 }, // 반명
@@ -913,6 +917,7 @@ export default function Dashboard() {
         { wch: 12 }, // 종일반하원
         { wch: 12 }, // 등원시간
         { wch: 12 }, // 하원시간
+        { wch: 20 }, // 알레르기
         { wch: 26 }, // 비고
       ];
       // 원아_정보_입력_시트.xlsx와 동일한 기본 시트명 '유치원부'로 추가
@@ -1302,6 +1307,8 @@ const parseKindergartenExcelSheet = (sheet) => {
     const age = obj['연령'] || obj['학년'] || '';
     const parentPhone = obj['부모연락처'] || obj['보호자연락처'] || obj['보호자 연락처'] || '';
     const address = obj['등원지'] || obj['탑승지'] || obj['승차지'] || obj['주소'] || obj['도로명주소'] || '';
+    const allergies = obj['알레르기'] || obj['알러지'] || obj['특이사항(알레르기)'] || '';
+    obj['알레르기'] = allergies;
 
     obj['원아명'] = name;
     obj['이름'] = name;
@@ -1784,6 +1791,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         outBus: assignedBus?.name || '',
         inTime: studentForm.inTime.trim(),
         outTime: studentForm.outTime.trim(),
+        allergies: studentForm.allergies.trim(),
         note: studentForm.note.trim(),
         academyId: targetAcademyId
       };
@@ -1836,6 +1844,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         assignedBusId: '',
         inTime: '',
         outTime: '',
+        allergies: '',
         note: ''
       });
     } catch (err) {
@@ -2432,6 +2441,11 @@ const parseKindergartenExcelSheet = (sheet) => {
                                     {st.raw['연령'] !== undefined && st.raw['연령'] !== null ? st.raw['연령'] : st.raw['학년']}
                                   </span>
                                 )}
+                                {(st.allergies || st.raw?.['알레르기']) && (
+                                  <span className="text-[10px] bg-red-50 text-red-600 font-bold px-1.5 py-0.5 rounded border border-red-200 shrink-0">
+                                    알레르기: {st.allergies || st.raw['알레르기']}
+                                  </span>
+                                )}
                                 {st.raw?.['하원구분'] && (
                                   <span className="text-[10px] bg-amber-50 text-amber-700 font-semibold px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
                                     {st.raw['하원구분']}
@@ -2507,6 +2521,12 @@ const parseKindergartenExcelSheet = (sheet) => {
                                   <span className="font-semibold text-slate-700">{st.raw['담임명']}</span>
                                 </div>
                               )}
+                              {(st.allergies || st.raw?.['알레르기']) && (
+                                <div className="flex justify-between items-start bg-red-50/70 p-1.5 rounded border border-red-100">
+                                  <span className="text-red-600 font-bold shrink-0">알레르기:</span>
+                                  <span className="font-semibold text-red-700 text-right max-w-[180px] break-keep">{st.allergies || st.raw['알레르기']}</span>
+                                </div>
+                              )}
                               {st.raw?.['비고'] && (
                                 <div className="flex justify-between">
                                   <span className="text-slate-400">비고:</span>
@@ -2567,9 +2587,14 @@ const parseKindergartenExcelSheet = (sheet) => {
                                                 {st.raw['반명']}
                                               </span>
                                             )}
-                                            {studentFilterMode !== 'AGE' && (st.raw?.['연령'] !== undefined && st.raw?.['연령'] !== null ? st.raw['연령'] : st.raw?.['학년']) && (
+                                            {studentFilterMode !== 'AGE' && (st.raw?.['연령'] !== undefined && st.raw?.['연령'] !== null ? st.raw['연령'] : st.raw['학년']) && (
                                               <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">
                                                 {st.raw['연령'] !== undefined && st.raw['연령'] !== null ? st.raw['연령'] : st.raw['학년']}
+                                              </span>
+                                            )}
+                                            {(st.allergies || st.raw?.['알레르기']) && (
+                                              <span className="text-[10px] bg-red-50 text-red-600 font-bold px-1.5 py-0.5 rounded border border-red-200 shrink-0">
+                                                알레르기: {st.allergies || st.raw['알레르기']}
                                               </span>
                                             )}
                                             {st.raw?.['하원구분'] && (
@@ -2647,6 +2672,12 @@ const parseKindergartenExcelSheet = (sheet) => {
                                             <div className="flex justify-between">
                                               <span className="text-slate-400">담임 교사:</span>
                                               <span className="font-semibold text-slate-700">{st.raw['담임명']}</span>
+                                            </div>
+                                          )}
+                                          {(st.allergies || st.raw?.['알레르기']) && (
+                                            <div className="flex justify-between items-start bg-red-50/70 p-1.5 rounded border border-red-100">
+                                              <span className="text-red-600 font-bold shrink-0">알레르기:</span>
+                                              <span className="font-semibold text-red-700 text-right max-w-[180px] break-keep">{st.allergies || st.raw['알레르기']}</span>
                                             </div>
                                           )}
                                           {st.raw?.['비고'] && (
@@ -3837,6 +3868,17 @@ const parseKindergartenExcelSheet = (sheet) => {
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">알레르기 주의사항</label>
+                  <input
+                    type="text"
+                    placeholder="식품/약품 알레르기 (예: 땅콩, 복숭아, 유제품, 계란 등)"
+                    value={studentForm.allergies}
+                    onChange={e => setStudentForm({ ...studentForm, allergies: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
                 </div>
 
                 <div className="mt-3">

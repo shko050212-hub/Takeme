@@ -14,6 +14,7 @@ export default function RegisterScreen() {
   const [role, setRole] = useState('STUDENT');
   const [name, setName] = useState('');
   const [parentName, setParentName] = useState('');
+  const [allergies, setAllergies] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
@@ -97,7 +98,7 @@ export default function RegisterScreen() {
       const res = await fetch(`${API_HOST}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name: payloadName, targetName: name, authCode, role })
+        body: JSON.stringify({ email, password, name: payloadName, targetName: name, authCode, role, allergies: allergies.trim() })
       });
       const data = await res.json();
       
@@ -124,7 +125,7 @@ export default function RegisterScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.infoCard}>
-          <Text style={styles.infoEmoji}>🔑</Text>
+          
           <Text style={styles.infoTitle}>원장선생님이 발급하신</Text>
           <Text style={styles.infoTitle}>원 인증코드가 필요합니다.</Text>
           <Text style={styles.infoSub}>안전한 관리를 위해 인증된 학부모만 가입할 수 있습니다.</Text>
@@ -173,16 +174,28 @@ export default function RegisterScreen() {
           </View>
 
           {role === 'PARENT' && (
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>학부모 본인 이름</Text>
-              <TextInput 
-                style={styles.input} 
-                placeholder="학부모님의 이름을 입력해주세요 (예: 김철수)"
-                placeholderTextColor="#94a3b8"
-                value={parentName}
-                onChangeText={setParentName}
-              />
-            </View>
+            <>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>학부모 본인 이름</Text>
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="학부모님의 이름을 입력해주세요 (예: 김철수)"
+                  placeholderTextColor="#94a3b8"
+                  value={parentName}
+                  onChangeText={setParentName}
+                />
+              </View>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>원아 알레르기 정보 (선택사항)</Text>
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="식품/약품 알레르기 (예: 땅콩, 복숭아, 유제품 등)"
+                  placeholderTextColor="#94a3b8"
+                  value={allergies}
+                  onChangeText={setAllergies}
+                />
+              </View>
+            </>
           )}
 
           <View style={styles.inputContainer}>

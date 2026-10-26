@@ -552,7 +552,14 @@ export default function TeacherDashboard({ email, name, role, token }) {
                           
                           {/* 이름 및 위치 */}
                           <View style={{flex: 1, marginLeft: 8}}>
-                            <Text style={{fontSize: 15, fontWeight: 'bold', color: '#1e293b'}} numberOfLines={1}>{st.name}</Text>
+                            <View style={{flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4}}>
+                              <Text style={{fontSize: 15, fontWeight: 'bold', color: '#1e293b'}} numberOfLines={1}>{st.name}</Text>
+                              {st.allergies ? (
+                                <View style={{backgroundColor: '#fee2e2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4}}>
+                                  <Text style={{color: '#dc2626', fontSize: 10, fontWeight: 'bold'}}>알레르기: {st.allergies}</Text>
+                                </View>
+                              ) : null}
+                            </View>
                             <Text style={{fontSize: 11, color: '#64748b', marginTop: 2}} numberOfLines={1}>{st.address}</Text>
                             {st.boardingLocation && (
                               <Text style={{fontSize: 11, color: '#2563eb', fontWeight: 'bold', marginTop: 1}} numberOfLines={1}>📍 {st.boardingLocation}</Text>
@@ -593,8 +600,13 @@ export default function TeacherDashboard({ email, name, role, token }) {
                     return (
                       <View key={st.id} style={[styles.listItem, { padding: 16 * ts }]}>
                         <View style={[styles.listInfo, { flex: 1 }]}>
-                          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                          <View style={{flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6}}>
                             <Text style={[styles.listName, { fontSize: 16 * ts }]}>{st.name}</Text>
+                            {st.allergies ? (
+                              <View style={{backgroundColor: '#fee2e2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4}}>
+                                <Text style={{color: '#dc2626', fontSize: 11 * ts, fontWeight: 'bold'}}>알레르기: {st.allergies}</Text>
+                              </View>
+                            ) : null}
                             {st.parentMessage && (
                               <TouchableOpacity 
                                 style={{marginLeft: 8, backgroundColor: '#ef4444', width: 22 * ts, height: 22 * ts, borderRadius: 11 * ts, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.2, shadowRadius: 1}}

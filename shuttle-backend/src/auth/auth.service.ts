@@ -374,6 +374,17 @@ export class AuthService {
           student.parentUser = savedUser;
         }
         
+        if (data.allergies) {
+          student.allergies = String(data.allergies).trim();
+          let rawObj: any = student.raw;
+          if (typeof rawObj === 'string') {
+            try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+          }
+          if (!rawObj || typeof rawObj !== 'object') rawObj = {};
+          rawObj['알레르기'] = student.allergies;
+          student.raw = rawObj;
+        }
+
         student.approvalStatus = 'PENDING';
         await this.studentRepository.save(student);
         
