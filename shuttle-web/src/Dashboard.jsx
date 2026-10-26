@@ -2035,7 +2035,13 @@ const parseKindergartenExcelSheet = (sheet) => {
       </div>
 
       {/* Sidebar Content Panel */}
-      <div className={`bg-white shadow-lg z-10 flex flex-col transition-all duration-300 ease-in-out ${activeTab === 'auth' ? 'w-[520px]' : activeTab === 'students' ? 'w-[380px]' : 'w-80'}`}>
+      <div className={`bg-white shadow-lg z-10 flex flex-col transition-all duration-300 ease-in-out break-keep ${
+        activeTab === 'settings' ? 'w-[390px]' : 
+        activeTab === 'auth' ? 'w-[380px]' : 
+        activeTab === 'students' ? 'w-[380px]' : 
+        activeTab === 'buses' ? 'w-[360px]' : 
+        'w-[340px]'
+      }`}>
         {activeTab === 'status' && (
           <div className="p-6 h-full flex flex-col">
             <h2 className="text-xl font-bold text-slate-800 mb-4">차량 구역 현황</h2>
@@ -2834,52 +2840,52 @@ const parseKindergartenExcelSheet = (sheet) => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="p-6 h-full flex flex-col overflow-y-auto">
+          <div className="p-6 h-full flex flex-col overflow-y-auto break-keep">
             <h2 className="text-xl font-bold text-slate-800 mb-6">환경설정</h2>
             
             <div className="space-y-4">
               <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 transition-all">
                 <h3 className="font-bold text-blue-700 mb-1">구역 맵핑(Zone) 수정</h3>
-                <p className="text-xs text-blue-600 mb-3 opacity-80">지도에서 직접 각 호차의 배차 구역을 정밀하게 다듬습니다.</p>
+                <p className="text-xs text-blue-600 mb-3 opacity-80 leading-relaxed">지도에서 직접 각 호차의 배차 구역을 정밀하게 다듬습니다.</p>
                 <button onClick={() => {
                   setIsZoneEditingMode(!isZoneEditingMode);
                   if (isZoneEditingMode) setEditingZoneBusId(null);
-                }} className={`w-full py-2 bg-white rounded-lg text-sm font-bold border shadow-sm transition-colors ${isZoneEditingMode ? 'border-blue-600 text-blue-700 bg-blue-100' : 'text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'}`}>
+                }} className={`w-full py-2.5 px-3 bg-white rounded-xl text-sm font-bold border shadow-xs transition-colors whitespace-nowrap ${isZoneEditingMode ? 'border-blue-600 text-blue-700 bg-blue-100' : 'text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'}`}>
                   {isZoneEditingMode ? '구역 수정 모드 종료' : '구역 수정 모드 진입'}
                 </button>
               </div>
 
               <div className="p-4 bg-red-50 rounded-xl border border-red-100 transition-all">
                 <h3 className="font-bold text-red-700 mb-1">전년도 구역 초기화</h3>
-                <p className="text-xs text-red-600 mb-3 opacity-80">현재 설정된 모든 버스와 배차 구역이 영구적으로 삭제됩니다.</p>
+                <p className="text-xs text-red-600 mb-3 opacity-80 leading-relaxed">현재 설정된 모든 버스와 배차 구역이 영구적으로 삭제됩니다.</p>
                 
                 {!isResettingZones ? (
-                  <button onClick={() => setIsResettingZones(true)} className="w-full py-2 bg-white text-red-600 rounded-lg text-sm font-bold border border-red-200 shadow-sm hover:bg-red-600 hover:text-white transition-colors">
+                  <button onClick={() => setIsResettingZones(true)} className="w-full py-2.5 px-3 bg-white text-red-600 rounded-xl text-sm font-bold border border-red-200 shadow-xs hover:bg-red-600 hover:text-white transition-colors whitespace-nowrap">
                     구역 리셋 모드 진입
                   </button>
                 ) : (
                   <div className="space-y-3 mt-4 pt-4 border-t border-red-200">
                     <div className="p-3 bg-red-100/50 rounded-lg">
-                      <p className="text-xs text-red-800 font-bold">💡 작성 안내</p>
-                      <p className="text-xs text-red-700 mt-1">
+                      <p className="text-xs text-red-800 font-bold">작성 안내</p>
+                      <p className="text-xs text-red-700 mt-1 leading-relaxed">
                         다운로드한 양식에서 <b>하이라이트 표시된 필수 항목(등원지, 하원지, 차량)</b>만 채워주시면 됩니다. 해당 장소들을 바탕으로 자동으로 픽업/드랍 구역이 나뉩니다.
                       </p>
                     </div>
                     
-                    <a href="/전년도_자료_입력_시트_양식.xlsx" download="전년도_자료_입력_시트_양식.xlsx" className="w-full py-2 bg-white text-slate-700 rounded-lg text-sm border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors flex items-center justify-center font-medium">
-                      ⬇️ 전년도 양식 다운로드
+                    <a href="/전년도_자료_입력_시트_양식.xlsx" download="전년도_자료_입력_시트_양식.xlsx" className="w-full py-2.5 px-3 bg-white text-slate-700 rounded-xl text-sm border border-slate-200 shadow-xs hover:bg-slate-50 transition-colors flex items-center justify-center font-medium whitespace-nowrap">
+                      전년도 양식 다운로드
                     </a>
                     
                     <input type="file" accept=".xlsx, .xls" className="hidden" ref={resetFileInputRef} onChange={handleZoneResetUpload} />
                     <button 
                       onClick={() => resetFileInputRef.current.click()} 
                       disabled={isProcessing}
-                      className="w-full py-2 bg-red-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      className="w-full py-2.5 px-3 bg-red-600 text-white rounded-xl text-sm font-bold shadow-xs hover:bg-red-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
-                      {isProcessing ? '초기화 및 지오코딩 중...' : '⬆️ 새 엑셀 업로드 및 리셋'}
+                      {isProcessing ? '초기화 및 지오코딩 중...' : '새 엑셀 업로드 및 리셋'}
                     </button>
                     
-                    <button onClick={() => setIsResettingZones(false)} className="w-full py-2 mt-2 bg-transparent text-red-600 rounded-lg text-xs hover:underline">
+                    <button onClick={() => setIsResettingZones(false)} className="w-full py-2 mt-2 bg-transparent text-red-600 rounded-lg text-xs hover:underline whitespace-nowrap">
                       취소
                     </button>
                   </div>
@@ -2888,13 +2894,13 @@ const parseKindergartenExcelSheet = (sheet) => {
 
               <div className="p-4 bg-orange-50 rounded-xl border border-orange-100 transition-all">
                 <h3 className="font-bold text-orange-700 mb-1">유치원 위치 변경</h3>
-                <p className="text-xs text-orange-600 mb-3 opacity-80">유치원이 이전한 경우 새 주소와 이름을 입력하세요.</p>
+                <p className="text-xs text-orange-600 mb-3 opacity-80 leading-relaxed">유치원이 이전한 경우 새 주소와 이름을 입력하세요.</p>
                 
                 {!isChangingAcademy ? (
                   <button onClick={() => {
                     setAcademyChangeForm({ name: academy?.name || '', address: academy?.address || '' });
                     setIsChangingAcademy(true);
-                  }} className="w-full py-2 bg-white text-orange-600 rounded-lg text-sm font-bold border border-orange-200 shadow-sm hover:bg-orange-600 hover:text-white transition-colors">
+                  }} className="w-full py-2.5 px-3 bg-white text-orange-600 rounded-xl text-sm font-bold border border-orange-200 shadow-xs hover:bg-orange-600 hover:text-white transition-colors whitespace-nowrap">
                     유치원 위치 변경 모드
                   </button>
                 ) : (
@@ -2905,7 +2911,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                         type="text" 
                         value={academyChangeForm.name} 
                         onChange={e => setAcademyChangeForm({...academyChangeForm, name: e.target.value})}
-                        className="w-full px-3 py-2 bg-white border border-orange-200 rounded-lg text-sm outline-none"
+                        className="w-full px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none"
                         placeholder="유치원명"
                         required
                       />
@@ -2916,7 +2922,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                         type="text" 
                         value={academyChangeForm.address} 
                         onChange={e => setAcademyChangeForm({...academyChangeForm, address: e.target.value})}
-                        className="w-full px-3 py-2 bg-white border border-orange-200 rounded-lg text-sm outline-none"
+                        className="w-full px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none"
                         placeholder="주소"
                         required
                       />
@@ -2924,11 +2930,11 @@ const parseKindergartenExcelSheet = (sheet) => {
                     <button 
                       type="submit" 
                       disabled={isProcessing}
-                      className="w-full py-2 bg-orange-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                      className="w-full py-2.5 px-3 bg-orange-600 text-white rounded-xl text-sm font-bold shadow-xs hover:bg-orange-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
                       {isProcessing ? '변경 중...' : '변경 완료'}
                     </button>
-                    <button type="button" onClick={() => setIsChangingAcademy(false)} className="w-full py-2 mt-1 bg-transparent text-orange-600 rounded-lg text-xs hover:underline">
+                    <button type="button" onClick={() => setIsChangingAcademy(false)} className="w-full py-2 mt-1 bg-transparent text-orange-600 rounded-lg text-xs hover:underline whitespace-nowrap">
                       취소
                     </button>
                   </form>
@@ -2938,10 +2944,10 @@ const parseKindergartenExcelSheet = (sheet) => {
               {/* 전체 명단 엑셀 다운로드 카드 */}
               <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 transition-all">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-bold text-emerald-800 flex items-center gap-1.5">
-                    <span>📊</span> 원 전체 명단 엑셀 다운로드
+                  <h3 className="font-bold text-emerald-800 text-sm whitespace-nowrap">
+                    원 전체 명단 엑셀 다운로드
                   </h3>
-                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full whitespace-nowrap">
                     .xlsx
                   </span>
                 </div>
@@ -2950,24 +2956,24 @@ const parseKindergartenExcelSheet = (sheet) => {
                 </p>
                 
                 <div className="grid grid-cols-3 gap-1.5 mb-3 text-center">
-                  <div className="bg-white/80 rounded-lg p-1.5 border border-emerald-100">
-                    <p className="text-[10px] text-emerald-600">원생</p>
-                    <p className="text-xs font-bold text-emerald-900">{students.length}명</p>
+                  <div className="bg-white/80 rounded-lg p-2 border border-emerald-100">
+                    <p className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">원생</p>
+                    <p className="text-xs font-bold text-emerald-900 whitespace-nowrap">{students.length}명</p>
                   </div>
-                  <div className="bg-white/80 rounded-lg p-1.5 border border-emerald-100">
-                    <p className="text-[10px] text-emerald-600">교사</p>
-                    <p className="text-xs font-bold text-emerald-900">{teachers.length}명</p>
+                  <div className="bg-white/80 rounded-lg p-2 border border-emerald-100">
+                    <p className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">교사</p>
+                    <p className="text-xs font-bold text-emerald-900 whitespace-nowrap">{teachers.length}명</p>
                   </div>
-                  <div className="bg-white/80 rounded-lg p-1.5 border border-emerald-100">
-                    <p className="text-[10px] text-emerald-600">차량/기사</p>
-                    <p className="text-xs font-bold text-emerald-900">{buses.length}대</p>
+                  <div className="bg-white/80 rounded-lg p-2 border border-emerald-100">
+                    <p className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">차량/기사</p>
+                    <p className="text-xs font-bold text-emerald-900 whitespace-nowrap">{buses.length}대</p>
                   </div>
                 </div>
 
                 <button 
                   onClick={handleExportMasterExcel}
                   disabled={isExportingExcel}
-                  className="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-3 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
                 >
                   {isExportingExcel ? (
                     <>
@@ -2992,23 +2998,23 @@ const parseKindergartenExcelSheet = (sheet) => {
                 <h3 className="font-bold text-slate-700 mb-1">계정 관리</h3>
                 <button 
                   onClick={handleLogout}
-                  className="w-full py-2 bg-white text-slate-700 rounded-lg text-sm font-bold border border-slate-300 shadow-sm hover:bg-slate-100 transition-colors"
+                  className="w-full py-2.5 px-3 bg-white text-slate-700 rounded-xl text-sm font-bold border border-slate-300 shadow-xs hover:bg-slate-100 transition-colors whitespace-nowrap"
                 >
                   로그아웃
                 </button>
                 <button 
                   onClick={handleDeleteAcademy}
                   disabled={isProcessing}
-                  className="w-full py-2 bg-white text-slate-500 rounded-lg text-sm font-bold border border-slate-300 shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors"
+                  className="w-full py-2.5 px-3 bg-white text-slate-500 rounded-xl text-sm font-bold border border-slate-300 shadow-xs hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors whitespace-nowrap"
                 >
                   {isProcessing ? '처리 중...' : '유치원 데이터 삭제 및 탈퇴'}
                 </button>
               </div>
-              </div>
             </div>
+          </div>
         )}
 
-          {activeTab === 'log' && (
+        {activeTab === 'log' && (
             <div className="flex flex-col h-full">
               <div className="p-5 border-b border-slate-100 bg-white">
                 <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-2">
