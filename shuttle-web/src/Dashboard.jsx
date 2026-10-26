@@ -16,6 +16,7 @@ import BoardSidebar from './board/BoardSidebar';
 import { API_BASE_URL } from './config';
 import TeacherDashboard from './TeacherDashboard';
 import ClassManager from './classes/ClassManager';
+import AuthViewer from './auth/AuthViewer';
 
 
 // Fix Leaflet default icon issue
@@ -111,6 +112,8 @@ export default function Dashboard() {
   const [isDocumentsClosing, setIsDocumentsClosing] = useState(false);
   const [isBoardClosing, setIsBoardClosing] = useState(false);
   const [isClassesClosing, setIsClassesClosing] = useState(false);
+  const [isAuthClosing, setIsAuthClosing] = useState(false);
+  const [authTab, setAuthTab] = useState('STUDENT'); // 'STUDENT' | 'STAFF' | 'TEACHER'
   const [boardSelectedClass, setBoardSelectedClass] = useState('ALL');
   const [boardSearchKeyword, setBoardSearchKeyword] = useState('');
   const [isCreatingBoardPost, setIsCreatingBoardPost] = useState(false);
@@ -210,6 +213,12 @@ export default function Dashboard() {
       setIsClassesClosing(true);
       setTimeout(() => {
         setIsClassesClosing(false);
+        setActiveTab(newTab);
+      }, 300);
+    } else if (activeTab === 'auth' && newTab !== 'auth') {
+      setIsAuthClosing(true);
+      setTimeout(() => {
+        setIsAuthClosing(false);
         setActiveTab(newTab);
       }, 300);
     } else {
@@ -2666,219 +2675,159 @@ const parseKindergartenExcelSheet = (sheet) => {
         )}
 
         {activeTab === 'auth' && (
-          <div className="p-6 h-full flex flex-col">
-            <h2 className="text-xl font-bold text-slate-800 mb-6">원아·학부모 앱 가입 현황</h2>
-            
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 text-center shadow-sm">
-              <h3 className="text-blue-800 font-bold mb-2">원 인증코드</h3>
-              {academy?.authCode ? (
-                <div className="text-3xl font-black text-blue-600 tracking-widest">{academy.authCode}</div>
-              ) : (
-                <div className="text-slate-500 mb-3 text-sm">현재 발급된 코드가 없습니다.</div>
-              )}
-              <button 
-                onClick={handleGenerateAuthCode}
-                disabled={isProcessing}
-                className="mt-4 px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition shadow-sm text-sm"
-              >
-                {academy?.authCode ? '인증코드 재발급' : '인증코드 발급받기'}
-              </button>
-              <p className="text-xs text-blue-600/80 mt-3">학부모님들이 앱에 가입할 때 이 코드를 입력해야 합니다.</p>
+          <div className="flex flex-col h-full bg-white">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 bg-white">
+              <h2 className="text-xl font-black text-slate-800 mb-1 flex items-center gap-2">
+                <span>🔑</span> 키 인증 관리
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">원생, 차량 스태프, 교사의 앱 연동과 승인을 관리합니다.</p>
             </div>
 
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex flex-col gap-2 mb-4">
-                <h3 className="font-bold text-slate-700">전체 원생 ({students.length}명)</h3>
-                <div className="flex flex-wrap gap-3 text-xs font-medium">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span>승인 {students.filter(s => s.approvalStatus === 'APPROVED').length}명</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500"></span>대기 {students.filter(s => s.approvalStatus === 'PENDING').length}명</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-300"></span>미가입 {students.filter(s => !s.approvalStatus || s.approvalStatus === 'UNREGISTERED').length}명</span>
+            <div className="p-4 flex flex-col gap-4 overflow-y-auto">
+              {/* 원 인증코드 카드 */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50/60 border border-blue-200/80 rounded-2xl p-4 text-center shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
+                    <span>🏢</span> 원 인증코드
+                  </span>
+                  <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">공용</span>
                 </div>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                {students.map(st => (
-                  <div key={st.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex items-center justify-between gap-3 hover:border-slate-300 transition-colors">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold text-slate-800 flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-900 whitespace-nowrap">{st.name}</span>
-                        {st.className && (
-                          <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100 font-medium whitespace-nowrap shrink-0">
-                            {st.className}
-                          </span>
-                        )}
-                        {st.approvalStatus === 'APPROVED' ? (
-                          <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full border border-green-200 font-bold whitespace-nowrap shrink-0">
-                            승인완료
-                          </span>
-                        ) : st.approvalStatus === 'PENDING' ? (
-                          <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full border border-orange-200 font-bold whitespace-nowrap shrink-0">
-                            승인대기
-                          </span>
-                        ) : (
-                          <span className="text-[11px] bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium whitespace-nowrap shrink-0">
-                            미가입
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1 truncate" title={`${st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 안됨'} • ${st.address}`}>
-                        <span className="font-medium text-slate-600">{st.assignedBusId ? buses.find(b=>b.id===st.assignedBusId)?.name : '배정 안됨'}</span>
-                        {st.address && <span className="text-slate-400"> • {st.address}</span>}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {st.approvalStatus === 'PENDING' && (
-                        <>
-                          <button onClick={() => handleApproveStudent(st.id)} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-green-700 transition whitespace-nowrap shrink-0">승인</button>
-                          <button onClick={() => handleRevokeStudent(st.id, true)} className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition whitespace-nowrap shrink-0">거절</button>
-                        </>
-                      )}
-                      {st.approvalStatus === 'APPROVED' && (
-                        <button onClick={() => handleRevokeStudent(st.id, false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0">연동 해제</button>
-                      )}
-                    </div>
+                {academy?.authCode ? (
+                  <div className="text-2xl font-black text-blue-600 tracking-widest font-mono select-all bg-white py-2 px-3 rounded-xl border border-blue-100 shadow-xs mb-2.5">
+                    {academy.authCode}
                   </div>
-                ))}
-                {students.length === 0 && (
-                  <div className="text-center text-slate-400 py-10 text-sm">먼저 원생 명단을 업로드해주세요.</div>
+                ) : (
+                  <div className="text-slate-500 mb-2.5 text-xs py-2">현재 발급된 코드가 없습니다.</div>
                 )}
-              </div>
-            </div>
-
-            <div className="flex-1 flex flex-col overflow-hidden mt-6">
-              <div className="flex flex-col gap-2 mb-4">
-                <h3 className="font-bold text-slate-700">차량 스태프 (기사/교사) 가입 현황</h3>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                {buses.map(bus => (
-                  <div key={bus.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-col gap-3">
-                    <div className="font-bold text-slate-800 text-sm border-b pb-2">{bus.name} ({bus.plateNumber})</div>
-                    
-                    <div className="flex flex-col gap-2">
-                      <div className="text-sm flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-slate-500 text-xs w-14 shrink-0 whitespace-nowrap">기사님</span>
-                          <span className="font-bold text-slate-800 whitespace-nowrap text-sm">{bus.driverName || '미지정'}</span>
-                          {bus.driverApprovalStatus === 'APPROVED' ? (
-                            <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full border border-green-200 font-bold whitespace-nowrap shrink-0">승인완료</span>
-                          ) : bus.driverApprovalStatus === 'PENDING' ? (
-                            <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full border border-orange-200 font-bold whitespace-nowrap shrink-0">승인대기</span>
-                          ) : (
-                            <span className="text-[11px] bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium whitespace-nowrap shrink-0">미가입</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {bus.driverApprovalStatus === 'PENDING' && (
-                            <>
-                              <button onClick={() => handleApproveStaff(bus.id, 'DRIVER')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-green-700 transition whitespace-nowrap shrink-0">승인</button>
-                              <button onClick={() => handleRevokeStaff(bus.id, 'DRIVER', true)} className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition whitespace-nowrap shrink-0">거절</button>
-                            </>
-                          )}
-                          {bus.driverApprovalStatus === 'APPROVED' && (
-                            <button onClick={() => handleRevokeStaff(bus.id, 'DRIVER', false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0">연동 해제</button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2 pt-2.5 border-t border-slate-100">
-                      <div className="text-sm flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-slate-500 text-xs w-14 shrink-0 whitespace-nowrap">지도교사</span>
-                          <span className="font-bold text-slate-800 whitespace-nowrap text-sm">{bus.teacherName || '미지정'}</span>
-                          {bus.teacherApprovalStatus === 'APPROVED' ? (
-                            <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full border border-green-200 font-bold whitespace-nowrap shrink-0">승인완료</span>
-                          ) : bus.teacherApprovalStatus === 'PENDING' ? (
-                            <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full border border-orange-200 font-bold whitespace-nowrap shrink-0">승인대기</span>
-                          ) : (
-                            <span className="text-[11px] bg-slate-100 text-slate-500 px-2.5 py-0.5 rounded-full border border-slate-200 font-medium whitespace-nowrap shrink-0">미가입</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {bus.teacherApprovalStatus === 'PENDING' && (
-                            <>
-                              <button onClick={() => handleApproveStaff(bus.id, 'TEACHER')} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-green-700 transition whitespace-nowrap shrink-0">승인</button>
-                              <button onClick={() => handleRevokeStaff(bus.id, 'TEACHER', true)} className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-200 transition whitespace-nowrap shrink-0">거절</button>
-                            </>
-                          )}
-                          {bus.teacherApprovalStatus === 'APPROVED' && (
-                            <button onClick={() => handleRevokeStaff(bus.id, 'TEACHER', false)} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0">연동 해제</button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 유치원 담당 교사 가입 및 승인 현황 섹션 */}
-            <div className="flex-1 flex flex-col overflow-hidden mt-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-bold text-slate-700 text-base">유치원 교사 가입 및 승인 현황 ({teachers.length}명)</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">교사 계정의 가입 및 승인 상태를 확인합니다. 담당 반 분반 및 배정은 [반 관리] 메뉴에서 진행하세요.</p>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      if (academy?.authCode) {
+                        navigator.clipboard?.writeText(academy.authCode);
+                        alert('인증코드가 클립보드에 복사되었습니다.');
+                      }
+                    }}
+                    disabled={!academy?.authCode}
+                    className="flex-1 py-2 bg-white hover:bg-blue-50 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 transition shadow-xs flex items-center justify-center gap-1"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    코드 복사
+                  </button>
+                  <button 
+                    onClick={handleGenerateAuthCode}
+                    disabled={isProcessing}
+                    className="py-2 px-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition shadow-xs text-xs whitespace-nowrap"
+                  >
+                    {academy?.authCode ? '재발급' : '발급'}
+                  </button>
                 </div>
-                <button
-                  onClick={fetchTeachers}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-sm"
+                <p className="text-[11px] text-blue-600/80 mt-2 text-left">
+                  학부모와 교직원이 앱 회원가입 시 이 코드를 입력해야 해당 원으로 연동됩니다.
+                </p>
+              </div>
+
+              {/* 3대 셀 버튼 (휴업일 셀 느낌) */}
+              <div className="flex flex-col gap-2.5">
+                <button 
+                  onClick={() => setAuthTab('STUDENT')} 
+                  className={`w-full p-3.5 rounded-2xl font-bold transition-all flex items-center justify-between text-left ${
+                    authTab === 'STUDENT' 
+                      ? 'bg-blue-600 text-white shadow-md ring-2 ring-blue-400/30' 
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/70'
+                  }`}
                 >
-                  새로고침
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-xl shrink-0">🎒</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">전체 원생</div>
+                      <div className={`text-[11px] ${authTab === 'STUDENT' ? 'text-blue-100' : 'text-slate-500'} truncate`}>
+                        학부모 및 원아 가입 승인
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    {students.filter(s => s.approvalStatus === 'PENDING').length > 0 && (
+                      <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-xs">
+                        대기 {students.filter(s => s.approvalStatus === 'PENDING').length}
+                      </span>
+                    )}
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+                      authTab === 'STUDENT' ? 'bg-blue-700/60 text-white' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {students.length}명
+                    </span>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => setAuthTab('STAFF')} 
+                  className={`w-full p-3.5 rounded-2xl font-bold transition-all flex items-center justify-between text-left ${
+                    authTab === 'STAFF' 
+                      ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400/30' 
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/70'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-xl shrink-0">🚌</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">차량 스태프</div>
+                      <div className={`text-[11px] ${authTab === 'STAFF' ? 'text-emerald-100' : 'text-slate-500'} truncate`}>
+                        기사님 & 동승 지도교사
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    {buses.some(b => b.driverApprovalStatus === 'PENDING' || b.teacherApprovalStatus === 'PENDING') && (
+                      <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-xs">
+                        대기
+                      </span>
+                    )}
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+                      authTab === 'STAFF' ? 'bg-emerald-700/60 text-white' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {buses.length}대
+                    </span>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => setAuthTab('TEACHER')} 
+                  className={`w-full p-3.5 rounded-2xl font-bold transition-all flex items-center justify-between text-left ${
+                    authTab === 'TEACHER' 
+                      ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400/30' 
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/70'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-xl shrink-0">👩‍🏫</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">유치원 교사</div>
+                      <div className={`text-[11px] ${authTab === 'TEACHER' ? 'text-indigo-100' : 'text-slate-500'} truncate`}>
+                        담당 교사 연동 및 배정 현황
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+                      authTab === 'TEACHER' ? 'bg-indigo-700/60 text-white' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {teachers.length}명
+                    </span>
+                  </div>
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-2.5 pr-1">
-                {teachers.map(teacher => {
-                  const currentClass = teacher.assignedClass;
-
-                  return (
-                    <div key={teacher.id} className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex items-center justify-between gap-3 hover:border-slate-300 transition-colors">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
-                          {teacher.name?.[0] || '교'}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-800 text-sm whitespace-nowrap">{teacher.name} 선생님</span>
-                            <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap shrink-0">
-                              가입 승인됨
-                            </span>
-                            {currentClass && currentClass !== '미배정' ? (
-                              <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold border border-blue-100 whitespace-nowrap shrink-0">
-                                {currentClass} 담임
-                              </span>
-                            ) : (
-                              <span className="text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-medium border border-slate-200 whitespace-nowrap shrink-0">
-                                반 미배정
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-slate-500 mt-0.5 truncate" title={`${teacher.email}${teacher.phone ? ` • ${teacher.phone}` : ''}`}>
-                            <span>{teacher.email}</span>
-                            {teacher.phone && <span className="text-slate-400"> • {teacher.phone}</span>}
-                          </div>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => handleRevokeTeacher(teacher.id)}
-                        className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition whitespace-nowrap shrink-0"
-                      >
-                        연동 해제
-                      </button>
-                    </div>
-                  );
-                })}
-
-                {teachers.length === 0 && (
-                  <div className="text-center text-slate-400 py-8 text-sm bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    아직 가입된 유치원 교사가 없습니다.<br />
-                    <span className="text-xs text-slate-400 mt-1 inline-block">교사가 회원가입 화면에서 '유치원 교사'를 선택하고 원 인증코드로 가입하면 여기에 표시됩니다.</span>
-                  </div>
-                )}
+              {/* 하단 팁 */}
+              <div className="mt-auto p-3.5 bg-slate-50 rounded-xl border border-slate-200/70 text-xs text-slate-500 space-y-1">
+                <div className="font-bold text-slate-700 flex items-center gap-1">
+                  <span>💡</span> 인증 안내
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  상단 버튼을 누르면 우측 화면에 각 대상별 상세 승인 및 연동 목록이 나타납니다.
+                </p>
               </div>
             </div>
           </div>
@@ -3171,6 +3120,27 @@ const parseKindergartenExcelSheet = (sheet) => {
             onRefreshData={refreshAllData}
             isClosing={isClassesClosing}
             onClose={() => handleTabChange('status')}
+          />
+        )}
+
+        {activeTab === 'auth' && (
+          <AuthViewer 
+            isClosing={isAuthClosing}
+            currentTab={authTab}
+            setCurrentTab={setAuthTab}
+            students={students}
+            buses={buses}
+            teachers={teachers}
+            academy={academy}
+            handleApproveStudent={handleApproveStudent}
+            handleRevokeStudent={handleRevokeStudent}
+            handleApproveStaff={handleApproveStaff}
+            handleRevokeStaff={handleRevokeStaff}
+            handleRevokeTeacher={handleRevokeTeacher}
+            fetchTeachers={fetchTeachers}
+            refreshAllData={refreshAllData}
+            handleGenerateAuthCode={handleGenerateAuthCode}
+            isProcessing={isProcessing}
           />
         )}
 
