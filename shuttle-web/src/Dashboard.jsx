@@ -120,6 +120,7 @@ export default function Dashboard() {
   const [teachers, setTeachers] = useState([]);
   const [selectedTeacherClasses, setSelectedTeacherClasses] = useState({});
   const [isAssigningClass, setIsAssigningClass] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   // Custom Created Classes State (persisted per academy)
   const [customClasses, setCustomClasses] = useState(() => {
@@ -678,7 +679,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (activeTab === 'auth' || activeTab === 'classes') {
+    if (activeTab === 'auth' || activeTab === 'classes' || activeTab === 'settings') {
       fetchTeachers();
     }
   }, [activeTab, selectedAcademyId]);
@@ -712,6 +713,203 @@ export default function Dashboard() {
       alert('처리 중 서버 통신 오류가 발생했습니다.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleExportMasterExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+
+      // 최신 교사 목록 동기화 시도
+      let currentTeachers = teachers;
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+      if (targetAcademyId) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/routing/teachers?academyId=${targetAcademyId}`);
+          if (res.ok) {
+            currentTeachers = await res.json();
+            setTeachers(currentTeachers);
+          }
+        } catch (fetchErr) {
+          console.warn('최신 교사 목록 조회 실패, 기존 캐시 사용:', fetchErr);
+        }
+      }
+
+      // 1. 학생(원생) 데이터 추출 및 정제
+      const studentsData = students.map((st, idx) => {
+        const raw = getStudentRaw(st);
+        const bus = buses.find(b => b.id === st.assignedBusId);
+        const busName = bus ? (bus.busNumber || bus.name || `${bus.id}호차`) : '미배정';
+
+        const className = raw['반명'] || raw['반'] || raw['학급'] || '미배정';
+        const age = (raw['연령'] !== undefined && raw['연령'] !== null && String(raw['연령']).trim()) 
+          ? raw['연령'] 
+          : (raw['학년'] || raw['나이'] || '');
+        const gender = raw['성별'] || '';
+        const parentName = raw['보호자 성함'] || raw['보호자성함'] || raw['보호자명'] || raw['학부모성함'] || raw['학부모 성함'] || '';
+        const parentPhone = raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || raw['학부모연락처'] || raw['연락처'] || raw['전화번호'] || '';
+        const address = st.address || raw['주소'] || '';
+        const pickupLoc = st.boardingLocation || raw['등원지'] || raw['탑승지'] || raw['승차지'] || raw['등원 탑승지'] || address;
+        const dropoffLoc = raw['하원정보'] || raw['하원지'] || raw['하차지'] || raw['하원 탑승지'] || '';
+        const pickupTime = raw['등원시간'] || '';
+        const dropoffTime = raw['하원시간'] || '';
+        const teacherName = raw['담임명'] || raw['담임'] || '';
+        const appStatus = st.approvalStatus === 'APPROVED' ? '승인완료' : st.approvalStatus === 'PENDING' ? '승인대기' : (st.isRegistered ? '가입됨' : '미가입');
+        const memo = st.teacherMemo || raw['비고'] || '';
+
+        return {
+          'No': idx + 1,
+          '원아명': st.realName || st.name || '',
+          '반(학급)': className,
+          '배정 차량': busName,
+          '등원 탑승지': pickupLoc,
+          '주소': address,
+          '하원 정보': dropoffLoc,
+          '연령/학년': age,
+          '성별': gender,
+          '보호자 성함': parentName,
+          '보호자 연락처': parentPhone,
+          '등원시간': pickupTime,
+          '하원시간': dropoffTime,
+          '담임교사': teacherName,
+          '앱 연동상태': appStatus,
+          '비고': memo
+        };
+      });
+
+      // 2. 교사 데이터 추출 및 정제 (가입 교사 + 차량 동승 교사)
+      const registeredTeacherNames = new Set();
+      const teachersData = [];
+
+      if (Array.isArray(currentTeachers)) {
+        currentTeachers.forEach((t, idx) => {
+          const assignedBus = buses.find(b => b.teacherName === t.name || (t.phone && b.teacherPhone === t.phone));
+          registeredTeacherNames.add(t.name);
+          teachersData.push({
+            'No': idx + 1,
+            '교사 성명': t.name || '',
+            '담당 반': t.assignedClass || '미배정',
+            '이메일(아이디)': t.email || '',
+            '동승 차량': assignedBus ? (assignedBus.busNumber || assignedBus.name) : '미배정',
+            '가입 일시': t.createdAt ? new Date(t.createdAt).toLocaleDateString('ko-KR') : '-'
+          });
+        });
+      }
+
+      // 차량에 등록되어 있으나 교사 회원 목록에 없는 동승교사 보완
+      buses.forEach(b => {
+        if (b.teacherName && b.teacherName !== '미지정' && !registeredTeacherNames.has(b.teacherName)) {
+          registeredTeacherNames.add(b.teacherName);
+          teachersData.push({
+            'No': teachersData.length + 1,
+            '교사 성명': b.teacherName,
+            '담당 반': '차량 동승 지도',
+            '이메일(아이디)': '미가입 (차량 동승 교사)',
+            '동승 차량': b.busNumber || b.name,
+            '가입 일시': '-'
+          });
+        }
+      });
+
+      // 3. 기사 및 차량 데이터 추출 및 정제
+      const driversData = buses.map((b, idx) => {
+        const assignedStudentCount = students.filter(st => st.assignedBusId === b.id).length;
+        const driverStatus = b.driverApprovalStatus === 'APPROVED' 
+          ? '승인완료' 
+          : b.driverApprovalStatus === 'PENDING' 
+            ? '승인대기' 
+            : (b.isDriverRegistered ? '가입됨' : '미가입');
+        const teacherStatus = b.teacherApprovalStatus === 'APPROVED'
+          ? '승인완료'
+          : b.teacherApprovalStatus === 'PENDING'
+            ? '승인대기'
+            : (b.isTeacherRegistered ? '가입됨' : '미가입');
+
+        return {
+          'No': idx + 1,
+          '호차명': b.busNumber || b.name || `${idx + 1}호차`,
+          '차량 번호판': b.plateNumber || '미등록',
+          '승차 정원': b.capacity ? `${b.capacity}인승` : '미설정',
+          '담당 기사 성명': b.driverName || '미지정',
+          '기사 연락처': b.driverPhone || '미등록',
+          '기사 앱 승인상태': driverStatus,
+          '동승 교사 성명': b.teacherName || '미지정',
+          '동승 교사 연락처': b.teacherPhone || '미등록',
+          '동승 교사 앱 승인상태': teacherStatus,
+          '배정 원생 수': `${assignedStudentCount}명`
+        };
+      });
+
+      // 엑셀 워크북 생성
+      const wb = XLSX.utils.book_new();
+
+      // 시트 1: 원생 명단
+      const wsStudents = XLSX.utils.json_to_sheet(
+        studentsData.length > 0 ? studentsData : [{ '안내': '등록된 원생 데이터가 없습니다.' }]
+      );
+      wsStudents['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 14 }, // 원아명
+        { wch: 14 }, // 반(학급)
+        { wch: 14 }, // 배정 차량
+        { wch: 24 }, // 등원 탑승지
+        { wch: 34 }, // 주소
+        { wch: 22 }, // 하원 정보
+        { wch: 12 }, // 연령/학년
+        { wch: 8 },  // 성별
+        { wch: 14 }, // 보호자 성함
+        { wch: 18 }, // 보호자 연락처
+        { wch: 12 }, // 등원시간
+        { wch: 12 }, // 하원시간
+        { wch: 12 }, // 담임교사
+        { wch: 14 }, // 앱 연동상태
+        { wch: 24 }, // 비고
+      ];
+      XLSX.utils.book_append_sheet(wb, wsStudents, '원생 명단');
+
+      // 시트 2: 교사 명단
+      const wsTeachers = XLSX.utils.json_to_sheet(
+        teachersData.length > 0 ? teachersData : [{ '안내': '등록된 교사 데이터가 없습니다.' }]
+      );
+      wsTeachers['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // 교사 성명
+        { wch: 16 }, // 담당 반
+        { wch: 28 }, // 이메일
+        { wch: 16 }, // 동승 차량
+        { wch: 16 }, // 가입 일시
+      ];
+      XLSX.utils.book_append_sheet(wb, wsTeachers, '교사 명단');
+
+      // 시트 3: 기사 및 차량 명단
+      const wsDrivers = XLSX.utils.json_to_sheet(
+        driversData.length > 0 ? driversData : [{ '안내': '등록된 통학차량/기사 데이터가 없습니다.' }]
+      );
+      wsDrivers['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 14 }, // 호차명
+        { wch: 16 }, // 차량 번호판
+        { wch: 12 }, // 승차 정원
+        { wch: 16 }, // 담당 기사 성명
+        { wch: 18 }, // 기사 연락처
+        { wch: 16 }, // 기사 앱 승인상태
+        { wch: 16 }, // 동승 교사 성명
+        { wch: 18 }, // 동승 교사 연락처
+        { wch: 16 }, // 동승 교사 앱 승인상태
+        { wch: 14 }, // 배정 원생 수
+      ];
+      XLSX.utils.book_append_sheet(wb, wsDrivers, '기사 및 차량 명단');
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const academyTitle = academy?.name ? `${academy.name.replace(/\s+/g, '_')}_` : '';
+      const fileName = `${academyTitle}원생_교사_기사_통합명단_${dateStr}.xlsx`;
+
+      XLSX.writeFile(wb, fileName);
+    } catch (err) {
+      console.error('엑셀 다운로드 중 오류 발생:', err);
+      alert('엑셀 파일 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsExportingExcel(false);
     }
   };
 
@@ -2659,7 +2857,7 @@ const parseKindergartenExcelSheet = (sheet) => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="p-6 h-full flex flex-col">
+          <div className="p-6 h-full flex flex-col overflow-y-auto">
             <h2 className="text-xl font-bold text-slate-800 mb-6">환경설정</h2>
             
             <div className="space-y-4">
@@ -2758,6 +2956,59 @@ const parseKindergartenExcelSheet = (sheet) => {
                     </button>
                   </form>
                 )}
+              </div>
+
+              {/* 전체 명단 엑셀 다운로드 카드 */}
+              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="font-bold text-emerald-800 flex items-center gap-1.5">
+                    <span>📊</span> 원 전체 명단 엑셀 다운로드
+                  </h3>
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                    .xlsx
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-700 mb-3 opacity-90 leading-relaxed">
+                  원생(학생), 교사, 통학차량 기사 및 동승교사의 정보를 각각의 시트로 분리하여 정리한 엑셀 파일을 다운로드합니다.
+                </p>
+                
+                <div className="grid grid-cols-3 gap-1.5 mb-3 text-center">
+                  <div className="bg-white/80 rounded-lg p-1.5 border border-emerald-100">
+                    <p className="text-[10px] text-emerald-600">원생</p>
+                    <p className="text-xs font-bold text-emerald-900">{students.length}명</p>
+                  </div>
+                  <div className="bg-white/80 rounded-lg p-1.5 border border-emerald-100">
+                    <p className="text-[10px] text-emerald-600">교사</p>
+                    <p className="text-xs font-bold text-emerald-900">{teachers.length}명</p>
+                  </div>
+                  <div className="bg-white/80 rounded-lg p-1.5 border border-emerald-100">
+                    <p className="text-[10px] text-emerald-600">차량/기사</p>
+                    <p className="text-xs font-bold text-emerald-900">{buses.length}대</p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleExportMasterExcel}
+                  disabled={isExportingExcel}
+                  className="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isExportingExcel ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                      </svg>
+                      <span>엑셀 파일 생성 중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span>통합 명단 엑셀 다운로드</span>
+                    </>
+                  )}
+                </button>
               </div>
 
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 mt-auto space-y-2">
