@@ -185,44 +185,45 @@ export default function Dashboard() {
 
 
   const handleTabChange = (newTab) => {
-    if (activeTab === 'log' && newTab !== 'log') {
+    const targetTab = newTab === 'buses' ? 'status' : newTab;
+    if (activeTab === 'log' && targetTab !== 'log') {
       setIsLogClosing(true);
       setTimeout(() => {
         setIsLogClosing(false);
-        setActiveTab(newTab);
+        setActiveTab(targetTab);
       }, 300);
-    } else if (activeTab === 'messages' && newTab !== 'messages') {
+    } else if (activeTab === 'messages' && targetTab !== 'messages') {
       setIsMessageClosing(true);
       setTimeout(() => {
         setIsMessageClosing(false);
-        setActiveTab(newTab);
+        setActiveTab(targetTab);
       }, 300);
-    } else if (activeTab === 'documents' && newTab !== 'documents') {
+    } else if (activeTab === 'documents' && targetTab !== 'documents') {
       setIsDocumentsClosing(true);
       setTimeout(() => {
         setIsDocumentsClosing(false);
-        setActiveTab(newTab);
+        setActiveTab(targetTab);
       }, 300);
-    } else if (activeTab === 'board' && newTab !== 'board') {
+    } else if (activeTab === 'board' && targetTab !== 'board') {
       setIsBoardClosing(true);
       setTimeout(() => {
         setIsBoardClosing(false);
-        setActiveTab(newTab);
+        setActiveTab(targetTab);
       }, 300);
-    } else if (activeTab === 'classes' && newTab !== 'classes') {
+    } else if (activeTab === 'classes' && targetTab !== 'classes') {
       setIsClassesClosing(true);
       setTimeout(() => {
         setIsClassesClosing(false);
-        setActiveTab(newTab);
+        setActiveTab(targetTab);
       }, 300);
-    } else if (activeTab === 'auth' && newTab !== 'auth') {
+    } else if (activeTab === 'auth' && targetTab !== 'auth') {
       setIsAuthClosing(true);
       setTimeout(() => {
         setIsAuthClosing(false);
-        setActiveTab(newTab);
+        setActiveTab(targetTab);
       }, 300);
     } else {
-      setActiveTab(newTab);
+      setActiveTab(targetTab);
     }
   };
   
@@ -1986,11 +1987,15 @@ const parseKindergartenExcelSheet = (sheet) => {
         <div className="text-[10px] text-blue-200 text-center truncate max-w-[70px] mb-4 font-medium" title={currentUser.name}>
           {isSuperAdmin ? '플랫폼관리' : (currentUser.name ? `${currentUser.name} 원장선생님` : '원장선생님')}
         </div>
-        <button onClick={() => handleTabChange('status')} className={`p-4 rounded-2xl transition-all ${activeTab === 'status' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="차량 구역 현황">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-        </button>
-        <button onClick={() => handleTabChange('buses')} className={`p-4 rounded-2xl transition-all ${activeTab === 'buses' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="버스 정보 관리">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /><path d="M4 15h2v5h12V4H6v5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} /></svg>
+        <button 
+          onClick={() => handleTabChange('status')} 
+          className={`p-4 rounded-2xl transition-all ${activeTab === 'status' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} 
+          title="차량 및 구역 관리"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            <path d="M4 15h2v5h12V4H6v5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+          </svg>
         </button>
         <button onClick={() => handleTabChange('students')} className={`p-4 rounded-2xl transition-all ${activeTab === 'students' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="원생 정보">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -2039,69 +2044,162 @@ const parseKindergartenExcelSheet = (sheet) => {
         activeTab === 'settings' ? 'w-[390px]' : 
         activeTab === 'auth' ? 'w-[380px]' : 
         activeTab === 'students' ? 'w-[380px]' : 
-        activeTab === 'buses' ? 'w-[360px]' : 
+        activeTab === 'status' ? 'w-[380px]' : 
         'w-[340px]'
       }`}>
         {activeTab === 'status' && (
-          <div className="p-6 h-full flex flex-col">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">차량 구역 현황</h2>
-            <button 
-              onClick={() => setShowPickupPoints(!showPickupPoints)} 
-              className={`mb-2 w-full py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${showPickupPoints ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-inner' : 'border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-600 shadow-sm'}`}
-            >
-              {showPickupPoints ? '탑승지 숨기기' : '탑승지 보기'}
-            </button>
-            <button 
-              onClick={() => setIsAddingPickupPoint(!isAddingPickupPoint)} 
-              className={`mb-4 w-full py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${isAddingPickupPoint ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-inner' : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300 hover:text-purple-600 shadow-sm'}`}
-            >
-              {isAddingPickupPoint ? '지도에서 탑승지 위치를 클릭하세요' : '+ 새 탑승지 추가'}
-            </button>
-            <div className="space-y-3 overflow-y-auto">
+          <div className="p-6 h-full flex flex-col overflow-y-auto break-keep">
+            {/* Header */}
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-slate-800">차량 및 구역 관리</h2>
+              <p className="text-xs text-slate-500 mt-1">호차별 운행 구역, 차량 정보 및 탑승 원생을 통합 관리합니다.</p>
+            </div>
+
+            {/* Action Buttons: Pickup points */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button 
+                onClick={() => setShowPickupPoints(!showPickupPoints)} 
+                className={`w-full py-2.5 px-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap text-center ${
+                  showPickupPoints 
+                    ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-inner' 
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-600 shadow-xs'
+                }`}
+              >
+                {showPickupPoints ? '탑승지 숨기기' : '탑승지 보기'}
+              </button>
+              <button 
+                onClick={() => setIsAddingPickupPoint(!isAddingPickupPoint)} 
+                className={`w-full py-2.5 px-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap text-center ${
+                  isAddingPickupPoint 
+                    ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-inner' 
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300 hover:text-purple-600 shadow-xs'
+                }`}
+              >
+                {isAddingPickupPoint ? '위치 클릭 중...' : '+ 탑승지 추가'}
+              </button>
+            </div>
+
+            {/* Bus Cards List */}
+            <div className="space-y-3.5 overflow-y-auto pr-0.5 flex-1">
               {buses.length === 0 ? (
-                <div className="text-slate-400 text-sm text-center py-10">위저드에서 전년도 엑셀을 업로드하여 구역을 생성해주세요.</div>
+                <div className="text-slate-400 text-sm text-center py-10">등록된 버스가 없습니다.</div>
               ) : (
                 buses.map(bus => {
                   const isSelected = selectedBusId === bus.id;
                   const busStudents = students.filter(st => st.assignedBusId === bus.id);
+
                   return (
                     <div 
                       key={bus.id} 
-                      className={`p-4 border shadow-sm rounded-xl transition-all cursor-pointer ${isSelected ? 'border-blue-500 bg-blue-50/30' : 'border-slate-100 hover:border-blue-200'}`}
-                      onClick={() => setSelectedBusId(isSelected ? null : bus.id)}
+                      className={`p-4 border rounded-2xl transition-all shadow-xs ${
+                        isSelected 
+                          ? 'border-blue-500 bg-blue-50/20 ring-2 ring-blue-100' 
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="w-4 h-4 rounded-full shadow-inner flex-shrink-0" style={{ backgroundColor: bus.color }}></div>
-                        <div className="flex-1">
-                          <div className="font-bold text-slate-800 flex items-center justify-between">
-                            <span className="flex items-center gap-2">
-                              {bus.name}
-                              {operatingBuses[bus.id] && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white animate-pulse shadow-sm">
-                                  ● 운행중
+                      {/* Bus Card Header */}
+                      <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2.5">
+                        <div 
+                          className="flex items-center gap-2.5 cursor-pointer min-w-0"
+                          onClick={() => setSelectedBusId(isSelected ? null : bus.id)}
+                        >
+                          <div className="w-3.5 h-3.5 rounded-full shadow-xs shrink-0" style={{ backgroundColor: bus.color }}></div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-900 text-base">{bus.name}</span>
+                              {bus.plateNumber && (
+                                <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded font-mono">
+                                  {bus.plateNumber}
                                 </span>
                               )}
-                            </span>
-                            {busStudents.length > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{busStudents.length}명</span>}
+                              {operatingBuses[bus.id] && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white animate-pulse shadow-xs">
+                                  운행중
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            {bus.polygon && bus.polygon.length > 0 ? '구역 설정됨' : '좌표만 인식됨 (구역 불가)'}
-                          </div>
+                        </div>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingBus(bus);
+                          }}
+                          className="text-xs bg-slate-100 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors whitespace-nowrap shrink-0 border border-slate-200/80"
+                        >
+                          상세 수정
+                        </button>
+                      </div>
+
+                      {/* Info Summary Grid */}
+                      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                          <span className="text-slate-400 block text-[10px] font-medium">기사님</span>
+                          <span className="font-bold text-slate-800 truncate block mt-0.5">
+                            {bus.driverName || '미지정'}
+                          </span>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                          <span className="text-slate-400 block text-[10px] font-medium">지도교사</span>
+                          <span className="font-bold text-slate-800 truncate block mt-0.5">
+                            {bus.teacherName || '미지정'}
+                          </span>
                         </div>
                       </div>
-                      
-                      {isSelected && busStudents.length > 0 && (
-                        <div className="mt-4 border-t border-slate-100 pt-3 space-y-2">
-                          {busStudents.map(st => (
-                            <div key={st.id} className="text-xs flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
-                              <span className="font-bold text-slate-700">{st.name}</span>
-                              <span className="text-slate-400 truncate max-w-[120px] text-right" title={st.address}>{st.address}</span>
-                            </div>
-                          ))}
+
+                      {/* Zone & Students Status Bar */}
+                      <div 
+                        className="flex items-center justify-between text-xs cursor-pointer p-2 rounded-xl bg-slate-50/70 hover:bg-slate-100/70 transition-colors"
+                        onClick={() => setSelectedBusId(isSelected ? null : bus.id)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                            bus.polygon && bus.polygon.length > 0
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {bus.polygon && bus.polygon.length > 0 ? '구역 설정됨' : '좌표만 인식됨'}
+                          </span>
+                          <span className="text-slate-500 text-[11px]">
+                            {bus.capacity ? `정원 ${bus.capacity}인승` : ''}
+                          </span>
                         </div>
-                      )}
-                      {isSelected && busStudents.length === 0 && (
-                        <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400 text-center">배정된 원아가 없습니다.</div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                            원생 {busStudents.length}명
+                          </span>
+                          <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isSelected ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
+
+                      {/* Expandable Students List */}
+                      {isSelected && (
+                        <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5">
+                          <div className="text-[11px] font-bold text-slate-500 flex justify-between px-1 mb-1">
+                            <span>배정 원생 명단</span>
+                            <span>{busStudents.length}명</span>
+                          </div>
+                          {busStudents.length > 0 ? (
+                            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                              {busStudents.map(st => (
+                                <div key={st.id} className="text-xs flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                  <span className="font-bold text-slate-700 truncate">{st.name}</span>
+                                  <span className="text-slate-400 truncate max-w-[150px] text-right" title={st.address || st.boardingLocation}>
+                                    {st.boardingLocation || st.address || '위치 미지정'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center text-xs text-slate-400 py-3 bg-slate-50 rounded-xl">
+                              배정된 원아가 없습니다.
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -2195,40 +2293,6 @@ const parseKindergartenExcelSheet = (sheet) => {
                     </div>
                   );
                 })
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'buses' && (
-          <div className="p-6 h-full flex flex-col">
-            <h2 className="text-xl font-bold text-slate-800 mb-6">버스 정보 관리</h2>
-            <div className="space-y-3 overflow-y-auto pr-2">
-              {buses.length === 0 ? (
-                <div className="text-slate-400 text-sm text-center py-10">등록된 버스가 없습니다.</div>
-              ) : (
-                buses.map(bus => (
-                  <div key={bus.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: bus.color }}></div>
-                        <h3 className="font-bold text-slate-800 text-lg">{bus.name}</h3>
-                      </div>
-                      <button 
-                        onClick={() => setEditingBus(bus)}
-                        className="text-xs bg-blue-50 text-blue-600 font-bold px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
-                      >
-                        상세 수정
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                      <div><span className="text-slate-400 inline-block w-16">호차:</span> {bus.busNumber || '미지정'}</div>
-                      <div><span className="text-slate-400 inline-block w-16">차량번호:</span> {bus.plateNumber || '미등록'}</div>
-                      <div><span className="text-slate-400 inline-block w-16">기사님:</span> {bus.driverName || '미지정'}</div>
-                      <div><span className="text-slate-400 inline-block w-16">교사님:</span> {bus.teacherName || '미지정'}</div>
-                    </div>
-                  </div>
-                ))
               )}
             </div>
           </div>
