@@ -735,46 +735,74 @@ export default function Dashboard() {
         }
       }
 
-      // 1. 학생(원생) 데이터 추출 및 정제
-      const studentsData = students.map((st, idx) => {
+      // 1. 학생(원생) 데이터 - '원아_정보_입력_시트.xlsx' 2행 헤더 공식 규격 적용
+      const aoaData = [
+        // Row 0 (헤더 1행)
+        ['반명', '학생이름/영문이름', '유치원명', '연령', '성별', '보호자 성함', '부모연락처', '주소', '담임명', '하원정보', '', '', '등원시간', '하원시간', '비고'],
+        // Row 1 (헤더 2행 - 하원정보 서브헤더)
+        ['', '', '', '', '', '', '', '', '', '정규하원', '방과후하원', '종일반하원', '', '', '']
+      ];
+
+      students.forEach(st => {
         const raw = getStudentRaw(st);
         const bus = buses.find(b => b.id === st.assignedBusId);
-        const busName = bus ? (bus.busNumber || bus.name || `${bus.id}호차`) : '미배정';
+        const busName = bus ? (bus.busNumber || bus.name || `${bus.id}호차`) : '';
 
-        const className = raw['반명'] || raw['반'] || raw['학급'] || '미배정';
+        const className = raw['반명'] || raw['반'] || raw['학급'] || '';
+        const studentName = st.realName || st.name || raw['학생이름/영문이름'] || raw['원아명'] || raw['이름'] || '';
+        const academyName = academy?.name || raw['유치원명'] || '';
         const age = (raw['연령'] !== undefined && raw['연령'] !== null && String(raw['연령']).trim()) 
           ? raw['연령'] 
           : (raw['학년'] || raw['나이'] || '');
         const gender = raw['성별'] || '';
         const parentName = raw['보호자 성함'] || raw['보호자성함'] || raw['보호자명'] || raw['학부모성함'] || raw['학부모 성함'] || '';
         const parentPhone = raw['부모연락처'] || raw['보호자연락처'] || raw['보호자 연락처'] || raw['학부모연락처'] || raw['연락처'] || raw['전화번호'] || '';
-        const address = st.address || raw['주소'] || '';
-        const pickupLoc = st.boardingLocation || raw['등원지'] || raw['탑승지'] || raw['승차지'] || raw['등원 탑승지'] || address;
-        const dropoffLoc = raw['하원정보'] || raw['하원지'] || raw['하차지'] || raw['하원 탑승지'] || '';
+        const address = st.address || raw['주소'] || st.boardingLocation || raw['등원지'] || raw['탑승지'] || '';
+        const teacherName = raw['담임명'] || raw['담임'] || '';
+
+        // 하원정보 구분 매핑
+        const depType = raw['하원구분'] || raw['하원정보'] || '';
+        let regularDrop = raw['정규하원'] || '';
+        let afterSchoolDrop = raw['방과후하원'] || '';
+        let fullDayDrop = raw['종일반하원'] || '';
+
+        if (!regularDrop && !afterSchoolDrop && !fullDayDrop) {
+          if (depType === '방과후하원') {
+            afterSchoolDrop = raw['하원지'] || 'O';
+          } else if (depType === '종일반하원') {
+            fullDayDrop = raw['하원지'] || 'O';
+          } else {
+            regularDrop = raw['하원지'] || (depType === '정규하원' ? 'O' : '');
+          }
+        }
+
         const pickupTime = raw['등원시간'] || '';
         const dropoffTime = raw['하원시간'] || '';
-        const teacherName = raw['담임명'] || raw['담임'] || '';
-        const appStatus = st.approvalStatus === 'APPROVED' ? '승인완료' : st.approvalStatus === 'PENDING' ? '승인대기' : (st.isRegistered ? '가입됨' : '미가입');
-        const memo = st.teacherMemo || raw['비고'] || '';
 
-        return {
-          'No': idx + 1,
-          '원아명': st.realName || st.name || '',
-          '반(학급)': className,
-          '배정 차량': busName,
-          '등원 탑승지': pickupLoc,
-          '주소': address,
-          '하원 정보': dropoffLoc,
-          '연령/학년': age,
-          '성별': gender,
-          '보호자 성함': parentName,
-          '보호자 연락처': parentPhone,
-          '등원시간': pickupTime,
-          '하원시간': dropoffTime,
-          '담임교사': teacherName,
-          '앱 연동상태': appStatus,
-          '비고': memo
-        };
+        // 비고 구성 (배정차량 및 메모)
+        const noteParts = [];
+        if (busName) noteParts.push(`차량: ${busName}`);
+        if (st.teacherMemo) noteParts.push(st.teacherMemo);
+        if (raw['비고']) noteParts.push(raw['비고']);
+        const note = noteParts.join(' / ');
+
+        aoaData.push([
+          className,
+          studentName,
+          academyName,
+          age,
+          gender,
+          parentName,
+          parentPhone,
+          address,
+          teacherName,
+          regularDrop,
+          afterSchoolDrop,
+          fullDayDrop,
+          pickupTime,
+          dropoffTime,
+          note
+        ]);
       });
 
       // 2. 교사 데이터 추출 및 정제 (가입 교사 + 차량 동승 교사)
@@ -843,29 +871,42 @@ export default function Dashboard() {
       // 엑셀 워크북 생성
       const wb = XLSX.utils.book_new();
 
-      // 시트 1: 원생 명단
-      const wsStudents = XLSX.utils.json_to_sheet(
-        studentsData.length > 0 ? studentsData : [{ '안내': '등록된 원생 데이터가 없습니다.' }]
-      );
+      // 시트 1: 원아 명단 (원아_정보_입력_시트.xlsx 2행 헤더 및 셀 병합 규격)
+      const wsStudents = XLSX.utils.aoa_to_sheet(aoaData);
+      wsStudents['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },   // 반명
+        { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } },   // 학생이름/영문이름
+        { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } },   // 유치원명
+        { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } },   // 연령
+        { s: { r: 0, c: 4 }, e: { r: 1, c: 4 } },   // 성별
+        { s: { r: 0, c: 5 }, e: { r: 1, c: 5 } },   // 보호자 성함
+        { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } },   // 부모연락처
+        { s: { r: 0, c: 7 }, e: { r: 1, c: 7 } },   // 주소
+        { s: { r: 0, c: 8 }, e: { r: 1, c: 8 } },   // 담임명
+        { s: { r: 0, c: 9 }, e: { r: 0, c: 11 } },  // 하원정보 (정규하원, 방과후하원, 종일반하원 상위 병합)
+        { s: { r: 0, c: 12 }, e: { r: 1, c: 12 } }, // 등원시간
+        { s: { r: 0, c: 13 }, e: { r: 1, c: 13 } }, // 하원시간
+        { s: { r: 0, c: 14 }, e: { r: 1, c: 14 } }  // 비고
+      ];
       wsStudents['!cols'] = [
-        { wch: 6 },  // No
-        { wch: 14 }, // 원아명
-        { wch: 14 }, // 반(학급)
-        { wch: 14 }, // 배정 차량
-        { wch: 24 }, // 등원 탑승지
-        { wch: 34 }, // 주소
-        { wch: 22 }, // 하원 정보
-        { wch: 12 }, // 연령/학년
+        { wch: 12 }, // 반명
+        { wch: 18 }, // 학생이름/영문이름
+        { wch: 16 }, // 유치원명
+        { wch: 8 },  // 연령
         { wch: 8 },  // 성별
         { wch: 14 }, // 보호자 성함
-        { wch: 18 }, // 보호자 연락처
+        { wch: 18 }, // 부모연락처
+        { wch: 34 }, // 주소
+        { wch: 12 }, // 담임명
+        { wch: 12 }, // 정규하원
+        { wch: 12 }, // 방과후하원
+        { wch: 12 }, // 종일반하원
         { wch: 12 }, // 등원시간
         { wch: 12 }, // 하원시간
-        { wch: 12 }, // 담임교사
-        { wch: 14 }, // 앱 연동상태
-        { wch: 24 }, // 비고
+        { wch: 26 }, // 비고
       ];
-      XLSX.utils.book_append_sheet(wb, wsStudents, '원생 명단');
+      // 원아_정보_입력_시트.xlsx와 동일한 기본 시트명 '유치원부'로 추가
+      XLSX.utils.book_append_sheet(wb, wsStudents, '유치원부');
 
       // 시트 2: 교사 명단
       const wsTeachers = XLSX.utils.json_to_sheet(
