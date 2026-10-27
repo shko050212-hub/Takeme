@@ -323,7 +323,11 @@ export class RoutingService {
         driverApprovalStatus: v.driverApprovalStatus,
         teacherApprovalStatus: v.teacherApprovalStatus,
         isDriverRegistered: !!v.driverUser,
-        isTeacherRegistered: !!v.teacherUser
+        isTeacherRegistered: !!v.teacherUser,
+        driverUserId: v.driverUser?.id || null,
+        isDriverLocked: !!v.driverUser?.isLocked,
+        teacherUserId: v.teacherUser?.id || null,
+        isTeacherLocked: !!v.teacherUser?.isLocked,
       };
     });
     
@@ -351,6 +355,9 @@ export class RoutingService {
         raw: parsedRaw,
         schedules: st.schedules,
         isRegistered: !!st.studentUser || !!st.parentUser,
+        studentUserId: st.studentUser?.id || null,
+        parentUserId: st.parentUser?.id || null,
+        isLocked: !!(st.parentUser?.isLocked || st.studentUser?.isLocked),
         approvalStatus: st.approvalStatus,
         teacherMemo: st.teacherMemo || '',
         boardStatus: st.boardStatus || 'WAITING'
@@ -1580,8 +1587,33 @@ export class RoutingService {
       email: t.email,
       name: t.name,
       assignedClass: t.assignedClass || '',
+      isLocked: !!t.isLocked,
       createdAt: t.createdAt
     }));
+  }
+
+  async unlockUser(userId?: number, email?: string) {
+    let user: User | null = null;
+    if (userId) {
+      user = await this.userRepository.findOne({ where: { id: userId } });
+    } else if (email) {
+      user = await this.userRepository.findOne({ where: { email } });
+    }
+
+    if (!user) {
+      throw new BadRequestException('해당 사용자를 찾을 수 없습니다.');
+    }
+
+    user.isLocked = false;
+    user.failedLoginAttempts = 0;
+    user.lockedAt = null;
+    await this.userRepository.save(user);
+
+    return { 
+      success: true, 
+      message: `${user.name || user.email} 님의 계정 잠금이 성공적으로 해제되었습니다.`,
+      userId: user.id
+    };
   }
 
   async assignTeacherClass(teacherId: number, assignedClass: string) {

@@ -6,6 +6,7 @@ export interface JwtPayload {
   email: string;
   role: string;
   academyId: number | null;
+  sessionId?: string;
 }
 
 export const ROLES_KEY = 'roles';

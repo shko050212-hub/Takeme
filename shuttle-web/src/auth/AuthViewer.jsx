@@ -16,6 +16,7 @@ export default function AuthViewer({
   fetchTeachers,
   refreshAllData,
   handleGenerateAuthCode,
+  handleUnlockUser,
   isProcessing
 }) {
   const [studentStatusFilter, setStudentStatusFilter] = useState('ALL'); // 'ALL', 'PENDING', 'APPROVED', 'UNREGISTERED'
@@ -421,6 +422,21 @@ export default function AuthViewer({
 
                     {/* Action Buttons Footer */}
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                      {st.isLocked && (
+                        <div className="flex items-center gap-1.5 mr-auto">
+                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[11px] font-bold rounded-lg border border-red-200">
+                            계정 잠김 (5회 실패)
+                          </span>
+                          {handleUnlockUser && (
+                            <button
+                              onClick={() => handleUnlockUser(st.parentUserId || st.studentUserId)}
+                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors shadow-xs"
+                            >
+                              잠금 해제
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {st.approvalStatus === 'PENDING' && (
                         <>
                           <button
@@ -540,6 +556,14 @@ export default function AuthViewer({
                           </div>
 
                           <div className="shrink-0 flex items-center gap-1.5">
+                            {bus.isDriverLocked && handleUnlockUser && (
+                              <button
+                                onClick={() => handleUnlockUser(bus.driverUserId)}
+                                className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-xs"
+                              >
+                                잠금 해제
+                              </button>
+                            )}
                             {bus.driverApprovalStatus === 'PENDING' && (
                               <>
                                 <button
@@ -599,6 +623,14 @@ export default function AuthViewer({
                           </div>
 
                           <div className="shrink-0 flex items-center gap-1.5">
+                            {bus.isTeacherLocked && handleUnlockUser && (
+                              <button
+                                onClick={() => handleUnlockUser(bus.teacherUserId)}
+                                className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-xs"
+                              >
+                                잠금 해제
+                              </button>
+                            )}
                             {bus.teacherApprovalStatus === 'PENDING' && (
                               <>
                                 <button
@@ -692,7 +724,7 @@ export default function AuthViewer({
                     </div>
 
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <div>
+                      <div className="flex items-center gap-2">
                         {currentClass && currentClass !== '미배정' ? (
                           <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-bold border border-blue-100">
                             {currentClass} 담임교사
@@ -702,14 +734,29 @@ export default function AuthViewer({
                             반 미배정
                           </span>
                         )}
+                        {teacher.isLocked && (
+                          <span className="text-[11px] bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full font-bold border border-red-200">
+                            계정 잠김
+                          </span>
+                        )}
                       </div>
 
-                      <button
-                        onClick={() => handleRevokeTeacher(teacher.id)}
-                        className="px-3.5 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-xl transition shadow-xs"
-                      >
-                        연동 해제
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {teacher.isLocked && handleUnlockUser && (
+                          <button
+                            onClick={() => handleUnlockUser(teacher.id)}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition shadow-xs"
+                          >
+                            잠금 해제
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRevokeTeacher(teacher.id)}
+                          className="px-3.5 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-xl transition shadow-xs"
+                        >
+                          연동 해제
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

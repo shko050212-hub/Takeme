@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Global } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -10,10 +10,10 @@ import { Academy } from '../entities/academy.entity';
 import { Student } from '../entities/student.entity';
 import { Vehicle } from '../entities/vehicle.entity';
 
+@Global()
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Academy, Student, Vehicle]),
-    // global: true → 다른 모듈(parent, teacher, routing, gateway)에서도 JwtService 사용 가능
     JwtModule.registerAsync({
       global: true,
       inject: [ConfigService],
@@ -25,6 +25,6 @@ import { Vehicle } from '../entities/vehicle.entity';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
-  exports: [JwtAuthGuard],
+  exports: [AuthService, JwtAuthGuard, TypeOrmModule],
 })
 export class AuthModule {}

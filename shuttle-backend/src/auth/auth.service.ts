@@ -99,11 +99,35 @@ export class AuthService {
     };
   }
 
-  verifyEmailCode(email: string, code: string) {
+  async verifyEmailCode(email: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (user && user.isLocked) {
+      throw new BadRequestException('인증번호 5회 연속 실패로 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+    }
+
     const record = this.verificationCodes.get(email);
     if (!record) throw new BadRequestException('인증 코드가 없습니다.');
     if (Date.now() > record.expiresAt) throw new BadRequestException('인증 코드가 만료되었습니다.');
-    if (record.code !== code) throw new BadRequestException('유효하지 않은 인증 코드입니다.');
+    if (record.code !== code) {
+      if (user) {
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.isLocked = true;
+          user.lockedAt = new Date();
+          await this.usersRepository.save(user);
+          throw new BadRequestException('인증번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님에게 잠금 해제를 요청해 주세요.');
+        }
+        await this.usersRepository.save(user);
+        const remaining = 5 - user.failedLoginAttempts;
+        throw new BadRequestException(`유효하지 않은 인증 코드입니다. (남은 기회: ${remaining}회)`);
+      }
+      throw new BadRequestException('유효하지 않은 인증 코드입니다.');
+    }
+
+    if (user) {
+      user.failedLoginAttempts = 0;
+      await this.usersRepository.save(user);
+    }
     this.verificationCodes.delete(email);
     return { success: true, message: '이메일 인증이 완료되었습니다.' };
   }
@@ -166,9 +190,29 @@ export class AuthService {
   async login(data: any) {
     const { email, password, otpToken } = data;
     const user = await this.usersRepository.findOne({ where: { email } });
-    
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+
+    if (!user) {
       throw new BadRequestException('이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
+
+    // 1. 계정 잠김 확인
+    if (user.isLocked) {
+      throw new BadRequestException('로그인 또는 인증번호 5회 연속 실패로 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+    }
+
+    // 2. 비밀번호 검증 및 실패 횟수 처리
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= 5) {
+        user.isLocked = true;
+        user.lockedAt = new Date();
+        await this.usersRepository.save(user);
+        throw new BadRequestException('비밀번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+      }
+      await this.usersRepository.save(user);
+      const remaining = 5 - user.failedLoginAttempts;
+      throw new BadRequestException(`이메일 또는 비밀번호가 올바르지 않습니다. (남은 기회: ${remaining}회)`);
     }
 
     if (user.role === UserRole.ACADEMY_ADMIN) {
@@ -181,7 +225,18 @@ export class AuthService {
           token: otpToken,
           window: 1
         });
-        if (!verified) throw new UnauthorizedException('OTP 번호가 올바르지 않습니다.');
+        if (!verified) {
+          user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+          if (user.failedLoginAttempts >= 5) {
+            user.isLocked = true;
+            user.lockedAt = new Date();
+            await this.usersRepository.save(user);
+            throw new BadRequestException('OTP 인증번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+          }
+          await this.usersRepository.save(user);
+          const remaining = 5 - user.failedLoginAttempts;
+          throw new UnauthorizedException(`OTP 번호가 올바르지 않습니다. (남은 기회: ${remaining}회)`);
+        }
       } else {
         // Force OTP setup
         let qrCodeUrl = '';
@@ -283,12 +338,19 @@ export class AuthService {
       }
     }
 
+    // 로그인 성공: 실패 횟수 초기화 및 단일 세션(동시 로그인 차단) 토큰 갱신
+    user.failedLoginAttempts = 0;
+    const sessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+    user.currentSessionToken = sessionId;
+    await this.usersRepository.save(user);
+
     // 승인까지 끝난 사용자에게만 토큰 발급 (승인 대기·OTP 미통과는 위에서 이미 return 됨)
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
       email: user.email,
       role: user.role,
       academyId,
+      sessionId,
     });
 
     return {

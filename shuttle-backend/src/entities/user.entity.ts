@@ -44,6 +44,18 @@ export class User {
   @Column({ default: false })
   isOtpEnabled: boolean;
 
+  @Column({ default: 0 })
+  failedLoginAttempts: number;
+
+  @Column({ default: false })
+  isLocked: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lockedAt: Date | null;
+
+  @Column({ nullable: true })
+  currentSessionToken: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

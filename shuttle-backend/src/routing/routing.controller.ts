@@ -362,4 +362,9 @@ export class RoutingController {
   async getTeacherProfile(@Param('id') teacherId: string) {
     return this.routingService.getTeacherProfile(Number(teacherId));
   }
+
+  @Post('unlock-user')
+  async unlockUser(@Body() body: { userId?: number; email?: string }) {
+    return this.routingService.unlockUser(body.userId ? Number(body.userId) : undefined, body.email);
+  }
 }
