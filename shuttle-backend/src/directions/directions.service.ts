@@ -40,7 +40,11 @@ export class DirectionsService {
             origin: this.toXY(req.origin, '출발지'),
             destination: this.toXY(req.destination, '도착지'),
             waypoints: waypoints.map((w, i) => this.toXY(w, `경유지 ${i + 1}`)),
-            priority: 'RECOMMEND',
+            // 안전 경로: 큰길 위주의 추천 경로 + 유턴 회피 (통학버스 안전)
+            // 빠른 경로: 최단 시간
+            ...(req.mode === 'fast'
+              ? { priority: 'TIME' }
+              : { priority: 'RECOMMEND', avoid: ['uturn'] }),
           },
           { headers: { Authorization: `KakaoAK ${apiKey}`, 'Content-Type': 'application/json' } },
         ),
@@ -72,6 +76,7 @@ export class DirectionsService {
     }
 
     return {
+      mode: req.mode === 'fast' ? 'fast' : 'safe',
       distance: route.summary?.distance, // m
       duration: route.summary?.duration, // 초
       sections: (route.sections ?? []).map((s: any) => ({ distance: s.distance, duration: s.duration })), // 정류장 사이 구간별
