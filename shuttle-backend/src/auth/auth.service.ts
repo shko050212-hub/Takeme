@@ -220,9 +220,19 @@ export class AuthService {
       throw new BadRequestException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 
-    // 1. 계정 잠김 확인
+    // 1. 계정 잠김 확인 (30분 경과 시 자동 잠금 해제)
     if (user.isLocked) {
-      throw new BadRequestException('로그인 또는 인증번호 5회 연속 실패로 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+      if (user.lockedAt && Date.now() - new Date(user.lockedAt).getTime() > 30 * 60 * 1000) {
+        user.isLocked = false;
+        user.failedLoginAttempts = 0;
+        user.lockedAt = null as any;
+        await this.usersRepository.save(user);
+      } else {
+        const remainingMinutes = user.lockedAt 
+          ? Math.max(1, Math.ceil((30 * 60 * 1000 - (Date.now() - new Date(user.lockedAt).getTime())) / 60000))
+          : 30;
+        throw new BadRequestException(`로그인 5회 연속 실패로 계정이 잠겼습니다. ${remainingMinutes}분 후 자동으로 해제되거나 이메일 인증으로 즉시 해제할 수 있습니다.`);
+      }
     }
 
     // 2. 비밀번호 검증 및 실패 횟수 처리
@@ -462,9 +472,13 @@ export class AuthService {
 
     // Refresh: 새 리프레시 토큰 발급 (RTR - Refresh Token Rotation)
     const newRawRefreshToken = crypto.randomBytes(32).toString('hex');
-    const newSessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
     user.refreshToken = await bcrypt.hash(newRawRefreshToken, 10);
-    user.currentSessionToken = newSessionId;
+    // 세션 ID는 기존 활성 세션을 보존하여 동시성 요청 및 탭 간 세션 끊김 충돌을 방지합니다.
+    let sessionId = user.currentSessionToken;
+    if (!sessionId) {
+      sessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+      user.currentSessionToken = sessionId;
+    }
     await this.usersRepository.save(user);
 
     const accessToken = await this.jwtService.signAsync({
@@ -472,7 +486,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       academyId,
-      sessionId: newSessionId,
+      sessionId,
     });
 
     return {
@@ -495,8 +509,8 @@ export class AuthService {
     const { email, password, name, authCode, role, targetName } = data;
     const searchName = targetName || name;
 
-    // 0. 비밀번호 복잡도 검증 (영문, 숫자 포함 최소 8자리 이상)
-    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
+    // 0. 비밀번호 복잡도 검증 (영문, 숫자 포함 최소 8자리 이상, 공백 제외 모든 특수문자 허용)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)\S{8,}$/;
     if (!password || !passwordRegex.test(password)) {
       throw new BadRequestException('비밀번호는 영문자와 숫자를 포함하여 최소 8자리 이상이어야 합니다.');
     }
@@ -679,5 +693,37 @@ export class AuthService {
     await this.usersRepository.remove(user);
 
     return { success: true, message: '회원 탈퇴 처리가 완료되었습니다.' };
+  }
+
+  async sendSelfUnlockCode(email: string, clientIp: string = '127.0.0.1') {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    if (!user.isLocked) {
+      return { success: true, message: '해당 계정은 잠겨있지 않습니다. 바로 로그인해 주세요.' };
+    }
+    return this.sendEmailVerification(email, clientIp, 'register');
+  }
+
+  async verifySelfUnlockCode(email: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    const record = this.verificationCodes.get(email);
+    if (!record) throw new BadRequestException('인증 코드가 없습니다.');
+    if (Date.now() > record.expiresAt) throw new BadRequestException('인증 코드가 만료되었습니다.');
+    if (record.code !== code) {
+      throw new BadRequestException('유효하지 않은 인증 코드입니다.');
+    }
+
+    user.isLocked = false;
+    user.failedLoginAttempts = 0;
+    user.lockedAt = null as any;
+    await this.usersRepository.save(user);
+    this.verificationCodes.delete(email);
+
+    return { success: true, message: '계정 잠금이 성공적으로 해제되었습니다. 다시 로그인해 주세요.' };
   }
 }

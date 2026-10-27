@@ -47,4 +47,15 @@ export class AuthController {
   refresh(@Body('refreshToken') refreshToken: string) {
     return this.authService.refreshToken(refreshToken);
   }
+
+  @Post('self-unlock/send')
+  sendSelfUnlock(@Req() req: Request, @Body('email') email: string) {
+    const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip || '127.0.0.1';
+    return this.authService.sendSelfUnlockCode(email, rawIp);
+  }
+
+  @Post('self-unlock/verify')
+  verifySelfUnlock(@Body() body: { email: string; code: string }) {
+    return this.authService.verifySelfUnlockCode(body.email, body.code);
+  }
 }

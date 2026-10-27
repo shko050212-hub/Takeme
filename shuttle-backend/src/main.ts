@@ -9,11 +9,16 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // 0. 리버스 프록시(Nginx) 신뢰 설정 (실제 클라이언트 IP 수신)
+  app.getHttpAdapter().getInstance().set('trust proxy', true);
+
   // 1. HTTP 보안 헤더 설정 (Helmet)
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // 우편번호 팝업 창 연동 허용
+      crossOriginResourcePolicy: { policy: 'cross-origin' }, // 모바일 앱 미디어/정적 파일 요청 허용
     }),
   );
 
@@ -23,6 +28,9 @@ async function bootstrap() {
       // 모바일 앱 요청(origin이 undefined/null) 및 승인된 웹 도메인 허용
       const allowedOrigins = [
         'https://52.63.245.203.sslip.io',
+        'http://52.63.245.203.sslip.io',
+        'https://52.63.245.203',
+        'http://52.63.245.203',
         'http://52.63.245.203:3000',
         'http://localhost:5173',
         'http://localhost:3000',

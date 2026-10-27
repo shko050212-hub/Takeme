@@ -41,6 +41,9 @@ export default function Landing() {
         setIsEmailSent(true);
       } else {
         alert(data.message);
+      if (data.message && data.message.includes('잠겼습니다')) {
+        setShowSelfUnlock(true);
+      }
       }
     } catch (err) {
       alert('서버 연결에 실패했습니다.');
@@ -207,6 +210,53 @@ export default function Landing() {
               <input type="password" placeholder="비밀번호 입력" value={password} onChange={e=>setPassword(e.target.value)} className="form-input" required />
             </div>
             <button type="submit" className="btn-primary w-full py-3 text-base font-bold shadow-md shadow-blue-500/20">로그인</button>
+            {showSelfUnlock && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left space-y-2">
+                <p className="text-xs font-semibold text-amber-900">계정이 잠금 상태입니다.</p>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  등록된 이메일로 6자리 인증번호를 발송받아 본인 인증 후 즉시 잠금을 해제할 수 있습니다.
+                </p>
+                {!unlockSent ? (
+                  <button
+                    type="button"
+                    onClick={handleSendUnlockCode}
+                    disabled={unlockLoading}
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition"
+                  >
+                    {unlockLoading ? '발송 중...' : '이메일로 잠금 해제 인증번호 발송'}
+                  </button>
+                ) : (
+                  <div className="space-y-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="인증번호 6자리"
+                      value={unlockCode}
+                      onChange={(e) => setUnlockCode(e.target.value)}
+                      maxLength={6}
+                      className="form-input text-center tracking-widest font-mono text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleVerifyUnlockCode}
+                        disabled={unlockLoading}
+                        className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition"
+                      >
+                        {unlockLoading ? '확인 중...' : '잠금 해제 확인'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSendUnlockCode}
+                        disabled={unlockLoading}
+                        className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs rounded-lg transition"
+                      >
+                        재발송
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="text-center mt-4">
               <button type="button" onClick={() => { setMode('signup'); setRole('ACADEMY_ADMIN'); }} className="text-sm font-medium text-blue-600 hover:underline">
                 회원가입
