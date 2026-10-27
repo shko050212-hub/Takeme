@@ -51,10 +51,10 @@ export class User {
   isLocked: boolean;
 
   @Column({ type: 'timestamp', nullable: true })
-  lockedAt: Date | null;
+  lockedAt: Date;
 
-  @Column({ nullable: true })
-  currentSessionToken: string | null;
+  @Column({ type: 'varchar', nullable: true })
+  currentSessionToken: string;
 
   @CreateDateColumn()
   createdAt: Date;
