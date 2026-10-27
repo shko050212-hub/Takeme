@@ -1606,7 +1606,7 @@ export class RoutingService {
 
     user.isLocked = false;
     user.failedLoginAttempts = 0;
-    user.lockedAt = null;
+    user.lockedAt = null as any;
     await this.userRepository.save(user);
 
     return { 
