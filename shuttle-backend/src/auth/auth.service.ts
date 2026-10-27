@@ -1,7 +1,8 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, HttpException, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import * as speakeasy from 'speakeasy';
 import * as qrcode from 'qrcode';
 import { User, UserRole } from '../entities/user.entity';
@@ -13,6 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 @Injectable()
 export class AuthService {
   private verificationCodes = new Map<string, { code: string, expiresAt: number }>();
+  private emailRateLimits = new Map<string, { count: number, resetAt: number }>();
   private transporter: any = null;
 
   constructor(
@@ -49,7 +51,30 @@ export class AuthService {
     return this.transporter;
   }
 
-  async sendEmailVerification(email: string, type: 'register' | 'withdraw' = 'register') {
+  async sendEmailVerification(email: string, clientIp: string = '127.0.0.1', type: 'register' | 'withdraw' = 'register') {
+    // IP 기반 발송 빈도 제한 (15분 동안 동일 IP당 최대 10회)
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000;
+    const limit = 10;
+
+    const ipRecord = this.emailRateLimits.get(clientIp);
+    if (ipRecord) {
+      if (now < ipRecord.resetAt) {
+        if (ipRecord.count >= limit) {
+          const remainingMinutes = Math.max(1, Math.ceil((ipRecord.resetAt - now) / 60000));
+          throw new HttpException(
+            `해당 IP에서 단시간에 너무 많은 이메일 인증 요청이 발생했습니다. ${remainingMinutes}분 후 다시 시도해 주세요.`,
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        ipRecord.count += 1;
+      } else {
+        this.emailRateLimits.set(clientIp, { count: 1, resetAt: now + windowMs });
+      }
+    } else {
+      this.emailRateLimits.set(clientIp, { count: 1, resetAt: now + windowMs });
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 3 * 60 * 1000;
     this.verificationCodes.set(email, { code, expiresAt });
@@ -65,7 +90,7 @@ export class AuthService {
         html: `
           <div style="font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             <div style="padding: 32px; background-color: #ffffff;">
-              <h2 style="color: #1e40af; margin-top: 0; font-size: 24px;">환영합니다! 🎉</h2>
+              <h2 style="color: #1e40af; margin-top: 0; font-size: 24px;">환영합니다!</h2>
               <p style="color: #475569; font-size: 16px; line-height: 1.6;">
                 Takeme에 가입을 진행해 주셔서 감사합니다.<br/>원장선생님의 유치원 안심 통학차량 관리를 스마트하고 안전하게 돕겠습니다.
               </p>
@@ -74,7 +99,7 @@ export class AuthService {
                 <h1 style="margin: 0; color: #0f172a; font-size: 36px; letter-spacing: 4px;">${code}</h1>
               </div>
               <p style="color: #dc2626; font-size: 14px; text-align: center; font-weight: bold;">
-                ⏰ 본 코드는 3분 안에 입력해주셔야 합니다.
+                [안내] 본 코드는 3분 안에 입력해주셔야 합니다.
               </p>
               <p style="color: #475569; font-size: 15px; text-align: center; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 24px;">
                 Takeme의 가족이 된 것을 다시 한 번 진심으로 감사드립니다!<br/>
@@ -338,10 +363,13 @@ export class AuthService {
       }
     }
 
-    // 로그인 성공: 실패 횟수 초기화 및 단일 세션(동시 로그인 차단) 토큰 갱신
+    // 로그인 성공: 실패 횟수 초기화, 단일 세션 갱신 및 리프레시 토큰 발급
     user.failedLoginAttempts = 0;
     const sessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
     user.currentSessionToken = sessionId;
+
+    const rawRefreshToken = crypto.randomBytes(32).toString('hex');
+    user.refreshToken = await bcrypt.hash(rawRefreshToken, 10);
     await this.usersRepository.save(user);
 
     // 승인까지 끝난 사용자에게만 토큰 발급 (승인 대기·OTP 미통과는 위에서 이미 return 됨)
@@ -356,6 +384,7 @@ export class AuthService {
     return {
       success: true,
       accessToken,
+      refreshToken: `${user.id}.${rawRefreshToken}`,
       user: { 
         id: user.id, 
         email: user.email, 
@@ -368,9 +397,109 @@ export class AuthService {
     };
   }
 
+  async refreshToken(tokenStr: string) {
+    if (!tokenStr || typeof tokenStr !== 'string') {
+      throw new UnauthorizedException('리프레시 토큰이 필요합니다.');
+    }
+    const [userIdStr, rawToken] = tokenStr.split('.');
+    const userId = parseInt(userIdStr, 10);
+    if (!userId || !rawToken) {
+      throw new UnauthorizedException('유효하지 않은 리프레시 토큰 형식입니다.');
+    }
+
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user || !user.refreshToken) {
+      throw new UnauthorizedException('유효하지 않은 리프레시 토큰입니다.');
+    }
+
+    if (user.isLocked) {
+      throw new UnauthorizedException('계정이 잠겨있어 토큰을 갱신할 수 없습니다.');
+    }
+
+    const isMatch = await bcrypt.compare(rawToken, user.refreshToken);
+    if (!isMatch) {
+      throw new UnauthorizedException('리프레시 토큰이 일치하지 않습니다.');
+    }
+
+    let academyId: number | null = null;
+    let academyName: string | null = null;
+    if (user.role === UserRole.SUPER_ADMIN) {
+      academyName = '통합 플랫폼 관리자';
+    } else if (user.role === UserRole.ACADEMY_ADMIN) {
+      const academy = await this.academyRepository.findOne({ where: { owner: { id: user.id } } });
+      if (academy) {
+        academyId = academy.id;
+        academyName = academy.name;
+      }
+    } else if (user.role === UserRole.STUDENT || user.role === UserRole.PARENT) {
+      const student = await this.studentRepository.findOne({
+        where: user.role === UserRole.STUDENT ? { studentUser: { id: user.id } } : { parentUser: { id: user.id } },
+        relations: { academy: true }
+      });
+      if (student?.academy) {
+        academyId = student.academy.id;
+        academyName = student.academy.name;
+      }
+    } else if (user.role === UserRole.TEACHER) {
+      const teacherUser = await this.usersRepository.findOne({
+        where: { id: user.id },
+        relations: { academy: true }
+      });
+      if (teacherUser?.academy) {
+        academyId = teacherUser.academy.id;
+        academyName = teacherUser.academy.name;
+      }
+    } else if (user.role === UserRole.DRIVER) {
+      const vehicle = await this.vehicleRepository.findOne({
+        where: { driverUser: { id: user.id } },
+        relations: { academy: true }
+      });
+      if (vehicle?.academy) {
+        academyId = vehicle.academy.id;
+        academyName = vehicle.academy.name;
+      }
+    }
+
+    // Refresh: 새 리프레시 토큰 발급 (RTR - Refresh Token Rotation)
+    const newRawRefreshToken = crypto.randomBytes(32).toString('hex');
+    const newSessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+    user.refreshToken = await bcrypt.hash(newRawRefreshToken, 10);
+    user.currentSessionToken = newSessionId;
+    await this.usersRepository.save(user);
+
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      academyId,
+      sessionId: newSessionId,
+    });
+
+    return {
+      success: true,
+      accessToken,
+      refreshToken: `${user.id}.${newRawRefreshToken}`,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        assignedClass: user.assignedClass || null,
+        academyId,
+        academyName,
+      }
+    };
+  }
+
   async register(data: any) {
     const { email, password, name, authCode, role, targetName } = data;
     const searchName = targetName || name;
+
+    // 0. 비밀번호 복잡도 검증 (영문, 숫자 포함 최소 8자리 이상)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
+    if (!password || !passwordRegex.test(password)) {
+      throw new BadRequestException('비밀번호는 영문자와 숫자를 포함하여 최소 8자리 이상이어야 합니다.');
+    }
     
     // 1. Verify academy auth code (Required for staff & students, skip for admins)
     let targetAcademy: Academy | null = null;

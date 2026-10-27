@@ -13,15 +13,18 @@ class ApiService {
   ApiService._internal();
 
   String? _accessToken;
+  String? _refreshToken;
   UserModel? _currentUser;
 
   String? get token => _accessToken;
+  String? get refreshToken => _refreshToken;
   UserModel? get currentUser => _currentUser;
   bool get isLoggedIn => _accessToken != null && _accessToken!.isNotEmpty;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _accessToken = prefs.getString('takeme_token');
+    _refreshToken = prefs.getString('takeme_refresh_token');
     final userJson = prefs.getString('takeme_user');
     if (userJson != null) {
       try {
@@ -30,14 +33,23 @@ class ApiService {
     }
   }
 
-  Future<void> setAuth(String? token, UserModel? user) async {
+  Future<void> setAuth(String? token, UserModel? user, {String? refreshToken}) async {
     _accessToken = token;
     _currentUser = user;
+    if (refreshToken != null) {
+      _refreshToken = refreshToken;
+    }
     final prefs = await SharedPreferences.getInstance();
     if (token != null) {
       await prefs.setString('takeme_token', token);
     } else {
       await prefs.remove('takeme_token');
+    }
+    if (refreshToken != null) {
+      await prefs.setString('takeme_refresh_token', refreshToken);
+    } else if (token == null) {
+      _refreshToken = null;
+      await prefs.remove('takeme_refresh_token');
     }
     if (user != null) {
       await prefs.setString('takeme_user', jsonEncode(user.toJson()));
@@ -48,6 +60,36 @@ class ApiService {
 
   Future<void> logout() async {
     await setAuth(null, null);
+  }
+
+  Future<bool> tryRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rToken = prefs.getString('takeme_refresh_token') ?? _refreshToken;
+    if (rToken == null || rToken.isEmpty) return false;
+
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/auth/refresh');
+      final res = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': rToken}),
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        final newAccessToken = data['accessToken'] as String?;
+        final newRefreshToken = data['refreshToken'] as String?;
+        if (newAccessToken != null) {
+          _accessToken = newAccessToken;
+          await prefs.setString('takeme_token', newAccessToken);
+          if (newRefreshToken != null) {
+            _refreshToken = newRefreshToken;
+            await prefs.setString('takeme_refresh_token', newRefreshToken);
+          }
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
   }
 
   Map<String, String> _headers([Map<String, String>? extra]) {
@@ -82,7 +124,7 @@ class ApiService {
     if (res.statusCode == 200 || res.statusCode == 201) {
       if (data['accessToken'] != null && data['user'] != null) {
         final user = UserModel.fromJson(data['user'], token: data['accessToken']);
-        await setAuth(data['accessToken'], user);
+        await setAuth(data['accessToken'], user, refreshToken: data['refreshToken']);
       }
       return {'success': true, 'data': data};
     } else {

@@ -16,6 +16,7 @@ import { Notification } from '../entities/notification.entity';
 import { PickupPoint } from '../entities/pickup-point.entity';
 import { BoardPost } from '../entities/board-post.entity';
 import { BoardComment } from '../entities/board-comment.entity';
+import { AuditLog } from '../entities/audit-log.entity';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { BoardComment } from '../entities/board-comment.entity';
       Vehicle, Student, StudentSchedule, Academy, User,
       OperationLog, ParentMessage, ScheduleOverride,
       AcademyHoliday, Notification, PickupPoint,
-      BoardPost, BoardComment
+      BoardPost, BoardComment, AuditLog
     ]),
     HttpModule
   ],

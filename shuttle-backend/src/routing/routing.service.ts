@@ -16,6 +16,7 @@ import { Notification } from '../entities/notification.entity';
 import { PickupPoint } from '../entities/pickup-point.entity';
 import { BoardPost } from '../entities/board-post.entity';
 import { BoardComment } from '../entities/board-comment.entity';
+import { AuditLog } from '../entities/audit-log.entity';
 import { Between } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 
@@ -46,6 +47,8 @@ export class RoutingService {
     private boardPostRepository: Repository<BoardPost>,
     @InjectRepository(BoardComment)
     private boardCommentRepository: Repository<BoardComment>,
+    @InjectRepository(AuditLog)
+    private auditLogRepository: Repository<AuditLog>,
     private httpService: HttpService,
     private configService: ConfigService,
   ) {}
@@ -390,6 +393,14 @@ export class RoutingService {
     
     student.approvalStatus = 'APPROVED';
     await this.studentRepository.save(student);
+
+    await this.logAudit({
+      action: 'STUDENT_APPROVE',
+      targetType: 'STUDENT',
+      targetId: String(studentId),
+      details: `원생(${student.name}) 승인 완료`,
+    });
+
     return { success: true };
   }
 
@@ -410,6 +421,13 @@ export class RoutingService {
     if (sUser) await this.userRepository.remove(sUser);
     if (pUser) await this.userRepository.remove(pUser);
     
+    await this.logAudit({
+      action: 'STUDENT_REVOKE',
+      targetType: 'STUDENT',
+      targetId: String(studentId),
+      details: `원생(${student.name}) 등록 해제 및 연동 계정 삭제`,
+    });
+
     return { success: true };
   }
 
@@ -421,6 +439,14 @@ export class RoutingService {
     if (role === 'TEACHER') vehicle.teacherApprovalStatus = 'APPROVED';
     
     await this.vehicleRepository.save(vehicle);
+
+    await this.logAudit({
+      action: 'STAFF_APPROVE',
+      targetType: 'VEHICLE_STAFF',
+      targetId: String(vehicleId),
+      details: `차량(${vehicle.busNumber || vehicleId}) 교직원 승인 (역할: ${role})`,
+    });
+
     return { success: true };
   }
 
@@ -446,6 +472,13 @@ export class RoutingService {
       await this.userRepository.remove(userToDelete);
     }
     
+    await this.logAudit({
+      action: 'STAFF_REVOKE',
+      targetType: 'VEHICLE_STAFF',
+      targetId: String(vehicleId),
+      details: `차량(${vehicle.busNumber || vehicleId}) 교직원 해제 (역할: ${role})`,
+    });
+
     return { success: true };
   }
 
@@ -464,7 +497,16 @@ export class RoutingService {
       await this.vehicleRepository.save(vehicle);
     }
 
+    const teacherName = teacher.name || teacher.email;
     await this.userRepository.remove(teacher);
+
+    await this.logAudit({
+      action: 'TEACHER_REVOKE',
+      targetType: 'TEACHER',
+      targetId: String(teacherId),
+      details: `선생님(${teacherName}, ID: ${teacherId}) 등록 해제 및 계정 삭제`,
+    });
+
     return { success: true };
   }
 
@@ -1192,6 +1234,14 @@ export class RoutingService {
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
+
+    await this.logAudit({
+      action: 'EXCEL_EXPORT',
+      targetType: 'ACADEMY',
+      targetId: academy ? String(academy.id) : (academyId ? String(academyId) : 'ALL'),
+      details: `원생 명단 엑셀 다운로드 (유치원: ${academy ? academy.name : (academyId || '전체')})`,
+    });
+
     return buffer as any as Buffer;
   }
   async createAbsence(body: { studentId: number, startDate: string, endDate: string }) {
@@ -1609,11 +1659,46 @@ export class RoutingService {
     user.lockedAt = null as any;
     await this.userRepository.save(user);
 
+    await this.logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      action: 'ACCOUNT_UNLOCK',
+      targetType: 'USER',
+      targetId: String(user.id),
+      details: `원장이 ${user.name || user.email}(ID: ${user.id}) 계정 잠금 해제`,
+    });
+
     return { 
       success: true, 
       message: `${user.name || user.email} 님의 계정 잠금이 성공적으로 해제되었습니다.`,
       userId: user.id
     };
+  }
+
+  async logAudit(params: {
+    userId?: number;
+    userEmail?: string;
+    userName?: string;
+    action: string;
+    targetType?: string;
+    targetId?: string;
+    ipAddress?: string;
+    details?: string;
+  }) {
+    try {
+      const log = this.auditLogRepository.create(params);
+      await this.auditLogRepository.save(log);
+    } catch (err) {
+      console.error('Failed to save audit log:', err);
+    }
+  }
+
+  async getAuditLogs(take = 50) {
+    return this.auditLogRepository.find({
+      order: { createdAt: 'DESC' },
+      take,
+    });
   }
 
   async assignTeacherClass(teacherId: number, assignedClass: string) {

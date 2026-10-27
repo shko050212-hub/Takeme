@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Delete, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Delete, Query, BadRequestException, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -6,8 +7,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('email/send')
-  sendEmail(@Body('email') email: string, @Body('type') type?: 'register' | 'withdraw') {
-    return this.authService.sendEmailVerification(email, type);
+  sendEmail(@Req() req: Request, @Body('email') email: string, @Body('type') type?: 'register' | 'withdraw') {
+    const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip || '127.0.0.1';
+    return this.authService.sendEmailVerification(email, rawIp, type);
   }
 
   @Post('email/verify')
@@ -26,7 +28,7 @@ export class AuthController {
   }
 
   @Post('otp/verify')
-  async verifyOtpSetup(@Body() body: { userId: number, token: string }) {
+  async verifyOtpSetup(@Body() body: { userId: number; token: string }) {
     return this.authService.verifyOtpSetup(body.userId, body.token);
   }
 
@@ -39,5 +41,10 @@ export class AuthController {
   @Post('login')
   login(@Body() body: any) {
     return this.authService.login(body);
+  }
+
+  @Post('refresh')
+  refresh(@Body('refreshToken') refreshToken: string) {
+    return this.authService.refreshToken(refreshToken);
   }
 }

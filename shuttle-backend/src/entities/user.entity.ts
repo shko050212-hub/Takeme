@@ -56,6 +56,9 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   currentSessionToken: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  refreshToken: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -176,6 +176,9 @@ export default function Landing() {
         if (data.accessToken) {
           localStorage.setItem('takeme_token', data.accessToken);
         }
+        if (data.refreshToken) {
+          localStorage.setItem('takeme_refresh_token', data.refreshToken);
+        }
         localStorage.setItem('takeme_user', JSON.stringify({
           ...data.user,
           accessToken: data.accessToken || null
