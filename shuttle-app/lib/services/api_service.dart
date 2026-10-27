@@ -179,6 +179,20 @@ class ApiService {
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'data': data, 'message': data['message']};
   }
 
+  Future<Map<String, dynamic>> sendSelfUnlockCode(String email) async {
+    final url = Uri.parse('${AppConfig.apiHost}/auth/self-unlock/send');
+    final res = await http.post(url, headers: _headers(), body: jsonEncode({'email': email.trim()}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> verifySelfUnlockCode(String email, String code) async {
+    final url = Uri.parse('${AppConfig.apiHost}/auth/self-unlock/verify');
+    final res = await http.post(url, headers: _headers(), body: jsonEncode({'email': email.trim(), 'code': code.trim()}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
   Future<Map<String, dynamic>> verifyEmailCode(String email, String code) async {
     final url = Uri.parse('${AppConfig.apiHost}/auth/email/verify');
     final res = await http.post(url, headers: _headers(), body: jsonEncode({'email': email.trim(), 'code': code.trim()}));

@@ -40,7 +40,7 @@ async function bootstrap() {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error('CORS 정책에 의해 허용되지 않은 출처입니다.'));
+        callback(null, false);
       }
     },
     credentials: true,

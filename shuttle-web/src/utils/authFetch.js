@@ -19,7 +19,8 @@ export function setupFetchInterceptor() {
     const headers = new Headers(init.headers || {});
 
     const urlStr = typeof input === 'string' ? input : input?.url || '';
-    if (token && !headers.has('Authorization') && (urlStr.startsWith(API_BASE_URL) || urlStr.startsWith('/'))) {
+    const isAuthEndpoint = urlStr.includes('/auth/login') || urlStr.includes('/auth/register') || urlStr.includes('/auth/self-unlock');
+    if (token && !headers.has('Authorization') && !isAuthEndpoint && (urlStr.startsWith(API_BASE_URL) || urlStr.startsWith('/'))) {
       headers.set('Authorization', `Bearer ${token}`);
     }
 
@@ -65,6 +66,7 @@ export function setupFetchInterceptor() {
               localStorage.removeItem('takeme_token');
               localStorage.removeItem('takeme_refresh_token');
               localStorage.removeItem('takeme_user');
+              alert('인증이 만료되었거나 다른 기기에서 로그인되어 연결이 종료되었습니다. 다시 로그인해 주세요.');
               window.location.href = '/';
               return response;
             }
