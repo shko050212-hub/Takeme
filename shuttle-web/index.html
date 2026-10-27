@@ -6,6 +6,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <title>shuttle-web</title>
+    <!-- Security: Disable DevTools, F12, Right Click, Source Inspection -->
+    <script>
+      (function () {
+        'use strict';
+
+        // 1. Disable Right Click Context Menu
+        document.addEventListener('contextmenu', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }, true);
+
+        // 2. Disable Keyboard Shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U, Ctrl+S)
+        window.addEventListener('keydown', function (e) {
+          if (e.key === 'F12' || e.keyCode === 123) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+          if ((e.ctrlKey || e.metaKey) && e.shiftKey && (
+            e.key === 'I' || e.key === 'i' || e.keyCode === 73 ||
+            e.key === 'J' || e.key === 'j' || e.keyCode === 74 ||
+            e.key === 'C' || e.key === 'c' || e.keyCode === 67
+          )) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U' || e.keyCode === 85)) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+          if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.keyCode === 83)) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }, true);
+
+        // 3. Clear and Disable Console
+        try {
+          const noop = function () {};
+          const methods = ['log', 'debug', 'info', 'warn', 'error', 'table', 'dir', 'trace', 'group', 'groupCollapsed', 'groupEnd'];
+          methods.forEach(function (m) {
+            if (window.console && window.console[m]) {
+              window.console[m] = noop;
+            }
+          });
+          setInterval(function () {
+            if (window.console && window.console.clear) {
+              window.console.clear();
+            }
+          }, 1000);
+        } catch (_) {}
+
+        // 4. Anti-Debugging Protection (Halts execution if DevTools is opened via browser menu)
+        setInterval(function () {
+          (function (index) {
+            (function () {}).constructor('debugger')();
+          })(0);
+        }, 500);
+      })();
+    </script>
   </head>
   <body class="antialiased text-slate-800 bg-slate-50">
     <div id="root"></div>

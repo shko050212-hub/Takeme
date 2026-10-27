@@ -18,19 +18,84 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="TakeMe Shuttle Web App">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="shuttle_app">
+  <meta name="apple-mobile-web-app-title" content="TakeMe">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>shuttle_app</title>
+  <title>TakeMe</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Security: Disable DevTools, F12, Right Click, Source Inspection -->
+  <script>
+    (function () {
+      'use strict';
+
+      // 1. Disable Right Click Context Menu
+      document.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }, true);
+
+      // 2. Disable Keyboard Shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U, Ctrl+S)
+      window.addEventListener('keydown', function (e) {
+        if (e.key === 'F12' || e.keyCode === 123) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (
+          e.key === 'I' || e.key === 'i' || e.keyCode === 73 ||
+          e.key === 'J' || e.key === 'j' || e.keyCode === 74 ||
+          e.key === 'C' || e.key === 'c' || e.keyCode === 67
+        )) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U' || e.keyCode === 85)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.keyCode === 83)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }, true);
+
+      // 3. Clear and Disable Console
+      try {
+        const noop = function () {};
+        const methods = ['log', 'debug', 'info', 'warn', 'error', 'table', 'dir', 'trace', 'group', 'groupCollapsed', 'groupEnd'];
+        methods.forEach(function (m) {
+          if (window.console && window.console[m]) {
+            window.console[m] = noop;
+          }
+        });
+        setInterval(function () {
+          if (window.console && window.console.clear) {
+            window.console.clear();
+          }
+        }, 1000);
+      } catch (_) {}
+
+      // 4. Anti-Debugging Protection (Halts execution if DevTools is opened via browser menu)
+      setInterval(function () {
+        (function (index) {
+          (function () {}).constructor('debugger')();
+        })(0);
+      }, 500);
+    })();
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
