@@ -1,56 +1,55 @@
-# Welcome to your Expo app 👋
+# TakeMe Shuttle Mobile App (Flutter & Dart)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+TakeMe 원생 통학 차량 및 학부모 안심 승하차 관리 모바일 애플리케이션입니다. Flutter 및 Dart 기반으로 구현되었습니다.
 
-## Get started
+## 주요 기능
 
-1. Install dependencies
+1. **인증 및 계정 관리**
+   - 학부모, 원생, 기사, 유치원 교사 통합 로그인 및 회원가입
+   - 2단계 인증 (2FA OTP) 지원 (인증 앱 QR 등록 및 6자리 OTP 입력)
+   - 원아 알레르기 유발 정보 등록 및 변경
+   - 학원 코드 기반 교사/기사 가입 승인 대기 처리
+   - 회원 탈퇴 및 자동 로그아웃 지원
 
-   ```bash
-   npm install
-   ```
+2. **학부모 / 원생 모드**
+   - 등원 / 하원 운행 코스 및 실시간 버스 위치 확인 (웹뷰 지도 연동)
+   - 탑승 예정 시각 및 정류장 정보 확인
+   - 원아 알레르기 관리 (계란, 우유, 땅콩, 대두, 밀, 생선 등 빠른 선택 칩 및 직접 입력)
+   - 결석 알림, 탑승지 변경, 교사 전달사항 전송 모달
+   - 원생 QR 탑승증 및 카메라 기반 QR 탑승 체크 스캐너
+   - 긴급 알림 및 공지사항 수신함
 
-2. Start the app
+3. **기사 / 교사 운행 대시보드**
+   - 실시간 운행 시작 / 종료 제어
+   - 실시간 GPS 위치 수집 및 Socket.IO 기반 위치 브로드캐스팅
+   - 회차별(등원/하원) 탑승 원생 체크리스트
+   - 원아 알레르기 주의 배지 및 특이사항 메모 확인
+   - 수동 승하차 체크, 결석 처리 및 음성(TTS) 탑승 안내
+   - 교사용 승차 체크인 QR 코드 표출
+   - 학부모/원생 대상 전체 또는 선택 긴급 공지 발송
 
-   ```bash
-   npx expo start
-   ```
+## 기술 스택
 
-In the output, you'll find options to open the app in a
+- **프레임워크**: Flutter 3.38+ (Dart 3.10+)
+- **통신**: HTTP Client (`http`), 실시간 양방향 소켓 (`socket_io_client`)
+- **위치 서비스**: `geolocator`
+- **지도 연동**: `webview_flutter` (Leaflet / Kakao 지도 연동)
+- **QR 코드**: `mobile_scanner`, `qr_flutter`
+- **음성 안내**: `flutter_tts`
+- **로컬 스토리지**: `shared_preferences`
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 실행 방법
 
 ```bash
-npm run reset-project
+# 종속성 패키지 설치
+flutter pub get
+
+# 코드 분석
+flutter analyze
+
+# 테스트 실행
+flutter test
+
+# 디버그 실행
+flutter run
 ```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
