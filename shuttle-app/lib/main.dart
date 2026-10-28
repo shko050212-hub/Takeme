@@ -1,3 +1,4 @@
+import 'screens/teacher/homeroom_teacher_home_screen.dart';
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
@@ -93,12 +94,26 @@ class InitialRouterScreen extends StatelessWidget {
       return const LoginScreen();
     }
 
-    final role = api.currentUser!.role;
-    // 기사는 내비게이션 운행 화면, 지도교사는 기존 대시보드(탑승 명단·QR)
+    final user = api.currentUser!;
+    final role = user.role;
+    // 기사는 내비게이션 운행 화면
     if (role == 'DRIVER') {
       return const DriverHomeScreen();
     }
+    // 담임교사: 유치원 교실, 클라우드 게시판 및 학급 메시지 소통
+    if (role == 'HOMEROOM_TEACHER') {
+      return const HomeroomTeacherHomeScreen();
+    }
+    // 지도교사: 통학차량 동승, 탑승 관리 및 탑승 QR
+    if (role == 'SHUTTLE_TEACHER') {
+      return const StaffDashboardScreen();
+    }
+    // 레거시 TEACHER 호환 (학급 배정 여부에 따라 분기)
     if (role == 'TEACHER') {
+      final cls = user.assignedClass;
+      if (cls != null && cls.isNotEmpty && cls != 'SHUTTLE') {
+        return const HomeroomTeacherHomeScreen();
+      }
       return const StaffDashboardScreen();
     }
 

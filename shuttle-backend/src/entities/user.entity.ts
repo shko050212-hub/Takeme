@@ -9,6 +9,8 @@ export enum UserRole {
   PARENT = 'PARENT',
   DRIVER = 'DRIVER',
   TEACHER = 'TEACHER',
+  HOMEROOM_TEACHER = 'HOMEROOM_TEACHER',
+  SHUTTLE_TEACHER = 'SHUTTLE_TEACHER',
 }
 
 @Entity('users')

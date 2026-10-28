@@ -366,7 +366,7 @@ export class AuthService {
         academyId = student.academy.id;
         academyName = student.academy.name;
       }
-    } else if (user.role === UserRole.TEACHER) {
+    } else if ((user.role === UserRole.TEACHER || user.role === UserRole.HOMEROOM_TEACHER || user.role === UserRole.SHUTTLE_TEACHER)) {
       const teacherUser = await this.usersRepository.findOne({
         where: { id: user.id },
         relations: { academy: true }
@@ -606,18 +606,21 @@ export class AuthService {
         student.approvalStatus = 'PENDING';
         await this.studentRepository.save(student);
         
-      } else if (userRole === UserRole.TEACHER) {
+      } else if (userRole === UserRole.HOMEROOM_TEACHER || userRole === UserRole.SHUTTLE_TEACHER || userRole === UserRole.TEACHER) {
         if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
         savedUser.academy = targetAcademy;
         savedUser.academyId = targetAcademy.id;
         savedUser.assignedClass = data.assignedClass || '';
         await this.usersRepository.save(savedUser);
 
+        const isHomeroom = userRole === UserRole.HOMEROOM_TEACHER || (userRole === UserRole.TEACHER && savedUser.assignedClass);
         return {
           success: true,
-          message: `${targetAcademy.name} 교사로 등록되었습니다. 원장선생님의 반 배정 후 이용 가능합니다.`,
+          message: isHomeroom
+            ? `${targetAcademy.name} 담임교사(${savedUser.assignedClass || '학급'})로 등록되었습니다.`
+            : `${targetAcademy.name} 셔틀버스 지도교사로 등록되었습니다.`,
           userId: savedUser.id,
-          role: UserRole.TEACHER,
+          role: userRole,
           assignedClass: savedUser.assignedClass || '',
           academyName: targetAcademy.name,
         };

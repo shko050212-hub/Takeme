@@ -1,3 +1,4 @@
+import 'teacher/homeroom_teacher_home_screen.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
@@ -48,11 +49,29 @@ class _LoginScreenState extends State<LoginScreen> {
         context,
         MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
       );
-    } else if (user.role == 'TEACHER') {
+    } else if (user.role == 'HOMEROOM_TEACHER') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeroomTeacherHomeScreen()),
+      );
+    } else if (user.role == 'SHUTTLE_TEACHER') {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
       );
+    } else if (user.role == 'TEACHER') {
+      final cls = user.assignedClass;
+      if (cls != null && cls.isNotEmpty && cls != 'SHUTTLE') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeroomTeacherHomeScreen()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
+        );
+      }
     } else {
       Navigator.pushReplacement(
         context,
