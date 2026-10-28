@@ -24,7 +24,65 @@ export default function Landing() {
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [isEmailSending, setIsEmailSending] = useState(false);
 
+  // Self Unlock State
+  const [showSelfUnlock, setShowSelfUnlock] = useState(false);
+  const [unlockSent, setUnlockSent] = useState(false);
+  const [unlockLoading, setUnlockLoading] = useState(false);
+  const [unlockCode, setUnlockCode] = useState('');
+
   const navigate = useNavigate();
+
+  const handleSendUnlockCode = async () => {
+    if (!email || !email.includes('@')) {
+      return alert('잠금 해제 인증번호를 발송할 올바른 이메일 주소를 입력해주세요.');
+    }
+    setUnlockLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/self-unlock/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('이메일로 6자리 잠금 해제 인증번호가 발송되었습니다. 메일함을 확인해주세요.');
+        setUnlockSent(true);
+      } else {
+        alert(data.message || '인증번호 발송에 실패했습니다.');
+      }
+    } catch (e) {
+      alert('서버 연결에 실패했습니다.');
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
+
+  const handleVerifyUnlockCode = async () => {
+    if (!unlockCode || unlockCode.trim().length !== 6) {
+      return alert('6자리 인증번호를 정확히 입력해주세요.');
+    }
+    setUnlockLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/self-unlock/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: unlockCode.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('계정 잠금이 성공적으로 해제되었습니다! 이제 로그인하실 수 있습니다.');
+        setShowSelfUnlock(false);
+        setUnlockSent(false);
+        setUnlockCode('');
+      } else {
+        alert(data.message || '인증번호가 일치하지 않거나 만료되었습니다.');
+      }
+    } catch (e) {
+      alert('서버 연결에 실패했습니다.');
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
 
   const handleSendEmail = async () => {
     if (!email.includes('@')) return alert('유효한 이메일을 입력해주세요.');
@@ -137,6 +195,9 @@ export default function Landing() {
       setMode('otp-setup');
     } else {
       alert(data.message);
+      if (data.message && data.message.includes('잠겼습니다')) {
+        setShowSelfUnlock(true);
+      }
     }
   };
 

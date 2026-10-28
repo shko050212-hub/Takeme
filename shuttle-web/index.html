@@ -46,28 +46,7 @@
           }
         }, true);
 
-        // 3. Clear and Disable Console
-        try {
-          const noop = function () {};
-          const methods = ['log', 'debug', 'info', 'warn', 'error', 'table', 'dir', 'trace', 'group', 'groupCollapsed', 'groupEnd'];
-          methods.forEach(function (m) {
-            if (window.console && window.console[m]) {
-              window.console[m] = noop;
-            }
-          });
-          setInterval(function () {
-            if (window.console && window.console.clear) {
-              window.console.clear();
-            }
-          }, 1000);
-        } catch (_) {}
 
-        // 4. Anti-Debugging Protection (Halts execution if DevTools is opened via browser menu)
-        setInterval(function () {
-          (function (index) {
-            (function () {}).constructor('debugger')();
-          })(0);
-        }, 500);
       })();
     </script>
   </head>
