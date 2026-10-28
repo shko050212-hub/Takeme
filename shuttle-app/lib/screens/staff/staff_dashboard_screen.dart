@@ -1,3 +1,5 @@
+import 'teacher_board_view.dart';
+import 'teacher_message_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -17,6 +19,7 @@ class StaffDashboardScreen extends StatefulWidget {
 }
 
 class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
+  int _selectedTabIndex = 0;
   List<StudentModel> _students = [];
   RouteDataModel? _routeData;
   Map<String, dynamic>? _vehicleInfo;
@@ -457,17 +460,26 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     final runList = _students.where((s) => s.runNumber == _currentRunNumber).toList();
     final availableRuns = _students.map((s) => s.runNumber).toSet().toList()..sort();
 
+    String titleText = '지도교사 대시보드';
+    if (isDriver) {
+      titleText = '기사님 운행 대시보드';
+    } else if (_selectedTabIndex == 1) {
+      titleText = '클라우드 게시판';
+    } else if (_selectedTabIndex == 2) {
+      titleText = '메시지함';
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
-          isDriver ? '기사님 운행 대시보드' : '지도교사 대시보드',
+          titleText,
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (!isDriver)
+          if (!isDriver && _selectedTabIndex == 0)
             IconButton(
               icon: const Icon(Icons.qr_code, color: Color(0xFF2563EB)),
               onPressed: _showTeacherQRModal,
@@ -494,7 +506,46 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
-          : Column(
+          : IndexedStack(
+              index: _selectedTabIndex,
+              children: [
+                _buildBoardingView(runList, availableRuns, isDriver),
+                const TeacherBoardView(),
+                TeacherMessageView(students: _students),
+              ],
+            ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedTabIndex,
+        onTap: (idx) => setState(() => _selectedTabIndex = idx),
+        selectedItemColor: const Color(0xFF2563EB),
+        unselectedItemColor: const Color(0xFF64748B),
+        backgroundColor: Colors.white,
+        type: BottomNavigationBarType.fixed,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_bus_outlined),
+            activeIcon: Icon(Icons.directions_bus),
+            label: '탑승 관리',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.photo_library_outlined),
+            activeIcon: Icon(Icons.photo_library),
+            label: '클라우드 게시판',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.mail_outline),
+            activeIcon: Icon(Icons.mail),
+            label: '메시지함',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBoardingView(List<StudentModel> runList, List<int> availableRuns, bool isDriver) {
+    return Column(
               children: [
                 // Top Driving Controller (Driver only)
                 if (isDriver)
@@ -738,7 +789,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                         ),
                 ),
               ],
-            ),
-    );
+            );
   }
 }

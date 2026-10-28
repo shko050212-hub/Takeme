@@ -1607,8 +1607,8 @@ export class RoutingService {
     const filePath = path.join(uploadsDir, randomName);
     fs.writeFileSync(filePath, buffer);
 
-    const host = reqHost || '52.63.245.203';
-    const protocol = host.includes('localhost') ? 'http' : 'http';
+    const host = reqHost || '52.63.245.203.sslip.io';
+    const protocol = host.includes('localhost') ? 'http' : 'https';
     const url = `${protocol}://${host}/uploads/board/${randomName}`;
 
     return {

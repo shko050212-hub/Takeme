@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -372,7 +373,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> manualBoardStudent(String email, int studentId, String reason) async {
-    final url = Uri.parse('${AppConfig.apiHost}/teacher/board-student');
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/board');
     final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'studentId': studentId,
@@ -405,14 +406,188 @@ class ApiService {
     required List<String> targetRoles,
     required String message,
   }) async {
-    final url = Uri.parse('${AppConfig.apiHost}/teacher/message');
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/send-message');
     final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'studentIds': studentIds,
+        'parentIds': studentIds,
         'targetRoles': targetRoles,
         'message': message,
       }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  // ==================== BOARD APIs ====================
+  Future<List<Map<String, dynamic>>> getBoardPosts({int? academyId, String? search}) async {
+    try {
+      final qp = <String, String>{};
+      if (academyId != null) qp['academyId'] = academyId.toString();
+      if (search != null && search.isNotEmpty) qp['search'] = search;
+      final uri = Uri.parse('${AppConfig.apiHost}/routing/board/posts').replace(queryParameters: qp.isEmpty ? null : qp);
+      final res = await getWithAuth(uri);
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<Map<String, dynamic>> uploadBoardImage({
+    required Uint8List bytes,
+    required String filename,
+    required String mimeType,
+  }) async {
+    try {
+      final base64Data = 'data:$mimeType;base64,${base64Encode(bytes)}';
+      final url = Uri.parse('${AppConfig.apiHost}/routing/board/upload');
+      final res = await postWithAuth(url, jsonEncode({
+        'base64Data': base64Data,
+        'filename': filename,
+        'mimeType': mimeType,
+      }));
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return {
+        'success': res.statusCode == 200 || res.statusCode == 201,
+        'url': data['url'],
+        'filename': data['filename'],
+        'message': data['message'],
+      };
+    } catch (e) {
+      return {'success': false, 'message': '이미지 업로드에 실패했습니다.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> createBoardPost({
+    required String title,
+    required String content,
+    String visibility = 'ALL',
+    String? targetClass,
+    String? imageUrl,
+    List<String>? images,
+    required String authorName,
+    String authorRole = 'TEACHER',
+    int? academyId,
+  }) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/routing/board/posts');
+      final res = await postWithAuth(url, jsonEncode({
+        'title': title,
+        'content': content,
+        'visibility': visibility,
+        'targetClass': targetClass,
+        'imageUrl': imageUrl,
+        'images': images ?? (imageUrl != null ? [imageUrl] : []),
+        'authorName': authorName,
+        'authorRole': authorRole,
+        'academyId': academyId,
+      }));
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return {
+        'success': res.statusCode == 200 || res.statusCode == 201,
+        'data': data,
+        'message': data['message'],
+      };
+    } catch (e) {
+      return {'success': false, 'message': '게시글 등록에 실패했습니다.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> togglePostLike(int postId, String userId) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/routing/board/posts/$postId/like');
+      final res = await postWithAuth(url, jsonEncode({'userId': userId}));
+      return {'success': res.statusCode == 200 || res.statusCode == 201};
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  Future<Map<String, dynamic>> addPostComment(
+    int postId, {
+    required String content,
+    required String authorName,
+    String authorRole = 'TEACHER',
+  }) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/routing/board/posts/$postId/comments');
+      final res = await postWithAuth(url, jsonEncode({
+        'content': content,
+        'authorName': authorName,
+        'authorRole': authorRole,
+      }));
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return {
+        'success': res.statusCode == 200 || res.statusCode == 201,
+        'data': data,
+      };
+    } catch (e) {
+      return {'success': false, 'message': '댓글 작성에 실패했습니다.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteBoardPost(int postId) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/routing/board/posts/$postId');
+      final res = await deleteWithAuth(url);
+      return {'success': res.statusCode == 200 || res.statusCode == 204};
+    } catch (_) {
+      return {'success': false};
+    }
+  }
+
+  // ==================== TEACHER MESSAGES APIs ====================
+  Future<List<Map<String, dynamic>>> getTeacherInbox(String email) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/teacher/inbox?email=${Uri.encodeComponent(email)}');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> getStaffList() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/teacher/staff');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>> sendTeacherMessage({
+    required String email,
+    required String message,
+    List<int>? studentIds,
+    List<int>? parentIds,
+    List<int>? staffUserIds,
+  }) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/teacher/send-message');
+      final res = await postWithAuth(url, jsonEncode({
+        'email': email,
+        'message': message,
+        'studentIds': studentIds ?? [],
+        'parentIds': parentIds ?? [],
+        'staffUserIds': staffUserIds ?? [],
+      }));
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return {
+        'success': res.statusCode == 200 || res.statusCode == 201,
+        'message': data['message'] ?? (res.statusCode == 200 || res.statusCode == 201 ? '메시지가 성공적으로 전송되었습니다.' : '전송 실패'),
+      };
+    } catch (e) {
+      return {'success': false, 'message': '메시지 전송에 실패했습니다.'};
+    }
   }
 }
