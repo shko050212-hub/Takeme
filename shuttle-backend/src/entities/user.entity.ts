@@ -28,6 +28,9 @@ export class User {
   @Column({ nullable: true })
   name: string;
 
+  @Column({ nullable: true, transformer: encryptionTransformer })
+  phone: string | null;
+
   @Column({ nullable: true })
   assignedClass: string; // 유치원 담당 반 (예: 햇살반)
 

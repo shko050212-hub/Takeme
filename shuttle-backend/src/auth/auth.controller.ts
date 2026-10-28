@@ -58,4 +58,16 @@ export class AuthController {
   verifySelfUnlock(@Body() body: { email: string; code: string }) {
     return this.authService.verifySelfUnlockCode(body.email, body.code);
   }
+
+  @Post('self-unlock/sms/send')
+  sendSelfUnlockSms(@Req() req: Request, @Body() body: { email: string; phone?: string }) {
+    const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.ip || '127.0.0.1';
+    return this.authService.sendSelfUnlockSmsCode(body.email, body.phone, rawIp);
+  }
+
+  @Post('self-unlock/sms/verify')
+  verifySelfUnlockSms(@Body() body: { email: string; code: string }) {
+    return this.authService.verifySelfUnlockSmsCode(body.email, body.code);
+  }
+
 }

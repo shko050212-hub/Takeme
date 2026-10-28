@@ -26,12 +26,75 @@ export default function Landing() {
 
   // Self Unlock State
   const [showSelfUnlock, setShowSelfUnlock] = useState(false);
+  const [unlockMethod, setUnlockMethod] = useState('sms'); // 'sms' | 'email'
+  const [unlockPhone, setUnlockPhone] = useState('');
+  const [unlockSmsSent, setUnlockSmsSent] = useState(false);
+  const [unlockSmsCode, setUnlockSmsCode] = useState('');
+  const [maskedPhone, setMaskedPhone] = useState('');
   const [unlockSent, setUnlockSent] = useState(false);
   const [unlockLoading, setUnlockLoading] = useState(false);
   const [unlockCode, setUnlockCode] = useState('');
 
+  // Director Phone for Registration
+  const [directorPhone, setDirectorPhone] = useState('');
+
   const navigate = useNavigate();
 
+
+  const handleSendUnlockSms = async () => {
+    if (!email || !email.includes('@')) {
+      return alert('잠금 해제할 원장님 이메일 계정을 입력해주세요.');
+    }
+    setUnlockLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/self-unlock/sms/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), phone: unlockPhone.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUnlockSmsSent(true);
+        if (data.maskedPhone) setMaskedPhone(data.maskedPhone);
+        alert(data.message || 'SMS 인증번호가 발송되었습니다.');
+      } else {
+        alert(data.message || 'SMS 발송에 실패했습니다.');
+      }
+    } catch (e) {
+      alert('서버 연결에 실패했습니다.');
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
+
+  const handleVerifyUnlockSms = async () => {
+    if (!unlockSmsCode || unlockSmsCode.trim().length !== 6) {
+      return alert('SMS로 전송받은 6자리 인증번호를 입력해주세요.');
+    }
+    setUnlockLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/self-unlock/sms/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code: unlockSmsCode.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('원장님 계정 잠금이 성공적으로 해제되었습니다! 이제 로그인해 주세요.');
+        setShowSelfUnlock(false);
+        setUnlockSmsSent(false);
+        setUnlockSmsCode('');
+        setUnlockSent(false);
+        setUnlockCode('');
+      } else {
+        alert(data.message || '인증번호가 일치하지 않거나 만료되었습니다.');
+      }
+    } catch (e) {
+      alert('서버 연결에 실패했습니다.');
+    } finally {
+      setUnlockLoading(false);
+    }
+  };
   const handleSendUnlockCode = async () => {
     if (!email || !email.includes('@')) {
       return alert('잠금 해제 인증번호를 발송할 올바른 이메일 주소를 입력해주세요.');
@@ -186,7 +249,7 @@ export default function Landing() {
     const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name, role })
+      body: JSON.stringify({ email, password, name, role, phone: directorPhone.trim() || undefined })
     });
     const data = await res.json();
     if (res.ok) {
@@ -272,48 +335,148 @@ export default function Landing() {
             </div>
             <button type="submit" className="btn-primary w-full py-3 text-base font-bold shadow-md shadow-blue-500/20">로그인</button>
             {showSelfUnlock && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left space-y-2">
-                <p className="text-xs font-semibold text-amber-900">원장님 계정 잠금 안내 (이메일 본인 인증)</p>
-                <p className="text-xs text-amber-700 leading-relaxed">
-                  원장님 계정 연속 5회 실패로 보안 잠금 상태입니다. 가입 시 등록된 원장님 이메일로 6자리 인증번호를 받아 인증하시면 즉시 잠금이 해제됩니다.
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-left space-y-3 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-amber-950">원장님 계정 잠금 해제 안내</p>
+                  <span className="text-[10px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full">5회 실패 보안잠금</span>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  원장님 본인 확인을 위해 휴대폰 SMS 또는 이메일로 인증번호를 받아 즉시 잠금을 해제할 수 있습니다.
                 </p>
-                {!unlockSent ? (
+
+                {/* Unlock Method Tabs */}
+                <div className="flex bg-amber-100/80 p-0.5 rounded-lg border border-amber-200">
                   <button
                     type="button"
-                    onClick={handleSendUnlockCode}
-                    disabled={unlockLoading}
-                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition shadow-sm"
+                    onClick={() => setUnlockMethod('sms')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${
+                      unlockMethod === 'sms'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-amber-800 hover:text-amber-950'
+                    }`}
                   >
-                    {unlockLoading ? '인증번호 발송 중...' : '원장님 이메일로 인증번호 발송'}
+                    휴대폰 SMS 인증 (추천)
                   </button>
-                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setUnlockMethod('email')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${
+                      unlockMethod === 'email'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-amber-800 hover:text-amber-950'
+                    }`}
+                  >
+                    이메일 인증
+                  </button>
+                </div>
+
+                {/* SMS Method Content */}
+                {unlockMethod === 'sms' && (
                   <div className="space-y-2 pt-1">
-                    <input
-                      type="text"
-                      placeholder="인증번호 6자리"
-                      value={unlockCode}
-                      onChange={(e) => setUnlockCode(e.target.value)}
-                      maxLength={6}
-                      className="form-input text-center tracking-widest font-mono text-sm"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={handleVerifyUnlockCode}
-                        disabled={unlockLoading}
-                        className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition"
-                      >
-                        {unlockLoading ? '확인 중...' : '잠금 해제 확인'}
-                      </button>
+                    {!unlockSmsSent ? (
+                      <>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            원장님 휴대폰 번호 (등록된 번호 자동 연동)
+                          </label>
+                          <input
+                            type="tel"
+                            placeholder="010-1234-5678 (비워둘 시 등록된 번호로 발송)"
+                            value={unlockPhone}
+                            onChange={(e) => setUnlockPhone(e.target.value)}
+                            className="form-input text-xs"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSendUnlockSms}
+                          disabled={unlockLoading}
+                          className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition shadow-sm"
+                        >
+                          {unlockLoading ? 'SMS 발송 중...' : '휴대폰 SMS로 인증번호 받기'}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800">
+                          {maskedPhone ? `${maskedPhone} 번호로 SMS 인증번호가 전송되었습니다.` : 'SMS 인증번호가 발송되었습니다.'}
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="인증번호 6자리 입력"
+                          value={unlockSmsCode}
+                          onChange={(e) => setUnlockSmsCode(e.target.value)}
+                          maxLength={6}
+                          className="form-input text-center tracking-widest font-mono text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleVerifyUnlockSms}
+                            disabled={unlockLoading}
+                            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition"
+                          >
+                            {unlockLoading ? '확인 중...' : 'SMS로 잠금 해제'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSendUnlockSms}
+                            disabled={unlockLoading}
+                            className="px-3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs rounded-xl transition"
+                          >
+                            재발송
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Email Method Content */}
+                {unlockMethod === 'email' && (
+                  <div className="space-y-2 pt-1">
+                    {!unlockSent ? (
                       <button
                         type="button"
                         onClick={handleSendUnlockCode}
                         disabled={unlockLoading}
-                        className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs rounded-lg transition"
+                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition shadow-sm"
                       >
-                        재발송
+                        {unlockLoading ? '인증번호 발송 중...' : '원장님 이메일로 인증번호 받기'}
                       </button>
-                    </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="p-2 bg-amber-100/60 border border-amber-200 rounded-lg text-[11px] text-amber-900">
+                          가입된 이메일 메일함으로 6자리 인증 코드가 발송되었습니다.
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="인증번호 6자리"
+                          value={unlockCode}
+                          onChange={(e) => setUnlockCode(e.target.value)}
+                          maxLength={6}
+                          className="form-input text-center tracking-widest font-mono text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleVerifyUnlockCode}
+                            disabled={unlockLoading}
+                            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition"
+                          >
+                            {unlockLoading ? '확인 중...' : '이메일로 잠금 해제'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSendUnlockCode}
+                            disabled={unlockLoading}
+                            className="px-3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs rounded-xl transition"
+                          >
+                            재발송
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -493,6 +656,21 @@ export default function Landing() {
               />
             </div>
             
+            {role === 'ACADEMY_ADMIN' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  원장님 휴대폰 번호 <span className="text-blue-600 font-normal">(계정 비상 잠금 해제용)</span>
+                </label>
+                <input 
+                  type="tel" 
+                  placeholder="010-1234-5678" 
+                  value={directorPhone} 
+                  onChange={e=>setDirectorPhone(e.target.value)} 
+                  className="form-input" 
+                />
+              </div>
+            )}
+
             {/* Password */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">비밀번호</label>
