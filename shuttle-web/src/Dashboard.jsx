@@ -797,6 +797,36 @@ export default function Dashboard() {
     }
   };
 
+  const handleUnlockUser = async (userId) => {
+    if (!userId) {
+      alert('연동된 사용자 계정 정보를 찾을 수 없습니다.');
+      return;
+    }
+    if (!window.confirm('이 사용자의 계정 잠금을 해제하시겠습니까?')) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing/unlock-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(data.message || '계정 잠금이 성공적으로 해제되었습니다.');
+        if (typeof refreshAllData === 'function') {
+          await refreshAllData();
+        }
+        if (typeof fetchTeachers === 'function') {
+          await fetchTeachers();
+        }
+      } else {
+        alert(data.message || '잠금 해제 처리 중 오류가 발생했습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('처리 중 오류가 발생했습니다.');
+    }
+  };
+
   const fetchTeachers = async () => {
     const targetAcademyId = selectedAcademyId || currentUser.academyId;
     if (!targetAcademyId) return;
@@ -3687,6 +3717,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             fetchTeachers={fetchTeachers}
             refreshAllData={refreshAllData}
             handleGenerateAuthCode={handleGenerateAuthCode}
+            handleUnlockUser={handleUnlockUser}
             isProcessing={isProcessing}
           />
         )}

@@ -362,4 +362,15 @@ export class RoutingController {
   async getTeacherProfile(@Param('id') teacherId: string) {
     return this.routingService.getTeacherProfile(Number(teacherId));
   }
+
+  @Post('unlock-user')
+  async unlockUser(@Body() body: { userId?: number; email?: string }) {
+    return this.routingService.unlockUser(body.userId ? Number(body.userId) : undefined, body.email);
+  }
+
+  @Get('audit-logs')
+  async getAuditLogs(@Query('limit') limit?: string) {
+    const take = Math.min(parseInt(limit || '50', 10), 100);
+    return this.routingService.getAuditLogs(take);
+  }
 }

@@ -13,15 +13,18 @@ class ApiService {
   ApiService._internal();
 
   String? _accessToken;
+  String? _refreshToken;
   UserModel? _currentUser;
 
   String? get token => _accessToken;
+  String? get refreshToken => _refreshToken;
   UserModel? get currentUser => _currentUser;
   bool get isLoggedIn => _accessToken != null && _accessToken!.isNotEmpty;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _accessToken = prefs.getString('takeme_token');
+    _refreshToken = prefs.getString('takeme_refresh_token');
     final userJson = prefs.getString('takeme_user');
     if (userJson != null) {
       try {
@@ -30,14 +33,23 @@ class ApiService {
     }
   }
 
-  Future<void> setAuth(String? token, UserModel? user) async {
+  Future<void> setAuth(String? token, UserModel? user, {String? refreshToken}) async {
     _accessToken = token;
     _currentUser = user;
+    if (refreshToken != null) {
+      _refreshToken = refreshToken;
+    }
     final prefs = await SharedPreferences.getInstance();
     if (token != null) {
       await prefs.setString('takeme_token', token);
     } else {
       await prefs.remove('takeme_token');
+    }
+    if (refreshToken != null) {
+      await prefs.setString('takeme_refresh_token', refreshToken);
+    } else if (token == null) {
+      _refreshToken = null;
+      await prefs.remove('takeme_refresh_token');
     }
     if (user != null) {
       await prefs.setString('takeme_user', jsonEncode(user.toJson()));
@@ -48,6 +60,36 @@ class ApiService {
 
   Future<void> logout() async {
     await setAuth(null, null);
+  }
+
+  Future<bool> tryRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rToken = prefs.getString('takeme_refresh_token') ?? _refreshToken;
+    if (rToken == null || rToken.isEmpty) return false;
+
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/auth/refresh');
+      final res = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': rToken}),
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        final newAccessToken = data['accessToken'] as String?;
+        final newRefreshToken = data['refreshToken'] as String?;
+        if (newAccessToken != null) {
+          _accessToken = newAccessToken;
+          await prefs.setString('takeme_token', newAccessToken);
+          if (newRefreshToken != null) {
+            _refreshToken = newRefreshToken;
+            await prefs.setString('takeme_refresh_token', newRefreshToken);
+          }
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
   }
 
   Map<String, String> _headers([Map<String, String>? extra]) {
@@ -61,6 +103,46 @@ class ApiService {
       headers.addAll(extra);
     }
     return headers;
+  }
+
+  Future<http.Response> getWithAuth(Uri url, [Map<String, String>? extra]) async {
+    var res = await http.get(url, headers: _headers(extra));
+    if (res.statusCode == 401 && _refreshToken != null) {
+      final refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await http.get(url, headers: _headers(extra));
+      } else {
+        await logout();
+      }
+    }
+    return res;
+  }
+
+  Future<http.Response> postWithAuth(Uri url, dynamic body, [Map<String, String>? extra]) async {
+    final encoded = body is String ? body : jsonEncode(body);
+    var res = await http.post(url, headers: _headers(extra), body: encoded);
+    if (res.statusCode == 401 && _refreshToken != null) {
+      final refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await http.post(url, headers: _headers(extra), body: encoded);
+      } else {
+        await logout();
+      }
+    }
+    return res;
+  }
+
+  Future<http.Response> deleteWithAuth(Uri url, [Map<String, String>? extra]) async {
+    var res = await http.delete(url, headers: _headers(extra));
+    if (res.statusCode == 401 && _refreshToken != null) {
+      final refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await http.delete(url, headers: _headers(extra));
+      } else {
+        await logout();
+      }
+    }
+    return res;
   }
 
   // ----------------------------------------------------
@@ -82,7 +164,7 @@ class ApiService {
     if (res.statusCode == 200 || res.statusCode == 201) {
       if (data['accessToken'] != null && data['user'] != null) {
         final user = UserModel.fromJson(data['user'], token: data['accessToken']);
-        await setAuth(data['accessToken'], user);
+        await setAuth(data['accessToken'], user, refreshToken: data['refreshToken']);
       }
       return {'success': true, 'data': data};
     } else {
@@ -95,6 +177,20 @@ class ApiService {
     final res = await http.post(url, headers: _headers(), body: jsonEncode({'email': email.trim()}));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'data': data, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> sendSelfUnlockCode(String email) async {
+    final url = Uri.parse('${AppConfig.apiHost}/auth/self-unlock/send');
+    final res = await http.post(url, headers: _headers(), body: jsonEncode({'email': email.trim()}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> verifySelfUnlockCode(String email, String code) async {
+    final url = Uri.parse('${AppConfig.apiHost}/auth/self-unlock/verify');
+    final res = await http.post(url, headers: _headers(), body: jsonEncode({'email': email.trim(), 'code': code.trim()}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
 
   Future<Map<String, dynamic>> verifyEmailCode(String email, String code) async {
@@ -151,7 +247,7 @@ class ApiService {
   // ----------------------------------------------------
   Future<List<NotificationModel>> getNotifications(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/parent/notifications?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
       return list.map((item) => NotificationModel.fromJson(item as Map<String, dynamic>)).toList();
@@ -161,7 +257,7 @@ class ApiService {
 
   Future<RouteDataModel?> getParentRoute(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/parent/route?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       return RouteDataModel.fromJson(data);
@@ -171,7 +267,7 @@ class ApiService {
 
   Future<StudentModel?> getMyChild(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/parent/my-child?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       final data = jsonDecode(utf8.decode(res.bodyBytes));
       if (data != null && data is Map<String, dynamic>) {
@@ -199,16 +295,12 @@ class ApiService {
     required String reason,
   }) async {
     final url = Uri.parse('${AppConfig.apiHost}/parent/override');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'targetDate': targetDate,
         'overrideType': overrideType,
         'reason': reason,
-      }),
-    );
+      }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
@@ -219,22 +311,18 @@ class ApiService {
     required String message,
   }) async {
     final url = Uri.parse('${AppConfig.apiHost}/parent/message');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'targetRoles': targetRoles,
         'message': message,
-      }),
-    );
+      }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
 
   Future<Map<String, dynamic>?> getTodaySchedule(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/parent/today-schedule?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>?;
     }
@@ -243,14 +331,10 @@ class ApiService {
 
   Future<Map<String, dynamic>> studentBoardByQR(String studentEmail, String teacherEmail) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/student-board');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    final res = await postWithAuth(url, jsonEncode({
         'studentEmail': studentEmail,
         'teacherEmail': teacherEmail,
-      }),
-    );
+      }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
@@ -260,7 +344,7 @@ class ApiService {
   // ----------------------------------------------------
   Future<List<StudentModel>> getTeacherStudents(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/students?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
       return list.map((item) => StudentModel.fromJson(item as Map<String, dynamic>)).toList();
@@ -270,7 +354,7 @@ class ApiService {
 
   Future<Map<String, dynamic>?> getTeacherVehicle(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/my-vehicle?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>?;
     }
@@ -279,7 +363,7 @@ class ApiService {
 
   Future<RouteDataModel?> getTeacherRoute(String email) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/route?email=${Uri.encodeComponent(email)}');
-    final res = await http.get(url, headers: _headers());
+    final res = await getWithAuth(url);
     if (res.statusCode == 200) {
       final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       return RouteDataModel.fromJson(data);
@@ -289,40 +373,28 @@ class ApiService {
 
   Future<Map<String, dynamic>> manualBoardStudent(String email, int studentId, String reason) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/board-student');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'studentId': studentId,
         'reason': reason,
-      }),
-    );
+      }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
 
   Future<Map<String, dynamic>> skipStudent(String email, int studentId) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/skip-student');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'studentId': studentId,
-      }),
-    );
+      }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
 
   Future<Map<String, dynamic>> saveTeacherMemo(int studentId, String memo) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/student/$studentId/memo');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({'memo': memo}),
-    );
+    final res = await postWithAuth(url, jsonEncode({'memo': memo}));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }
@@ -334,16 +406,12 @@ class ApiService {
     required String message,
   }) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/message');
-    final res = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    final res = await postWithAuth(url, jsonEncode({
         'email': email,
         'studentIds': studentIds,
         'targetRoles': targetRoles,
         'message': message,
-      }),
-    );
+      }));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
   }

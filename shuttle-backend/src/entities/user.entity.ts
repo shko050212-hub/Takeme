@@ -28,6 +28,9 @@ export class User {
   @Column({ nullable: true })
   name: string;
 
+  @Column({ type: 'varchar', nullable: true, transformer: encryptionTransformer })
+  phone: string | null;
+
   @Column({ nullable: true })
   assignedClass: string; // 유치원 담당 반 (예: 햇살반)
 
@@ -43,6 +46,21 @@ export class User {
 
   @Column({ default: false })
   isOtpEnabled: boolean;
+
+  @Column({ default: 0 })
+  failedLoginAttempts: number;
+
+  @Column({ default: false })
+  isLocked: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lockedAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  currentSessionToken: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  refreshToken: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -1,7 +1,9 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { normalizePhone, maskPhone, sendSmsNotification } from '../utils/sms.util';
+import { Injectable, BadRequestException, UnauthorizedException, HttpException, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import * as speakeasy from 'speakeasy';
 import * as qrcode from 'qrcode';
 import { User, UserRole } from '../entities/user.entity';
@@ -13,6 +15,8 @@ import { JwtService } from '@nestjs/jwt';
 @Injectable()
 export class AuthService {
   private verificationCodes = new Map<string, { code: string, expiresAt: number }>();
+  private emailRateLimits = new Map<string, { count: number, resetAt: number }>();
+  private smsVerificationCodes = new Map<string, { code: string; phone: string; expiresAt: number }>();
   private transporter: any = null;
 
   constructor(
@@ -49,7 +53,30 @@ export class AuthService {
     return this.transporter;
   }
 
-  async sendEmailVerification(email: string, type: 'register' | 'withdraw' = 'register') {
+  async sendEmailVerification(email: string, clientIp: string = '127.0.0.1', type: 'register' | 'withdraw' = 'register') {
+    // IP 기반 발송 빈도 제한 (15분 동안 동일 IP당 최대 10회)
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000;
+    const limit = 10;
+
+    const ipRecord = this.emailRateLimits.get(clientIp);
+    if (ipRecord) {
+      if (now < ipRecord.resetAt) {
+        if (ipRecord.count >= limit) {
+          const remainingMinutes = Math.max(1, Math.ceil((ipRecord.resetAt - now) / 60000));
+          throw new HttpException(
+            `해당 IP에서 단시간에 너무 많은 이메일 인증 요청이 발생했습니다. ${remainingMinutes}분 후 다시 시도해 주세요.`,
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        ipRecord.count += 1;
+      } else {
+        this.emailRateLimits.set(clientIp, { count: 1, resetAt: now + windowMs });
+      }
+    } else {
+      this.emailRateLimits.set(clientIp, { count: 1, resetAt: now + windowMs });
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 3 * 60 * 1000;
     this.verificationCodes.set(email, { code, expiresAt });
@@ -65,7 +92,7 @@ export class AuthService {
         html: `
           <div style="font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             <div style="padding: 32px; background-color: #ffffff;">
-              <h2 style="color: #1e40af; margin-top: 0; font-size: 24px;">환영합니다! 🎉</h2>
+              <h2 style="color: #1e40af; margin-top: 0; font-size: 24px;">환영합니다!</h2>
               <p style="color: #475569; font-size: 16px; line-height: 1.6;">
                 Takeme에 가입을 진행해 주셔서 감사합니다.<br/>원장선생님의 유치원 안심 통학차량 관리를 스마트하고 안전하게 돕겠습니다.
               </p>
@@ -74,7 +101,7 @@ export class AuthService {
                 <h1 style="margin: 0; color: #0f172a; font-size: 36px; letter-spacing: 4px;">${code}</h1>
               </div>
               <p style="color: #dc2626; font-size: 14px; text-align: center; font-weight: bold;">
-                ⏰ 본 코드는 3분 안에 입력해주셔야 합니다.
+                [안내] 본 코드는 3분 안에 입력해주셔야 합니다.
               </p>
               <p style="color: #475569; font-size: 15px; text-align: center; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 24px;">
                 Takeme의 가족이 된 것을 다시 한 번 진심으로 감사드립니다!<br/>
@@ -99,11 +126,43 @@ export class AuthService {
     };
   }
 
-  verifyEmailCode(email: string, code: string) {
+  async verifyEmailCode(email: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (user && user.isLocked) {
+      if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+        throw new BadRequestException('인증번호 5회 연속 실패로 원장님 계정이 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 잠금이 즉시 해제됩니다.');
+      } else {
+        throw new BadRequestException('인증번호 5회 연속 실패로 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+      }
+    }
+
     const record = this.verificationCodes.get(email);
     if (!record) throw new BadRequestException('인증 코드가 없습니다.');
     if (Date.now() > record.expiresAt) throw new BadRequestException('인증 코드가 만료되었습니다.');
-    if (record.code !== code) throw new BadRequestException('유효하지 않은 인증 코드입니다.');
+    if (record.code !== code) {
+      if (user) {
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.isLocked = true;
+          user.lockedAt = new Date();
+          await this.usersRepository.save(user);
+          if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+            throw new BadRequestException('인증번호를 5회 연속 잘못 입력하여 원장님 계정이 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 잠금이 즉시 해제됩니다.');
+          } else {
+            throw new BadRequestException('인증번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+          }
+        }
+        await this.usersRepository.save(user);
+        const remaining = 5 - user.failedLoginAttempts;
+        throw new BadRequestException(`유효하지 않은 인증 코드입니다. (남은 기회: ${remaining}회)`);
+      }
+      throw new BadRequestException('유효하지 않은 인증 코드입니다.');
+    }
+
+    if (user) {
+      user.failedLoginAttempts = 0;
+      await this.usersRepository.save(user);
+    }
     this.verificationCodes.delete(email);
     return { success: true, message: '이메일 인증이 완료되었습니다.' };
   }
@@ -171,9 +230,37 @@ export class AuthService {
   async login(data: any) {
     const { email, password, otpToken } = data;
     const user = await this.usersRepository.findOne({ where: { email } });
-    
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+
+    if (!user) {
       throw new BadRequestException('이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
+
+    // 1. 계정 잠김 확인
+    if (user.isLocked) {
+      if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+        throw new BadRequestException('원장님 계정이 5회 연속 실패로 잠겼습니다. 등록된 휴대폰 SMS 또는 이메일 인증을 완료하시면 즉시 잠금이 해제됩니다.');
+      } else {
+        throw new BadRequestException('로그인 5회 연속 실패로 계정이 잠겼습니다. 보안 규정상 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+      }
+    }
+
+    // 2. 비밀번호 검증 및 실패 횟수 처리
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= 5) {
+        user.isLocked = true;
+        user.lockedAt = new Date();
+        await this.usersRepository.save(user);
+        if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+          throw new BadRequestException('비밀번호를 5회 연속 잘못 입력하여 원장님 계정이 잠겼습니다. 등록된 휴대폰 SMS 또는 이메일 인증을 완료하시면 즉시 잠금이 해제됩니다.');
+        } else {
+          throw new BadRequestException('비밀번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+        }
+      }
+      await this.usersRepository.save(user);
+      const remaining = 5 - user.failedLoginAttempts;
+      throw new BadRequestException(`이메일 또는 비밀번호가 올바르지 않습니다. (남은 기회: ${remaining}회)`);
     }
 
     if (user.role === UserRole.ACADEMY_ADMIN) {
@@ -186,7 +273,18 @@ export class AuthService {
           token: otpToken,
           window: 1
         });
-        if (!verified) throw new UnauthorizedException('OTP 번호가 올바르지 않습니다.');
+        if (!verified) {
+          user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+          if (user.failedLoginAttempts >= 5) {
+            user.isLocked = true;
+            user.lockedAt = new Date();
+            await this.usersRepository.save(user);
+            throw new BadRequestException('OTP 인증번호를 5회 연속 잘못 입력하여 원장님 계정이 잠겼습니다. 등록된 휴대폰 SMS 또는 이메일 인증을 완료하시면 즉시 잠금이 해제됩니다.');
+          }
+          await this.usersRepository.save(user);
+          const remaining = 5 - user.failedLoginAttempts;
+          throw new UnauthorizedException(`OTP 번호가 올바르지 않습니다. (남은 기회: ${remaining}회)`);
+        }
       } else {
         // Force OTP setup
         let qrCodeUrl = '';
@@ -288,17 +386,28 @@ export class AuthService {
       }
     }
 
+    // 로그인 성공: 실패 횟수 초기화, 단일 세션 갱신 및 리프레시 토큰 발급
+    user.failedLoginAttempts = 0;
+    const sessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+    user.currentSessionToken = sessionId;
+
+    const rawRefreshToken = crypto.randomBytes(32).toString('hex');
+    user.refreshToken = await bcrypt.hash(rawRefreshToken, 10);
+    await this.usersRepository.save(user);
+
     // 승인까지 끝난 사용자에게만 토큰 발급 (승인 대기·OTP 미통과는 위에서 이미 return 됨)
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
       email: user.email,
       role: user.role,
       academyId,
+      sessionId,
     });
 
     return {
       success: true,
       accessToken,
+      refreshToken: `${user.id}.${rawRefreshToken}`,
       user: { 
         id: user.id, 
         email: user.email, 
@@ -311,9 +420,113 @@ export class AuthService {
     };
   }
 
+  async refreshToken(tokenStr: string) {
+    if (!tokenStr || typeof tokenStr !== 'string') {
+      throw new UnauthorizedException('리프레시 토큰이 필요합니다.');
+    }
+    const [userIdStr, rawToken] = tokenStr.split('.');
+    const userId = parseInt(userIdStr, 10);
+    if (!userId || !rawToken) {
+      throw new UnauthorizedException('유효하지 않은 리프레시 토큰 형식입니다.');
+    }
+
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user || !user.refreshToken) {
+      throw new UnauthorizedException('유효하지 않은 리프레시 토큰입니다.');
+    }
+
+    if (user.isLocked) {
+      throw new UnauthorizedException('계정이 잠겨있어 토큰을 갱신할 수 없습니다.');
+    }
+
+    const isMatch = await bcrypt.compare(rawToken, user.refreshToken);
+    if (!isMatch) {
+      throw new UnauthorizedException('리프레시 토큰이 일치하지 않습니다.');
+    }
+
+    let academyId: number | null = null;
+    let academyName: string | null = null;
+    if (user.role === UserRole.SUPER_ADMIN) {
+      academyName = '통합 플랫폼 관리자';
+    } else if (user.role === UserRole.ACADEMY_ADMIN) {
+      const academy = await this.academyRepository.findOne({ where: { owner: { id: user.id } } });
+      if (academy) {
+        academyId = academy.id;
+        academyName = academy.name;
+      }
+    } else if (user.role === UserRole.STUDENT || user.role === UserRole.PARENT) {
+      const student = await this.studentRepository.findOne({
+        where: user.role === UserRole.STUDENT ? { studentUser: { id: user.id } } : { parentUser: { id: user.id } },
+        relations: { academy: true }
+      });
+      if (student?.academy) {
+        academyId = student.academy.id;
+        academyName = student.academy.name;
+      }
+    } else if (user.role === UserRole.TEACHER) {
+      const teacherUser = await this.usersRepository.findOne({
+        where: { id: user.id },
+        relations: { academy: true }
+      });
+      if (teacherUser?.academy) {
+        academyId = teacherUser.academy.id;
+        academyName = teacherUser.academy.name;
+      }
+    } else if (user.role === UserRole.DRIVER) {
+      const vehicle = await this.vehicleRepository.findOne({
+        where: { driverUser: { id: user.id } },
+        relations: { academy: true }
+      });
+      if (vehicle?.academy) {
+        academyId = vehicle.academy.id;
+        academyName = vehicle.academy.name;
+      }
+    }
+
+    // Refresh: 새 리프레시 토큰 발급 (RTR - Refresh Token Rotation)
+    const newRawRefreshToken = crypto.randomBytes(32).toString('hex');
+    user.refreshToken = await bcrypt.hash(newRawRefreshToken, 10);
+    // 세션 ID는 기존 활성 세션을 보존하여 동시성 요청 및 탭 간 세션 끊김 충돌을 방지합니다.
+    let sessionId = user.currentSessionToken;
+    if (!sessionId) {
+      sessionId = Math.random().toString(36).substring(2, 10) + '-' + Date.now().toString(36);
+      user.currentSessionToken = sessionId;
+    }
+    await this.usersRepository.save(user);
+
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      academyId,
+      sessionId,
+    });
+
+    return {
+      success: true,
+      accessToken,
+      refreshToken: `${user.id}.${newRawRefreshToken}`,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        assignedClass: user.assignedClass || null,
+        academyId,
+        academyName,
+      }
+    };
+  }
+
   async register(data: any) {
-    const { email, password, name, authCode, role, targetName } = data;
+    const { email, password, name, authCode, role, targetName, phone } = data;
     const searchName = targetName || name;
+
+    // 0. 비밀번호 복잡도 검증 (영문, 숫자 포함 최소 8자리 이상, 공백 제외 모든 특수문자 허용)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)\S{8,}$/;
+    if (!password || !passwordRegex.test(password)) {
+      throw new BadRequestException('비밀번호는 영문자와 숫자를 포함하여 최소 8자리 이상이어야 합니다.');
+    }
     
     // 1. Verify academy auth code (Required for staff & students, skip for admins)
     let targetAcademy: Academy | null = null;
@@ -494,4 +707,140 @@ export class AuthService {
 
     return { success: true, message: '회원 탈퇴 처리가 완료되었습니다.' };
   }
+
+  async sendSelfUnlockCode(email: string, clientIp: string = '127.0.0.1') {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    if (!user.isLocked) {
+      return { success: true, message: '해당 계정은 잠겨있지 않습니다. 바로 로그인해 주세요.' };
+    }
+    // 원장님(ACADEMY_ADMIN, SUPER_ADMIN)만 이메일 인증으로 직접 잠금 해제 가능
+    if (user.role !== UserRole.ACADEMY_ADMIN && user.role !== UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('선생님, 기사님, 학부모님 계정은 보안 규정상 원장님이 관리자 대시보드에서 직접 잠금을 해제해주셔야 합니다.');
+    }
+    return this.sendEmailVerification(email, clientIp, 'register');
+  }
+
+  async verifySelfUnlockCode(email: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    if (user.role !== UserRole.ACADEMY_ADMIN && user.role !== UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('선생님, 기사님, 학부모님 계정은 보안 규정상 원장님이 관리자 대시보드에서 직접 잠금을 해제해주셔야 합니다.');
+    }
+    const record = this.verificationCodes.get(email);
+    if (!record) throw new BadRequestException('인증 코드가 없습니다.');
+    if (Date.now() > record.expiresAt) throw new BadRequestException('인증 코드가 만료되었습니다.');
+    if (record.code !== code) {
+      throw new BadRequestException('유효하지 않은 인증 코드입니다.');
+    }
+
+    user.isLocked = false;
+    user.failedLoginAttempts = 0;
+    user.lockedAt = null as any;
+    await this.usersRepository.save(user);
+    this.verificationCodes.delete(email);
+
+    return { success: true, message: '원장님 계정 잠금이 성공적으로 해제되었습니다. 이제 로그인해 주세요.' };
+  }
+
+  async sendSelfUnlockSmsCode(email: string, phoneInput?: string, clientIp: string = '127.0.0.1') {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    if (!user.isLocked) {
+      return { success: true, message: '해당 계정은 잠겨있지 않습니다. 바로 로그인해 주세요.' };
+    }
+    // 원장님만 직접 잠금 해제 가능
+    if (user.role !== UserRole.ACADEMY_ADMIN && user.role !== UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('선생님, 기사님, 학부모님 계정은 보안 규정상 원장님이 관리자 대시보드에서 직접 잠금을 해제해주셔야 합니다.');
+    }
+
+    let targetPhone = user.phone;
+    if (phoneInput && phoneInput.trim()) {
+      const clean = phoneInput.replace(/\D/g, '');
+      if (clean.length < 10 || clean.length > 11 || !clean.startsWith('01')) {
+        throw new BadRequestException('올바른 휴대폰 번호 형식을 입력해주세요. (예: 010-1234-5678)');
+      }
+      targetPhone = normalizePhone(phoneInput);
+      if (!user.phone) {
+        user.phone = targetPhone;
+        await this.usersRepository.save(user);
+      }
+    }
+
+    if (!targetPhone) {
+      throw new BadRequestException('등록된 원장님 휴대폰 번호가 없습니다. 본인 확인을 위해 휴대폰 번호를 함께 입력해 주세요.');
+    }
+
+    const now = Date.now();
+    const rateLimit = this.emailRateLimits.get(clientIp);
+    if (rateLimit && now < rateLimit.resetAt) {
+      if (rateLimit.count >= 10) {
+        const remainingMinutes = Math.ceil((rateLimit.resetAt - now) / 60000);
+        throw new HttpException(
+          `단기간에 너무 많은 요청이 발생했습니다. ${remainingMinutes}분 후 다시 시도해 주세요.`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      rateLimit.count++;
+    } else {
+      this.emailRateLimits.set(clientIp, { count: 1, resetAt: now + 10 * 60 * 1000 });
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    this.smsVerificationCodes.set(email, {
+      code,
+      phone: targetPhone,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+
+    const smsText = `[Takeme] 원장님 계정 잠금 해제 인증번호는 [${code}] 입니다. (5분 이내 입력)`;
+    const smsResult = await sendSmsNotification(targetPhone, smsText);
+
+    return {
+      success: true,
+      message: `원장님 휴대폰(${maskPhone(targetPhone)})으로 인증번호가 전송되었습니다.`,
+      maskedPhone: maskPhone(targetPhone),
+      devCode: smsResult.mode === 'mock' ? code : undefined,
+    };
+  }
+
+  async verifySelfUnlockSmsCode(email: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    if (user.role !== UserRole.ACADEMY_ADMIN && user.role !== UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('선생님, 기사님, 학부모님 계정은 보안 규정상 원장님이 관리자 대시보드에서 직접 잠금을 해제해주셔야 합니다.');
+    }
+
+    const record = this.smsVerificationCodes.get(email);
+    if (!record) {
+      throw new BadRequestException('인증 코드가 발송되지 않았거나 만료되었습니다.');
+    }
+    if (Date.now() > record.expiresAt) {
+      this.smsVerificationCodes.delete(email);
+      throw new BadRequestException('인증 코드가 만료되었습니다. 다시 발송해 주세요.');
+    }
+    if (record.code !== code) {
+      throw new BadRequestException('인증번호가 일치하지 않습니다.');
+    }
+
+    user.isLocked = false;
+    user.failedLoginAttempts = 0;
+    user.lockedAt = null as any;
+    await this.usersRepository.save(user);
+    this.smsVerificationCodes.delete(email);
+
+    return {
+      success: true,
+      message: '원장님 계정 잠금이 성공적으로 해제되었습니다. 이제 로그인해 주세요.',
+    };
+  }
+
 }

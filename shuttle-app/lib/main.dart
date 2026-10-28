@@ -3,6 +3,7 @@ import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/parent/parent_home_screen.dart';
 import 'screens/staff/staff_dashboard_screen.dart';
+import 'screens/driver/driver_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,7 +94,11 @@ class InitialRouterScreen extends StatelessWidget {
     }
 
     final role = api.currentUser!.role;
-    if (role == 'DRIVER' || role == 'TEACHER') {
+    // 기사는 내비게이션 운행 화면, 지도교사는 기존 대시보드(탑승 명단·QR)
+    if (role == 'DRIVER') {
+      return const DriverHomeScreen();
+    }
+    if (role == 'TEACHER') {
       return const StaffDashboardScreen();
     }
 

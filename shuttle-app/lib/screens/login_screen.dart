@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import 'register_screen.dart';
 import 'parent/parent_home_screen.dart';
 import 'staff/staff_dashboard_screen.dart';
+import 'driver/driver_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,7 +43,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final user = ApiService().currentUser;
     if (user == null) return;
 
-    if (user.role == 'DRIVER' || user.role == 'TEACHER') {
+    if (user.role == 'DRIVER') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+      );
+    } else if (user.role == 'TEACHER') {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
@@ -84,6 +90,8 @@ class _LoginScreenState extends State<LoginScreen> {
           _showApprovalPendingDialog();
         } else if (data != null && data['requireOtp'] == true) {
           _showOtpInputDialog();
+        } else if (res['message']?.contains('잠겼습니다') == true) {
+          _showSelfUnlockDialog(email, res['message']);
         } else {
           _showError(res['message'] ?? '로그인에 실패했습니다.');
         }
@@ -92,6 +100,131 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
       _showError('서버 연결에 실패했습니다.');
     }
+  }
+
+    void _showSelfUnlockDialog(String email, String? serverMsg) {
+    final codeCtrl = TextEditingController();
+    bool isSent = false;
+    bool isBusy = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('계정 잠금 안내', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                serverMsg ?? '로그인 연속 실패로 계정이 잠겼습니다.',
+                style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '가입된 이메일로 6자리 인증번호를 발송받아 본인 인증 후 즉시 잠금을 해제할 수 있습니다.',
+                style: TextStyle(fontSize: 12, color: Colors.blueGrey, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              if (!isSent) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: isBusy
+                        ? null
+                        : () async {
+                            setDlgState(() => isBusy = true);
+                            final res = await ApiService().sendSelfUnlockCode(email);
+                            setDlgState(() {
+                              isBusy = false;
+                              if (res['success'] == true) {
+                                isSent = true;
+                              }
+                            });
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(res['message'] ?? '인증번호가 발송되었습니다.')),
+                              );
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: Text(isBusy ? '발송 중...' : '이메일로 인증번호 발송'),
+                  ),
+                ),
+              ] else ...[
+                TextField(
+                  controller: codeCtrl,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(letterSpacing: 4, fontWeight: FontWeight.bold, fontSize: 18),
+                  decoration: InputDecoration(
+                    hintText: '6자리 인증번호',
+                    counterText: '',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: isBusy
+                        ? null
+                        : () async {
+                            final code = codeCtrl.text.trim();
+                            if (code.length != 6) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('인증번호 6자리를 입력해주세요.')),
+                              );
+                              return;
+                            }
+                            setDlgState(() => isBusy = true);
+                            final res = await ApiService().verifySelfUnlockCode(email, code);
+                            setDlgState(() => isBusy = false);
+                            if (res['success'] == true) {
+                              Navigator.pop(ctx);
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('계정 잠금이 해제되었습니다. 다시 로그인해주세요.')),
+                                );
+                              }
+                            } else {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(res['message'] ?? '인증에 실패했습니다.')),
+                                );
+                              }
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: Text(isBusy ? '확인 중...' : '잠금 해제 확인'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showApprovalPendingDialog() {

@@ -47,11 +47,20 @@ class SocketService {
     required double lat,
     required double lng,
   }) {
-    _socket?.emit('updateLocation', {
+    // 서버(location.gateway.ts)가 받는 이벤트 이름은 'driverLocationUpdate'
+    // (예전 'updateLocation'은 서버에 없는 이름이라 위치가 전달되지 않았음)
+    _socket?.emit('driverLocationUpdate', {
       'vehicleId': vehicleId,
       'lat': lat,
       'lng': lng,
-      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// 운행 시작·종료를 서버에 알림 → 관리자 웹·학부모 앱에 '운행 중' 표시
+  void sendOperationStatus({required int vehicleId, required bool isOperating}) {
+    _socket?.emit('driverOperationStatus', {
+      'vehicleId': vehicleId,
+      'isOperating': isOperating,
     });
   }
 
