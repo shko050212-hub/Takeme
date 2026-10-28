@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import 'register_screen.dart';
 import 'parent/parent_home_screen.dart';
 import 'staff/staff_dashboard_screen.dart';
+import 'driver/driver_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,7 +43,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final user = ApiService().currentUser;
     if (user == null) return;
 
-    if (user.role == 'DRIVER' || user.role == 'TEACHER') {
+    if (user.role == 'DRIVER') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+      );
+    } else if (user.role == 'TEACHER') {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
