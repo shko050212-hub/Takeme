@@ -42,7 +42,7 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetRoles,
-          vehicleId: msgSelectedBusId,
+          vehicleId: (msgSelectedBusId && msgSelectedBusId !== 'ALL') ? msgSelectedBusId : null,
           studentIds: msgTargetStudents,
           message: messageText
         })
@@ -68,14 +68,18 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
       <div className="w-1/2 h-full border-r border-slate-200 flex flex-col bg-white overflow-y-auto relative">
         <div className="p-5 border-b border-slate-200 sticky top-0 bg-white z-10 shadow-sm flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-black text-slate-800 mb-1 flex items-center gap-2">
-              <span>📤</span> 메세지 보내기
+            <h2 className="text-xl font-black text-slate-800 mb-1">
+              메세지 보내기
             </h2>
             <p className="text-sm text-slate-500">좌측 사이드바에서 선택한 대상에게 메세지를 전송합니다.</p>
           </div>
-          {msgSelectedBusId ? (
+          {msgSelectedBusId === 'ALL' ? (
+             <div className="bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-bold shadow-xs">
+               전체 호차 (원 전체)
+             </div>
+          ) : msgSelectedBusId ? (
              <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-sm font-bold border border-blue-200">
-               {buses.find(b => b.id === msgSelectedBusId)?.name} 선택됨
+               {buses.find(b => b.id === msgSelectedBusId)?.name || '호차 선택됨'}
              </div>
           ) : (
              <div className="bg-slate-100 text-slate-500 px-3 py-1 rounded-lg text-sm font-bold border border-slate-200">
@@ -87,13 +91,13 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
         <div className="p-6 flex flex-col h-full">
           <div className="bg-slate-50 rounded-xl p-4 mb-4 border border-slate-200">
             <h3 className="font-bold text-slate-700 mb-2">전송 대상 요약</h3>
-            <div className="flex gap-3 text-sm">
-              <span className={`font-bold ${msgTargetDriver ? 'text-blue-600' : 'text-slate-400'}`}>🚙 기사님: {msgTargetDriver ? '포함' : '제외'}</span>
-              <span className={`font-bold ${msgTargetTeacher ? 'text-green-600' : 'text-slate-400'}`}>👩‍🏫 교사님: {msgTargetTeacher ? '포함' : '제외'}</span>
-              <span className={`font-bold ${msgTargetStudents.length > 0 ? 'text-slate-700' : 'text-slate-400'}`}>👨‍👩‍👦 학부모님: {msgTargetStudents.length}명</span>
+            <div className="flex gap-4 text-sm">
+              <span className={`font-bold ${msgTargetDriver ? 'text-blue-600' : 'text-slate-400'}`}>기사님: {msgTargetDriver ? '포함' : '제외'}</span>
+              <span className={`font-bold ${msgTargetTeacher ? 'text-green-600' : 'text-slate-400'}`}>지도교사: {msgTargetTeacher ? '포함' : '제외'}</span>
+              <span className={`font-bold ${msgTargetStudents.length > 0 ? 'text-slate-700' : 'text-slate-400'}`}>학부모님: {msgTargetStudents.length}명</span>
             </div>
             {(!msgTargetDriver && !msgTargetTeacher && msgTargetStudents.length === 0) && (
-              <p className="text-red-500 text-xs mt-2 font-bold">⚠️ 대상을 먼저 선택해주세요.</p>
+              <p className="text-red-500 text-xs mt-2 font-bold">수신 대상을 먼저 선택해주세요.</p>
             )}
           </div>
 
@@ -120,8 +124,8 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
       <div className="w-1/2 h-full flex flex-col bg-slate-50 relative">
         <div className="p-5 border-b border-slate-200 sticky top-0 bg-slate-50 z-10 shadow-sm flex justify-between items-center">
           <div>
-            <h2 className="text-xl font-black text-slate-800 mb-1 flex items-center gap-2">
-              <span>📥</span> 수신함
+            <h2 className="text-xl font-black text-slate-800 mb-1">
+              수신함
             </h2>
             <p className="text-sm text-slate-500">원장선생님께 수신된 메세지 목록입니다.</p>
           </div>
@@ -133,14 +137,16 @@ export default function MessagePanel({ buses, students, isClosing, msgSelectedBu
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {inboxMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400">
-              <span className="text-4xl mb-3">📭</span>
+              <svg className="w-12 h-12 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
               <p>수신된 메세지가 없습니다.</p>
             </div>
           ) : (
             inboxMessages.map(msg => (
               <div key={msg.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex gap-4 animate-fade-in">
-                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 text-xl">
-                  {msg.message.includes('사고') || msg.message.includes('긴급') ? '🚨' : '💬'}
+                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center flex-shrink-0 text-xs">
+                  {msg.message.includes('사고') || msg.message.includes('긴급') ? '긴급' : '알림'}
                 </div>
                 <div className="flex-1">
                   <div className="flex justify-between items-start mb-1">
