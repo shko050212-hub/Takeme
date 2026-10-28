@@ -209,6 +209,7 @@ class ApiService {
     required String authCode,
     required String role,
     String? allergies,
+    String? assignedClass,
   }) async {
     final url = Uri.parse('${AppConfig.apiHost}/auth/register');
     final body = <String, dynamic>{
@@ -221,6 +222,9 @@ class ApiService {
     };
     if (allergies != null && allergies.trim().isNotEmpty) {
       body['allergies'] = allergies.trim();
+    }
+    if (assignedClass != null && assignedClass.trim().isNotEmpty) {
+      body['assignedClass'] = assignedClass.trim();
     }
 
     final res = await http.post(url, headers: _headers(), body: jsonEncode(body));

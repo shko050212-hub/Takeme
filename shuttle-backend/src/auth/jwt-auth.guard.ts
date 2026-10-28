@@ -60,7 +60,11 @@ export class JwtAuthGuard implements CanActivate {
       context.getClass(),
     ]);
     if (roles && roles.length > 0 && !roles.includes(payload.role)) {
-      throw new ForbiddenException('이 기능을 사용할 권한이 없습니다.');
+      if (roles.includes('TEACHER') && (payload.role === 'HOMEROOM_TEACHER' || payload.role === 'SHUTTLE_TEACHER')) {
+        // Allow both homeroom and shuttle teachers for teacher endpoints
+      } else {
+        throw new ForbiddenException('이 기능을 사용할 권한이 없습니다.');
+      }
     }
 
     return true;

@@ -247,7 +247,7 @@ export class TeacherService {
       .filter(m => {
         if (m.receiverUser) return m.receiverUser.id === user.id;
         if (m.targetRoles && Array.isArray(m.targetRoles)) {
-          return m.targetRoles.includes('TEACHER') || m.targetRoles.includes('ALL');
+          return m.targetRoles.includes('TEACHER') || m.targetRoles.includes('HOMEROOM_TEACHER') || m.targetRoles.includes('SHUTTLE_TEACHER') || m.targetRoles.includes('ALL');
         }
         return true;
       })

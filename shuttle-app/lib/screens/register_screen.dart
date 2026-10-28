@@ -9,7 +9,9 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  String _selectedRole = 'TEACHER';
+  String _selectedRole = 'HOMEROOM_TEACHER';
+  String _selectedClass = '햇살반';
+  final List<String> _classList = const ['햇살반', '열매반', '풀잎반', '새싹반', '심화B반'];
   final _authCodeController = TextEditingController();
   final _nameController = TextEditingController();
   final _parentNameController = TextEditingController();
@@ -100,7 +102,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     if (_nameController.text.trim().isEmpty) {
-      _showMessage(_selectedRole == 'PARENT' ? '원아 이름을 입력해주세요.' : (_selectedRole == 'TEACHER' ? '지도 교사 이름을 입력해주세요.' : '기사님 이름을 입력해주세요.'));
+      if (_selectedRole == 'HOMEROOM_TEACHER') {
+        _showMessage('담임교사 성명을 입력해주세요.');
+      } else if (_selectedRole == 'SHUTTLE_TEACHER') {
+        _showMessage('지도교사 성명을 입력해주세요.');
+      } else if (_selectedRole == 'PARENT') {
+        _showMessage('원아 이름을 입력해주세요.');
+      } else {
+        _showMessage('기사님 성명을 입력해주세요.');
+      }
       return;
     }
     if (_selectedRole == 'PARENT' && _parentNameController.text.trim().isEmpty) {
@@ -128,6 +138,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       authCode: _authCodeController.text.trim(),
       role: _selectedRole,
       allergies: _selectedRole == 'PARENT' ? _allergiesController.text.trim() : null,
+      assignedClass: _selectedRole == 'HOMEROOM_TEACHER' ? _selectedClass : null,
     );
 
     setState(() => _isLoading = false);
@@ -214,15 +225,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      
-                      _buildRoleButton('TEACHER', '지도교사'),
-                      const SizedBox(width: 8),
+                      _buildRoleButton('HOMEROOM_TEACHER', '담임교사'),
+                      const SizedBox(width: 6),
+                      _buildRoleButton('SHUTTLE_TEACHER', '지도교사'),
+                      const SizedBox(width: 6),
                       _buildRoleButton('PARENT', '학부모'),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       _buildRoleButton('DRIVER', '기사님'),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
+
+                  // Role Description Banner
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Text(
+                      _selectedRole == 'HOMEROOM_TEACHER'
+                          ? '유치원 교실 담임교사: 클라우드 게시판 사진/공지 등록 및 학부모 알림장 소통을 담당합니다.'
+                          : (_selectedRole == 'SHUTTLE_TEACHER'
+                              ? '통학차량 동승 지도교사: 셔틀버스 원아 탑승 명단 확인, 결석 처리 및 탑승 QR 체크를 담당합니다.'
+                              : (_selectedRole == 'PARENT'
+                                  ? '원아 학부모: 자녀 통학 실시간 위치 확인 및 출결 결석 신청을 이용할 수 있습니다.'
+                                  : '셔틀 운전 기사님: 통학차량 안전 운행 및 실시간 내비게이션 경로 안내를 이용할 수 있습니다.')),
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF475569), height: 1.4),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
                   // Auth Code
                   const Text('원 인증코드', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
@@ -230,15 +263,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   _buildTextField(_authCodeController, '예: TAKEME123'),
                   const SizedBox(height: 16),
 
-                  // Student Name
+                  // Homeroom class selector if HOMEROOM_TEACHER
+                  if (_selectedRole == 'HOMEROOM_TEACHER') ...[
+                    const Text('담당 학급 선택', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedClass,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      items: _classList.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedClass = val);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Name Field
                   Text(
-                    _selectedRole == 'PARENT' ? '원아 이름' : (_selectedRole == 'TEACHER' ? '지도 교사 이름' : '기사님 이름'),
+                    _selectedRole == 'HOMEROOM_TEACHER'
+                        ? '담임교사 성명'
+                        : (_selectedRole == 'SHUTTLE_TEACHER'
+                            ? '지도교사 성명'
+                            : (_selectedRole == 'PARENT' ? '원아 이름' : '기사님 성명')),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
                   ),
                   const SizedBox(height: 6),
                   _buildTextField(
                     _nameController,
-                    _selectedRole == 'PARENT' ? '원아 이름 (예: 홍길동)' : (_selectedRole == 'TEACHER' ? '지도교사 성명 (예: 김선생)' : '기사님 성명 (예: 박기사)'),
+                    _selectedRole == 'HOMEROOM_TEACHER'
+                        ? '유치원에 등록된 담임교사 성명 (예: 김선생)'
+                        : (_selectedRole == 'SHUTTLE_TEACHER'
+                            ? '유치원에 등록된 동승 지도교사 성명 (예: 박교사)'
+                            : (_selectedRole == 'PARENT' ? '유치원에 등록된 원아 이름 (예: 홍길동)' : '유치원에 등록된 기사님 성명 (예: 박기사)')),
                   ),
                   const SizedBox(height: 16),
 
