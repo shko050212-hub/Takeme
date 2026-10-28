@@ -659,7 +659,7 @@ export default function Landing() {
             {role === 'ACADEMY_ADMIN' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  원장님 휴대폰 번호 <span className="text-blue-600 font-normal">(계정 비상 잠금 해제용)</span>
+                  원장님 휴대폰 번호
                 </label>
                 <input 
                   type="tel" 
