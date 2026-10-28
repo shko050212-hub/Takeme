@@ -43,6 +43,7 @@ export class TeacherController {
   }
 
   @Post('board')
+  @Post('board-student')
   async boardStudent(@AuthEmail() email: string, @Body() body: { studentId: number; reason?: string }) {
     return this.teacherService.boardStudent(email, body.studentId, body.reason);
   }
@@ -90,6 +91,7 @@ export class TeacherController {
   }
 
   @Post('send-message')
+  @Post('message')
   async sendMessage(
     @AuthEmail() email: string, 
     @Body('message') message: string, 

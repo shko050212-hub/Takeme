@@ -246,6 +246,9 @@ export class TeacherService {
     return messages
       .filter(m => {
         if (m.receiverUser) return m.receiverUser.id === user.id;
+        if (m.targetRoles && Array.isArray(m.targetRoles)) {
+          return m.targetRoles.includes('TEACHER') || m.targetRoles.includes('ALL');
+        }
         return true;
       })
       .map(m => ({
@@ -298,7 +301,6 @@ export class TeacherService {
     if (!user) throw new BadRequestException('User not found');
 
     const vehicle = await this.findAssignedVehicle(user.id);
-    if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
 
     const student = await this.studentRepository.findOne({ 
       where: { id: studentId },

@@ -9,7 +9,7 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  String _selectedRole = 'STUDENT';
+  String _selectedRole = 'TEACHER';
   final _authCodeController = TextEditingController();
   final _nameController = TextEditingController();
   final _parentNameController = TextEditingController();
@@ -100,7 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
     if (_nameController.text.trim().isEmpty) {
-      _showMessage(_selectedRole == 'PARENT' || _selectedRole == 'STUDENT' ? '원아 이름을 입력해주세요.' : '이름을 입력해주세요.');
+      _showMessage(_selectedRole == 'PARENT' ? '원아 이름을 입력해주세요.' : (_selectedRole == 'TEACHER' ? '지도 교사 이름을 입력해주세요.' : '기사님 이름을 입력해주세요.'));
       return;
     }
     if (_selectedRole == 'PARENT' && _parentNameController.text.trim().isEmpty) {
@@ -214,11 +214,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      _buildRoleButton('STUDENT', '학생'),
+                      
+                      _buildRoleButton('TEACHER', '지도교사'),
                       const SizedBox(width: 8),
                       _buildRoleButton('PARENT', '학부모'),
-                      const SizedBox(width: 8),
-                      _buildRoleButton('TEACHER', '지도교사'),
                       const SizedBox(width: 8),
                       _buildRoleButton('DRIVER', '기사님'),
                     ],
@@ -233,13 +232,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                   // Student Name
                   Text(
-                    _selectedRole == 'STUDENT' || _selectedRole == 'PARENT' ? '원아 이름' : (_selectedRole == 'TEACHER' ? '지도 교사 이름' : '기사님 이름'),
+                    _selectedRole == 'PARENT' ? '원아 이름' : (_selectedRole == 'TEACHER' ? '지도 교사 이름' : '기사님 이름'),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
                   ),
                   const SizedBox(height: 6),
                   _buildTextField(
                     _nameController,
-                    _selectedRole == 'STUDENT' || _selectedRole == 'PARENT' ? '유치원에 등록된 원아 이름 (예: 홍길동)' : '유치원에 등록된 담당자 성명',
+                    _selectedRole == 'PARENT' ? '원아 이름 (예: 홍길동)' : (_selectedRole == 'TEACHER' ? '지도교사 성명 (예: 김선생)' : '기사님 성명 (예: 박기사)'),
                   ),
                   const SizedBox(height: 16),
 
