@@ -12,8 +12,18 @@ import '../services/socket_service.dart';
 import '../widgets/nav_map_view.dart';
 import 'geo.dart';
 
-/// safe: 큰길 위주 안전 경로 (추천 경로 + 유턴 회피), fast: 빠른 경로 (최단 시간)
+/// 경로 모드. 서버 /directions 가 카카오 길찾기에 실제로 보내는 기준:
+/// - safe: priority=RECOMMEND + avoid=[uturn]  (추천 경로 + 유턴 회피)
+/// - fast: priority=TIME                        (최단 시간)
+/// 카카오 API 에는 도로 위험도 정보가 없으므로, '안전'은 이 두 기준까지만 의미한다.
 enum RouteMode { safe, fast }
+
+extension RouteModeInfo on RouteMode {
+  String get key => this == RouteMode.fast ? 'fast' : 'safe';
+  String get title => this == RouteMode.fast ? '빠른 경로' : '안전 경로';
+  String get criteria => this == RouteMode.fast ? '최단 시간 우선' : '추천 도로 · 유턴 회피';
+  RouteMode get other => this == RouteMode.fast ? RouteMode.safe : RouteMode.fast;
+}
 
 class NavException implements Exception {
   final String message;
@@ -25,89 +35,173 @@ class NavException implements Exception {
 class NavStop {
   final String name;
   final GeoPoint point;
+  final bool isTest; // 테스트 경로용 가짜 정류장 (서버·학부모에게 보내지 않음)
   bool passed = false;
   int pathIndex = 0;
-  NavStop(this.name, this.point);
+  NavStop(this.name, this.point, {this.isTest = false});
 }
 
-class _Guide {
+class NavGuide {
   final GeoPoint point;
   final String text;
   int pathIndex = 0;
   bool saidFar = false;
   bool saidNear = false;
-  _Guide(this.point, this.text);
+  NavGuide(this.point, this.text);
 }
 
-/// 기사 앱의 운행·내비게이션 상태 관리
-/// - 실제 도로 경로(카카오 길찾기 /directions), 안전/빠른 경로 선택
-/// - GPS 위치를 서버로 실시간 전송 (학부모 앱·관리자 웹에서 확인)
-/// - 회전·정류장 음성 안내, 경로 이탈 시 자동 재탐색
-/// - 주행 시뮬레이션 (차 없이 테스트)
+/// 서버에서 받은 경로 하나
+class RoutePlan {
+  final RouteMode mode;
+  final GeoPoint origin;
+  final List<GeoPoint> path;
+  final List<double> cum;
+  final List<NavGuide> guides;
+  final double distanceM;
+  final double durationS;
+  final int turnCount;
+  final String criteriaFromServer; // 서버가 실제로 적용했다고 알려준 기준 (검증용)
+  final DateTime createdAt;
+
+  RoutePlan({
+    required this.mode,
+    required this.origin,
+    required this.path,
+    required this.cum,
+    required this.guides,
+    required this.distanceM,
+    required this.durationS,
+    required this.turnCount,
+    required this.criteriaFromServer,
+  }) : createdAt = DateTime.now();
+
+  double get avgSpeed => durationS > 0 ? math.max(2, distanceM / durationS) : 8;
+  String get minutesText => '${(durationS / 60).ceil()}분';
+}
+
+enum PlanStatus { idle, loading, ready, error }
+
+class PlanSlot {
+  PlanStatus status = PlanStatus.idle;
+  RoutePlan? plan;
+  String? error;
+}
+
+class _RouteInput {
+  final List<NavStop> waypoints;
+  final GeoPoint destination;
+  _RouteInput(this.waypoints, this.destination);
+}
+
+/// 기사 앱의 운행·내비게이션 상태
 class DriverNavigator extends ChangeNotifier {
   DriverNavigator(this.map);
 
   final NavMapController map;
   final FlutterTts _tts = FlutterTts();
 
+  // ── 불러온 정보 ──
   bool loading = true;
-  bool busy = false;
-  bool routing = false;
-  bool operating = false;
-  bool simulating = false;
-  bool follow = true;
-  String? error;
-
   int? vehicleId;
   String vehicleName = '';
   GeoPoint? academy;
   final List<NavStop> stops = [];
+  String? loadError;
+
+  // ── 경로 비교 (운행 전) ──
   RouteMode mode = RouteMode.safe;
+  final Map<RouteMode, PlanSlot> slots = {RouteMode.safe: PlanSlot(), RouteMode.fast: PlanSlot()};
+  int _previewSeq = 0;
 
-  GeoPoint? position;
-  double? accuracy;
-  int sentCount = 0;
-  String instruction = '';
-  double remainingM = 0;
-
-  List<GeoPoint> _path = [];
-  List<double> _cum = [];
-  final List<_Guide> _guides = [];
-  double _avgSpeed = 8;
+  // ── 운행 ──
+  bool driving = false; // 길 안내 중 (실제 운행 또는 테스트)
+  bool serverLive = false; // 실제 운행 (서버에 운행 시작을 알림, 위치 전송)
+  bool testMode = false; // 테스트 경로 (서버에 아무것도 보내지 않음)
+  bool busy = false;
+  bool rerouting = false;
+  RoutePlan? active; // 지금 안내 중인 경로
+  String? routeWarning; // 재탐색 실패 등
+  String? actionError;
+  final List<NavStop> _testStops = [];
+  int _routeSeq = 0;
   int _progress = 0;
   int _offRouteCount = 0;
   DateTime _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
 
+  // ── 위치 ──
+  GeoPoint? position;
+  double? accuracy;
+  String? gpsError;
+  bool follow = true;
+  int sentCount = 0;
+  DateTime? lastSentAt;
   StreamSubscription<Position>? _gpsSub;
+
+  // ── 시뮬레이션 ──
+  bool simulating = false;
+  bool simSendToServer = false; // 학부모 화면 테스트용 (기본 꺼짐: 실제 도착 알림이 갈 수 있음)
   Timer? _simTimer;
   double _simMeters = 0;
+  int _offRouteTestTicks = 0;
 
-  bool get hasRoute => _path.length > 1;
+  List<NavStop> get activeStops => testMode ? _testStops : stops;
   bool get socketConnected => SocketService().isConnected;
 
   NavStop? get nextStop {
-    for (final s in stops) {
+    for (final s in activeStops) {
       if (!s.passed) return s;
     }
     return null;
   }
 
-  int get passedCount => stops.where((s) => s.passed).length;
+  int get passedCount => activeStops.where((s) => s.passed).length;
+
+  double get remainingM {
+    final a = active;
+    if (a == null) return 0;
+    final i = math.min(math.max(_progress, 0), a.cum.length - 1);
+    return math.max(0, a.cum.last - a.cum[i]);
+  }
 
   double? get nextStopDistance {
     final s = nextStop;
+    final a = active;
     if (s == null || position == null) return null;
-    if (hasRoute && s.pathIndex >= _progress) return _cum[s.pathIndex] - _cum[_progress];
+    if (a != null && s.pathIndex >= _progress) return a.cum[s.pathIndex] - a.cum[_progress];
     return distanceM(position!, s.point);
   }
 
   String get etaText {
-    if (!hasRoute || remainingM <= 0) return '-';
-    final t = DateTime.now().add(Duration(seconds: (remainingM / _avgSpeed).round()));
+    final a = active;
+    if (a == null) return '-';
+    final t = DateTime.now().add(Duration(seconds: (remainingM / a.avgSpeed).round()));
     return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 
-  String get remainingMinutesText => hasRoute ? '약 ${(remainingM / _avgSpeed / 60).ceil()}분' : '-';
+  String get remainingMinutesText {
+    final a = active;
+    return a == null ? '-' : '${(remainingM / a.avgSpeed / 60).ceil()}분';
+  }
+
+  /// 다음 회전 안내 (거리, 문구)
+  (double, String)? get nextTurn {
+    final a = active;
+    if (a == null) return null;
+    for (final g in a.guides) {
+      if (g.pathIndex > _progress) return (a.cum[g.pathIndex] - a.cum[_progress], g.text);
+    }
+    return null;
+  }
+
+  /// 운행 전 화면에 보여줄 데이터 문제 안내
+  String? get setupNotice {
+    if (loadError != null) return loadError;
+    if (vehicleId == null) return '배정된 차량이 없습니다. 원장님께 차량 배정을 요청하세요.';
+    if (academy == null && stops.isEmpty) return '유치원 위치와 정류장 정보가 없어 경로를 계산할 수 없습니다.';
+    if (stops.isEmpty) return '오늘 배정된 정류장이 없습니다. 유치원까지의 경로만 표시합니다. (관리자 웹에서 원아·차량 배정을 확인하세요)';
+    if (academy == null) return '유치원 위치가 없어 마지막 정류장을 도착지로 사용합니다.';
+    return null;
+  }
 
   // ───────────── 서버 요청 (팀 앱 ApiService: 토큰 자동 갱신 포함) ─────────────
 
@@ -132,74 +226,297 @@ class DriverNavigator extends ChangeNotifier {
   Future<void> init() async {
     try {
       await _tts.setLanguage('ko-KR');
-      await _tts.setSpeechRate(0.5);
+      await _tts.setSpeechRate(0.45); // 조금 천천히
     } catch (_) {}
 
     final user = ApiService().currentUser;
-    if (user == null) return;
-    SocketService().connect(ApiService().token);
-
-    try {
-      final v = await ApiService().getTeacherVehicle(user.email);
-      if (v != null) {
-        vehicleId = int.tryParse('${v['id']}');
-        vehicleName = '${v['name'] ?? ''}';
-      }
-      final route = await ApiService().getTeacherRoute(user.email);
-      if (route != null) {
-        vehicleId ??= route.vehicleId;
-        if (route.academyLat != null && route.academyLng != null) {
-          academy = GeoPoint(route.academyLat!, route.academyLng!);
+    if (user != null) {
+      SocketService().connect(ApiService().token);
+      try {
+        final v = await ApiService().getTeacherVehicle(user.email);
+        if (v != null) {
+          vehicleId = int.tryParse('${v['id']}');
+          vehicleName = '${v['name'] ?? ''}';
         }
-        stops
-          ..clear()
-          ..addAll(route.stops.map((s) => NavStop(s.name, GeoPoint(s.latitude, s.longitude))));
+        final route = await ApiService().getTeacherRoute(user.email);
+        if (route != null) {
+          vehicleId ??= route.vehicleId;
+          if (route.academyLat != null && route.academyLng != null) {
+            academy = GeoPoint(route.academyLat!, route.academyLng!);
+          }
+          stops
+            ..clear()
+            ..addAll(route.stops.map((s) => NavStop(s.name, GeoPoint(s.latitude, s.longitude))));
+        }
+        if (vehicleId != null) SocketService().joinVehicleRoom(vehicleId!);
+      } catch (e) {
+        loadError = '정보를 불러오지 못했습니다: $e';
       }
-      if (vehicleId == null) {
-        error = '배정된 차량이 없습니다. 원장님께 차량 배정을 요청하세요.';
-      } else {
-        SocketService().joinVehicleRoom(vehicleId!);
-      }
-      _drawMap();
-    } catch (e) {
-      error = '정보를 불러오지 못했습니다: $e';
     }
     loading = false;
+    _drawPreview();
+    notifyListeners();
+
+    await _startLocation(); // 첫 위치가 잡히면 경로 비교를 시작
+    if (position == null) await previewRoutes(); // GPS 가 없어도 유치원 기준으로 비교
+  }
+
+  // ───────────── 위치 (운행 전부터 내 위치 표시) ─────────────
+
+  Future<void> _startLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        gpsError = '휴대폰 위치(GPS)가 꺼져 있습니다';
+        notifyListeners();
+        return;
+      }
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        gpsError = '위치 권한이 없습니다 (설정에서 허용)';
+        notifyListeners();
+        return;
+      }
+      gpsError = null;
+      final first = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      _onPosition(GeoPoint(first.latitude, first.longitude), acc: first.accuracy);
+      map.centerOn(position!, zoom: 15);
+      await previewRoutes();
+
+      _gpsSub?.cancel();
+      _gpsSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 3),
+      ).listen(
+        (p) {
+          // 시뮬레이션·테스트 경로 중에는 실제 GPS 로 버스를 움직이지 않음
+          if (!simulating && !testMode) _onPosition(GeoPoint(p.latitude, p.longitude), acc: p.accuracy);
+        },
+        onError: (e) {
+          gpsError = 'GPS 오류: $e';
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      gpsError = '위치를 가져오지 못했습니다';
+      debugPrint('[nav] location error: $e');
+      notifyListeners();
+    }
+  }
+
+  // ───────────── 경로 계산 ─────────────
+
+  _RouteInput? _inputFor(List<NavStop> list) {
+    final remaining = list.where((s) => !s.passed).toList();
+    if (academy != null) return _RouteInput(remaining, academy!);
+    if (remaining.isEmpty) return null;
+    return _RouteInput(remaining.sublist(0, remaining.length - 1), remaining.last.point);
+  }
+
+  Future<RoutePlan> _fetchPlan(RouteMode m, GeoPoint origin, _RouteInput input) async {
+    final r = await _post('/directions', {
+      'origin': origin.toJson(),
+      'destination': input.destination.toJson(),
+      'waypoints': input.waypoints.take(30).map((s) => s.point.toJson()).toList(),
+      'mode': m.key,
+    }) as Map<String, dynamic>;
+
+    final path = [
+      for (final p in (r['path'] as List? ?? [])) GeoPoint(toDouble(p['lat']) ?? 0, toDouble(p['lng']) ?? 0),
+    ];
+    if (path.length < 2) throw NavException('경로를 찾지 못했습니다.');
+    final cum = cumulativeDistances(path);
+
+    final guides = <NavGuide>[];
+    var from = 0;
+    for (final g in (r['guides'] as List? ?? [])) {
+      final lat = toDouble(g['lat']);
+      final lng = toDouble(g['lng']);
+      final text = '${g['guidance'] ?? ''}'.trim();
+      final type = (g['type'] as num?)?.toInt();
+      if (lat == null || lng == null || text.isEmpty) continue;
+      if (type == 100) continue; // '출발지' 안내는 생략
+      final guide = NavGuide(GeoPoint(lat, lng), text);
+      guide.pathIndex = nearestIndex(path, guide.point, from: from);
+      from = guide.pathIndex;
+      guides.add(guide);
+    }
+
+    final c = r['criteria'];
+    final criteria = c is Map
+        ? 'priority=${c['priority']}, avoid=${(c['avoid'] as List?)?.join(',') ?? '-'}'
+        : '서버가 기준을 알려주지 않음 (서버 업데이트 필요)';
+    final plan = RoutePlan(
+      mode: m,
+      origin: origin,
+      path: path,
+      cum: cum,
+      guides: guides,
+      distanceM: toDouble(r['distance']) ?? cum.last,
+      durationS: toDouble(r['duration']) ?? cum.last / 8,
+      turnCount: (r['turnCount'] as num?)?.toInt() ?? guides.length,
+      criteriaFromServer: criteria,
+    );
+    debugPrint('[nav] ${m.key}: ${plan.distanceM.round()}m ${plan.durationS.round()}s '
+        'turns=${plan.turnCount} points=${path.length} ($criteria)');
+    return plan;
+  }
+
+  /// 운행 전: 안전·빠른 경로를 같은 출발지·경유지·도착지로 동시에 계산
+  Future<void> previewRoutes() async {
+    if (driving) return;
+    final input = _inputFor(stops);
+    final origin = position ?? academy;
+    if (input == null || origin == null) {
+      _drawPreview();
+      notifyListeners();
+      return;
+    }
+    final seq = ++_previewSeq;
+    for (final s in slots.values) {
+      s.status = PlanStatus.loading;
+      s.error = null;
+    }
+    notifyListeners();
+
+    await Future.wait(RouteMode.values.map((m) async {
+      try {
+        final plan = await _fetchPlan(m, origin, input);
+        if (seq != _previewSeq) return; // 더 최근 요청이 있으면 버림 (응답 역전 방지)
+        slots[m]!
+          ..plan = plan
+          ..status = PlanStatus.ready
+          ..error = null;
+      } catch (e) {
+        if (seq != _previewSeq) return;
+        slots[m]!
+          ..plan = null // 실패한 모드에 예전 경로를 남겨 두지 않음
+          ..status = PlanStatus.error
+          ..error = e.toString();
+      }
+    }));
+    if (seq != _previewSeq) return;
+
+    final a = slots[RouteMode.safe]!.plan;
+    final b = slots[RouteMode.fast]!.plan;
+    if (a != null && b != null) {
+      final same = a.distanceM.round() == b.distanceM.round() && a.path.length == b.path.length;
+      debugPrint('[nav] 비교: safe ${a.distanceM.round()}m/${a.durationS.round()}s, '
+          'fast ${b.distanceM.round()}m/${b.durationS.round()}s → ${same ? '같은 경로' : '다른 경로'}');
+    }
+    _drawPreview();
     notifyListeners();
   }
 
-  void _drawMap() {
-    map.setRoute(
-      path: _path,
-      stops: [for (final s in stops) {'lat': s.point.lat, 'lng': s.point.lng, 'passed': s.passed}],
+  void _drawPreview() {
+    if (driving) return;
+    map.setRoutes(
+      primary: slots[mode]!.plan?.path,
+      alternate: slots[mode.other]!.plan?.path,
+      stops: _stopsJson(stops),
       academy: academy,
     );
   }
 
-  // ───────────── 운행 시작·종료 ─────────────
+  List<Map<String, dynamic>> _stopsJson(List<NavStop> list) => [
+        for (final s in list) {'lat': s.point.lat, 'lng': s.point.lng, 'passed': s.passed, 'test': s.isTest},
+      ];
+
+  /// 경로 모드 선택
+  Future<void> selectMode(RouteMode m) async {
+    if (mode == m) return;
+    mode = m;
+    notifyListeners();
+    if (!driving) {
+      if (slots[m]!.status == PlanStatus.error || slots[m]!.status == PlanStatus.idle) {
+        await previewRoutes();
+      } else {
+        _drawPreview();
+      }
+      return;
+    }
+    _speak('${m.title}로 다시 안내합니다.');
+    await _reroute(reason: 'mode');
+  }
+
+  /// 운행 중 재탐색 (최근 요청만 반영, 실패하면 이전 경로를 유지하고 경고 표시)
+  Future<void> _reroute({required String reason}) async {
+    final pos = position;
+    final input = _inputFor(activeStops);
+    if (pos == null || input == null) return;
+    final seq = ++_routeSeq;
+    rerouting = true;
+    notifyListeners();
+    try {
+      final plan = await _fetchPlan(mode, pos, input);
+      if (seq != _routeSeq) return;
+      _activate(plan);
+      routeWarning = null;
+    } catch (e) {
+      if (seq != _routeSeq) return;
+      routeWarning = active == null
+          ? '경로를 가져오지 못했습니다: $e'
+          : '경로 갱신 실패 ($e) · 이전 ${active!.mode.title}로 안내 중';
+      debugPrint('[nav] reroute($reason) failed: $e');
+    } finally {
+      if (seq == _routeSeq) {
+        rerouting = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _activate(RoutePlan plan) {
+    active = plan;
+    var from = 0;
+    for (final s in activeStops.where((s) => !s.passed)) {
+      s.pathIndex = nearestIndex(plan.path, s.point, from: from);
+      from = s.pathIndex;
+    }
+    _progress = 0;
+    _offRouteCount = 0;
+    _simMeters = 0;
+    map.setRoutes(primary: plan.path, stops: _stopsJson(activeStops), academy: academy, fit: false);
+    _updateProgress();
+  }
+
+  // ───────────── 실제 운행 ─────────────
 
   Future<void> start() async {
     if (vehicleId == null) {
-      error = '배정된 차량이 없습니다.';
+      actionError = '배정된 차량이 없습니다.';
       notifyListeners();
       return;
     }
     busy = true;
-    error = null;
+    actionError = null;
     notifyListeners();
     try {
-      final here = await _currentPosition();
+      if (position == null) await _startLocation();
+      if (position == null) throw NavException(gpsError ?? '현재 위치를 확인할 수 없습니다.');
       await _post('/teacher/start-operation');
-      operating = true;
+      driving = true;
+      serverLive = true;
+      testMode = false;
       sentCount = 0;
+      follow = true;
       SocketService().connect(ApiService().token);
       SocketService().sendOperationStatus(vehicleId: vehicleId!, isOperating: true);
-      _onPosition(here);
-      await _requestRoute(from: here);
-      _startGps();
-      _speak('운행을 시작합니다. 오늘도 안전 운행 부탁드립니다.');
+
+      // 미리 계산한 경로가 지금 위치 근처에서 출발하면 그대로 사용
+      final ready = slots[mode]!.plan;
+      if (ready != null &&
+          distanceM(ready.origin, position!) < 150 &&
+          DateTime.now().difference(ready.createdAt).inMinutes < 10) {
+        _activate(ready);
+      } else {
+        await _reroute(reason: 'start');
+      }
+      _onPosition(position!, acc: accuracy);
+      _speak('운행을 시작합니다. ${mode.title}로 안내합니다. 오늘도 안전 운행 부탁드립니다.');
     } catch (e) {
-      error = e.toString();
+      actionError = e.toString();
     }
     busy = false;
     notifyListeners();
@@ -208,150 +525,77 @@ class DriverNavigator extends ChangeNotifier {
   Future<void> stop() async {
     busy = true;
     notifyListeners();
-    _simTimer?.cancel();
-    simulating = false;
-    await _gpsSub?.cancel();
-    _gpsSub = null;
-    try {
-      await _post('/teacher/end-operation');
-    } catch (_) {}
-    if (vehicleId != null) {
-      SocketService().sendOperationStatus(vehicleId: vehicleId!, isOperating: false);
+    _stopSimulation();
+    if (serverLive) {
+      try {
+        await _post('/teacher/end-operation');
+      } catch (_) {}
+      if (vehicleId != null) SocketService().sendOperationStatus(vehicleId: vehicleId!, isOperating: false);
     }
-    operating = false;
-    instruction = '';
+    _resetDriving();
     busy = false;
     notifyListeners();
-    _speak('운행이 종료되었습니다. 수고하셨습니다.');
+    _speak(testMode ? '테스트를 종료합니다.' : '운행이 종료되었습니다. 수고하셨습니다.');
+    testMode = false;
+    _testStops.clear();
+    for (final s in stops) {
+      s.passed = false;
+    }
+    if (position != null) map.setMyLocation(position!);
+    await previewRoutes();
   }
 
-  Future<void> setMode(RouteMode m) async {
-    if (mode == m) return;
-    mode = m;
-    notifyListeners();
-    if (operating && position != null) {
-      _speak(m == RouteMode.safe ? '큰길 위주의 안전 경로로 안내합니다.' : '빠른 경로로 안내합니다.');
-      await _requestRoute(from: position!);
-    }
+  void _resetDriving() {
+    driving = false;
+    serverLive = false;
+    active = null;
+    rerouting = false;
+    routeWarning = null;
+    _routeSeq++;
+    map.hideBus();
   }
 
   void setFollow(bool v) {
     follow = v;
     if (v && position != null) {
-      map.moveBus(position!, follow: true);
+      if (driving) {
+        map.moveBus(position!, follow: true);
+      } else {
+        map.centerOn(position!);
+      }
     } else {
       map.fitAll();
     }
     notifyListeners();
   }
 
-  // ───────────── 경로 탐색 (카카오 길찾기) ─────────────
+  void centerOnMe() {
+    if (position == null) return;
+    if (driving) {
+      setFollow(true);
+    } else {
+      map.centerOn(position!);
+    }
+  }
 
-  Future<void> _requestRoute({required GeoPoint from}) async {
-    final remaining = stops.where((s) => !s.passed).toList();
-    final GeoPoint? destination = academy ?? (remaining.isNotEmpty ? remaining.last.point : null);
-    if (destination == null) {
-      instruction = '오늘 운행할 정류장이 없습니다.';
+  // ───────────── 위치 처리 ─────────────
+
+  void _onPosition(GeoPoint p, {double? acc, bool simulated = false}) {
+    position = p;
+    if (acc != null) accuracy = acc;
+
+    if (!driving) {
+      map.setMyLocation(p);
       notifyListeners();
       return;
     }
-    // 유치원 좌표가 없으면 마지막 정류장이 도착지
-    final waypoints = academy != null ? remaining : remaining.sublist(0, math.max(0, remaining.length - 1));
 
-    routing = true;
-    notifyListeners();
-    try {
-      final r = await _post('/directions', {
-        'origin': from.toJson(),
-        'destination': destination.toJson(),
-        'waypoints': waypoints.take(30).map((s) => s.point.toJson()).toList(),
-        'mode': mode == RouteMode.fast ? 'fast' : 'safe',
-      }) as Map<String, dynamic>;
-
-      _path = [
-        for (final p in (r['path'] as List? ?? [])) GeoPoint(toDouble(p['lat']) ?? 0, toDouble(p['lng']) ?? 0),
-      ];
-      if (_path.length < 2) throw NavException('경로를 찾지 못했습니다.');
-      _cum = cumulativeDistances(_path);
-
-      final dist = toDouble(r['distance']) ?? _cum.last;
-      final dur = toDouble(r['duration']);
-      if (dur != null && dur > 0) _avgSpeed = math.max(2, dist / dur);
-
-      // 회전 안내·정류장을 경로 위의 위치(번호)로 바꿔 둔다
-      _guides.clear();
-      var from0 = 0;
-      for (final g in (r['guides'] as List? ?? [])) {
-        final lat = toDouble(g['lat']);
-        final lng = toDouble(g['lng']);
-        final text = '${g['guidance'] ?? ''}'.trim();
-        if (lat == null || lng == null || text.isEmpty) continue;
-        final guide = _Guide(GeoPoint(lat, lng), text);
-        guide.pathIndex = nearestIndex(_path, guide.point, from: from0);
-        from0 = guide.pathIndex;
-        _guides.add(guide);
-      }
-      var from1 = 0;
-      for (final s in remaining) {
-        s.pathIndex = nearestIndex(_path, s.point, from: from1);
-        from1 = s.pathIndex;
-      }
-
-      _progress = 0;
-      _offRouteCount = 0;
-      _simMeters = 0;
-      error = null;
-      _drawMap();
-      _updateProgress();
-    } catch (e) {
-      error = '경로를 가져오지 못했습니다: $e';
-    }
-    routing = false;
-    notifyListeners();
-  }
-
-  // ───────────── 위치 ─────────────
-
-  Future<GeoPoint> _currentPosition() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      throw NavException('휴대폰의 위치(GPS)를 켜주세요.');
-    }
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-      throw NavException('위치 권한이 필요합니다. 설정에서 TakeMe의 위치 권한을 허용해주세요.');
-    }
-    final p = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
-    accuracy = p.accuracy;
-    return GeoPoint(p.latitude, p.longitude);
-  }
-
-  void _startGps() {
-    _gpsSub?.cancel();
-    _gpsSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 3),
-    ).listen(
-      (p) {
-        if (!simulating) _onPosition(GeoPoint(p.latitude, p.longitude), acc: p.accuracy);
-      },
-      onError: (e) {
-        error = 'GPS 오류: $e';
-        notifyListeners();
-      },
-    );
-  }
-
-  /// 새 위치가 들어올 때마다 (실제 GPS 또는 시뮬레이션)
-  void _onPosition(GeoPoint p, {double? acc}) {
-    position = p;
-    if (acc != null) accuracy = acc;
     map.moveBus(p, follow: follow);
-
-    if (vehicleId != null && SocketService().isConnected) {
+    final mayLeaveDevice = serverLive && !testMode && (!simulated || simSendToServer);
+    if (mayLeaveDevice && vehicleId != null && SocketService().isConnected) {
       SocketService().sendLocationUpdate(vehicleId: vehicleId!, lat: p.lat, lng: p.lng);
       sentCount++;
+      lastSentAt = DateTime.now();
     }
     _checkStopArrival(p);
     _updateProgress();
@@ -359,87 +603,138 @@ class DriverNavigator extends ChangeNotifier {
   }
 
   void _checkStopArrival(GeoPoint p) {
-    for (var i = 0; i < stops.length; i++) {
-      final s = stops[i];
+    final list = activeStops;
+    for (var i = 0; i < list.length; i++) {
+      final s = list[i];
       if (s.passed) continue;
       if (distanceM(p, s.point) < 40) {
         s.passed = true;
         map.markStopPassed(i);
-        _speak('${s.name} 원아 정류장에 도착했습니다.');
+        final next = nextStop;
+        _speak('${s.name} 정류장에 도착했습니다.${next == null ? ' 유치원으로 복귀합니다.' : ' 다음은 ${next.name} 정류장입니다.'}');
       }
       break; // 다음 정류장 하나만 확인
     }
   }
 
   void _updateProgress() {
+    final a = active;
     final pos = position;
-    if (!hasRoute || pos == null) return;
+    if (a == null || pos == null) return;
 
-    final idx = nearestIndex(_path, pos, from: math.max(0, _progress - 5), to: _progress + 80);
-    final offRoute = distanceM(_path[idx], pos);
+    final idx = nearestIndex(a.path, pos, from: math.max(0, _progress - 5), to: _progress + 80);
+    final off = distanceM(a.path[idx], pos);
     _progress = idx;
-    remainingM = _cum.last - _cum[idx];
 
-    // 70m 이상 벗어난 상태가 3번 연속이면 다시 탐색 (20초에 한 번까지)
-    _offRouteCount = offRoute > 70 ? _offRouteCount + 1 : 0;
-    if (_offRouteCount >= 3 && !routing && DateTime.now().difference(_lastReroute).inSeconds > 20) {
+    // 70m 이상 벗어난 상태가 3번 연속이면 재탐색 (20초에 한 번, 중복 요청 방지)
+    _offRouteCount = off > 70 ? _offRouteCount + 1 : 0;
+    if (_offRouteCount >= 3 && !rerouting && DateTime.now().difference(_lastReroute).inSeconds > 20) {
       _offRouteCount = 0;
       _lastReroute = DateTime.now();
-      _speak('경로를 벗어났습니다. 경로를 다시 탐색합니다.');
-      _requestRoute(from: pos);
+      _speak('경로를 벗어났습니다. 경로를 다시 찾습니다.');
+      _reroute(reason: 'off-route');
       return;
     }
 
-    _Guide? next;
-    for (final g in _guides) {
-      if (g.pathIndex > idx) {
-        next = g;
+    final turn = nextTurn;
+    if (turn == null) return;
+    final (d, text) = turn;
+    NavGuide? g;
+    for (final x in a.guides) {
+      if (x.pathIndex > idx) {
+        g = x;
         break;
       }
     }
-    if (next == null) {
-      instruction = remainingM < 60 ? '목적지 부근입니다' : '경로를 따라 주행하세요';
-      return;
-    }
-    final d = _cum[next.pathIndex] - _cum[idx];
-    instruction = '${formatDistance(d)} 앞 ${next.text}';
-    if (d <= 300 && d > 100 && !next.saidFar) {
-      next.saidFar = true;
-      _speak('${(d / 10).round() * 10}미터 앞에서 ${next.text}');
-    } else if (d <= 60 && !next.saidNear) {
-      next.saidNear = true;
-      next.saidFar = true;
-      _speak(next.text);
+    if (g == null) return;
+    if (d <= 300 && d > 100 && !g.saidFar) {
+      g.saidFar = true;
+      _speak('${(d / 10).round() * 10}미터 앞에서 $text');
+    } else if (d <= 60 && !g.saidNear) {
+      g.saidNear = true;
+      g.saidFar = true;
+      _speak('곧 $text');
     }
   }
 
-  // ───────────── 주행 시뮬레이션 (테스트용) ─────────────
+  // ───────────── 테스트 경로 & 시뮬레이션 ─────────────
 
-  /// 차를 타지 않고 경로를 따라 1초마다 가짜 위치를 보냄 (약 40km/h)
-  void toggleSimulation() {
-    if (simulating) {
-      _simTimer?.cancel();
-      simulating = false;
+  /// 테스트 경로: 유치원(없으면 내 위치) 주변에 가짜 정류장 4곳을 만들어 휴대폰 안에서만 주행
+  /// 서버에 운행 시작·위치·도착 알림을 보내지 않음
+  Future<void> startTestDrive() async {
+    final center = academy ?? position;
+    if (center == null) {
+      actionError = '테스트 경로를 만들 기준 위치(유치원 또는 내 위치)가 없습니다.';
       notifyListeners();
       return;
     }
-    if (!operating || !hasRoute) {
-      error = '운행을 시작해서 경로가 표시된 뒤 사용할 수 있습니다.';
+    busy = true;
+    actionError = null;
+    notifyListeners();
+    const offsets = [(0.004, 0.003), (0.006, -0.002), (0.002, -0.005), (-0.003, -0.003)];
+    _testStops
+      ..clear()
+      ..addAll([
+        for (var i = 0; i < offsets.length; i++)
+          NavStop('테스트 ${i + 1}', GeoPoint(center.lat + offsets[i].$1, center.lng + offsets[i].$2), isTest: true),
+      ]);
+    testMode = true;
+    driving = true;
+    serverLive = false;
+    follow = true;
+    position = center;
+    await _reroute(reason: 'test');
+    busy = false;
+    notifyListeners();
+    if (active != null) {
+      _speak('테스트 경로를 시작합니다. 실제 운행이 아닙니다.');
+      startSimulation();
+    } else {
+      testMode = false;
+      _resetDriving();
+      _testStops.clear();
+      _drawPreview();
       notifyListeners();
-      return;
     }
+  }
+
+  /// 경로를 따라 1초마다 가짜 위치 이동 (약 40km/h)
+  void startSimulation() {
+    if (!driving || active == null || simulating) return;
     simulating = true;
-    _simMeters = _cum[_progress];
+    _simMeters = active!.cum[_progress];
     _simTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!hasRoute) return;
-      _simMeters = math.min(_simMeters + 11, _cum.last);
-      _onPosition(pointAlong(_path, _cum, _simMeters));
-      if (_simMeters >= _cum.last) {
-        _simTimer?.cancel();
-        simulating = false;
-        notifyListeners();
+      final a = active;
+      if (a == null) return;
+      _simMeters = math.min(_simMeters + 11, a.cum.last);
+      var p = pointAlong(a.path, a.cum, _simMeters);
+      if (_offRouteTestTicks > 0) {
+        _offRouteTestTicks--;
+        p = GeoPoint(p.lat + 0.0012, p.lng); // 북쪽으로 약 130m 벗어남
       }
+      _onPosition(p, simulated: true);
+      if (_simMeters >= a.cum.last) _stopSimulation();
     });
+    notifyListeners();
+  }
+
+  void _stopSimulation() {
+    _simTimer?.cancel();
+    _simTimer = null;
+    simulating = false;
+    _offRouteTestTicks = 0;
+  }
+
+  void stopSimulation() {
+    _stopSimulation();
+    notifyListeners();
+  }
+
+  /// 경로 이탈 테스트: 시뮬레이션 위치를 4초 동안 경로 밖으로 보냄 → 재탐색 확인
+  void simulateOffRoute() {
+    if (!simulating) return;
+    _offRouteTestTicks = 4;
+    _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
     notifyListeners();
   }
 
@@ -450,7 +745,7 @@ class DriverNavigator extends ChangeNotifier {
 
   @override
   void dispose() {
-    _simTimer?.cancel();
+    _stopSimulation();
     _gpsSub?.cancel();
     _tts.stop();
     super.dispose();
