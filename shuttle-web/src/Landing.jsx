@@ -273,18 +273,18 @@ export default function Landing() {
             <button type="submit" className="btn-primary w-full py-3 text-base font-bold shadow-md shadow-blue-500/20">로그인</button>
             {showSelfUnlock && (
               <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left space-y-2">
-                <p className="text-xs font-semibold text-amber-900">계정이 잠금 상태입니다.</p>
+                <p className="text-xs font-semibold text-amber-900">원장님 계정 잠금 안내 (이메일 본인 인증)</p>
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  등록된 이메일로 6자리 인증번호를 발송받아 본인 인증 후 즉시 잠금을 해제할 수 있습니다.
+                  원장님 계정 연속 5회 실패로 보안 잠금 상태입니다. 가입 시 등록된 원장님 이메일로 6자리 인증번호를 받아 인증하시면 즉시 잠금이 해제됩니다.
                 </p>
                 {!unlockSent ? (
                   <button
                     type="button"
                     onClick={handleSendUnlockCode}
                     disabled={unlockLoading}
-                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition"
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition shadow-sm"
                   >
-                    {unlockLoading ? '발송 중...' : '이메일로 잠금 해제 인증번호 발송'}
+                    {unlockLoading ? '인증번호 발송 중...' : '원장님 이메일로 인증번호 발송'}
                   </button>
                 ) : (
                   <div className="space-y-2 pt-1">

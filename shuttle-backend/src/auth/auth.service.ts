@@ -127,7 +127,11 @@ export class AuthService {
   async verifyEmailCode(email: string, code: string) {
     const user = await this.usersRepository.findOne({ where: { email } });
     if (user && user.isLocked) {
-      throw new BadRequestException('인증번호 5회 연속 실패로 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+      if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+        throw new BadRequestException('인증번호 5회 연속 실패로 원장님 계정이 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 잠금이 즉시 해제됩니다.');
+      } else {
+        throw new BadRequestException('인증번호 5회 연속 실패로 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+      }
     }
 
     const record = this.verificationCodes.get(email);
@@ -140,7 +144,11 @@ export class AuthService {
           user.isLocked = true;
           user.lockedAt = new Date();
           await this.usersRepository.save(user);
-          throw new BadRequestException('인증번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님에게 잠금 해제를 요청해 주세요.');
+          if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+            throw new BadRequestException('인증번호를 5회 연속 잘못 입력하여 원장님 계정이 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 잠금이 즉시 해제됩니다.');
+          } else {
+            throw new BadRequestException('인증번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+          }
         }
         await this.usersRepository.save(user);
         const remaining = 5 - user.failedLoginAttempts;
@@ -220,18 +228,12 @@ export class AuthService {
       throw new BadRequestException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 
-    // 1. 계정 잠김 확인 (30분 경과 시 자동 잠금 해제)
+    // 1. 계정 잠김 확인
     if (user.isLocked) {
-      if (user.lockedAt && Date.now() - new Date(user.lockedAt).getTime() > 30 * 60 * 1000) {
-        user.isLocked = false;
-        user.failedLoginAttempts = 0;
-        user.lockedAt = null as any;
-        await this.usersRepository.save(user);
+      if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+        throw new BadRequestException('원장님 계정이 5회 연속 실패로 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 즉시 잠금이 해제됩니다.');
       } else {
-        const remainingMinutes = user.lockedAt 
-          ? Math.max(1, Math.ceil((30 * 60 * 1000 - (Date.now() - new Date(user.lockedAt).getTime())) / 60000))
-          : 30;
-        throw new BadRequestException(`로그인 5회 연속 실패로 계정이 잠겼습니다. ${remainingMinutes}분 후 자동으로 해제되거나 이메일 인증으로 즉시 해제할 수 있습니다.`);
+        throw new BadRequestException('로그인 5회 연속 실패로 계정이 잠겼습니다. 보안 규정상 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
       }
     }
 
@@ -243,7 +245,11 @@ export class AuthService {
         user.isLocked = true;
         user.lockedAt = new Date();
         await this.usersRepository.save(user);
-        throw new BadRequestException('비밀번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+        if (user.role === UserRole.ACADEMY_ADMIN || user.role === UserRole.SUPER_ADMIN) {
+          throw new BadRequestException('비밀번호를 5회 연속 잘못 입력하여 원장님 계정이 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 즉시 잠금이 해제됩니다.');
+        } else {
+          throw new BadRequestException('비밀번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+        }
       }
       await this.usersRepository.save(user);
       const remaining = 5 - user.failedLoginAttempts;
@@ -266,7 +272,7 @@ export class AuthService {
             user.isLocked = true;
             user.lockedAt = new Date();
             await this.usersRepository.save(user);
-            throw new BadRequestException('OTP 인증번호를 5회 연속 잘못 입력하여 계정이 잠겼습니다. 원장님(관리자)에게 잠금 해제를 요청해 주세요.');
+            throw new BadRequestException('OTP 인증번호를 5회 연속 잘못 입력하여 원장님 계정이 잠겼습니다. 등록된 원장님 이메일 인증을 완료하시면 즉시 잠금이 해제됩니다.');
           }
           await this.usersRepository.save(user);
           const remaining = 5 - user.failedLoginAttempts;
@@ -703,6 +709,10 @@ export class AuthService {
     if (!user.isLocked) {
       return { success: true, message: '해당 계정은 잠겨있지 않습니다. 바로 로그인해 주세요.' };
     }
+    // 원장님(ACADEMY_ADMIN, SUPER_ADMIN)만 이메일 인증으로 직접 잠금 해제 가능
+    if (user.role !== UserRole.ACADEMY_ADMIN && user.role !== UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('선생님, 기사님, 학부모님 계정은 보안 규정상 원장님이 관리자 대시보드에서 직접 잠금을 해제해주셔야 합니다.');
+    }
     return this.sendEmailVerification(email, clientIp, 'register');
   }
 
@@ -710,6 +720,9 @@ export class AuthService {
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
       throw new BadRequestException('가입되지 않은 이메일입니다.');
+    }
+    if (user.role !== UserRole.ACADEMY_ADMIN && user.role !== UserRole.SUPER_ADMIN) {
+      throw new BadRequestException('선생님, 기사님, 학부모님 계정은 보안 규정상 원장님이 관리자 대시보드에서 직접 잠금을 해제해주셔야 합니다.');
     }
     const record = this.verificationCodes.get(email);
     if (!record) throw new BadRequestException('인증 코드가 없습니다.');
@@ -724,6 +737,6 @@ export class AuthService {
     await this.usersRepository.save(user);
     this.verificationCodes.delete(email);
 
-    return { success: true, message: '계정 잠금이 성공적으로 해제되었습니다. 다시 로그인해 주세요.' };
+    return { success: true, message: '원장님 계정 잠금이 성공적으로 해제되었습니다. 이제 로그인해 주세요.' };
   }
 }
