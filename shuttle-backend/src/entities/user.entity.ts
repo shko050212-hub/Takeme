@@ -28,7 +28,7 @@ export class User {
   @Column({ nullable: true })
   name: string;
 
-  @Column({ nullable: true, transformer: encryptionTransformer })
+  @Column({ type: 'varchar', nullable: true, transformer: encryptionTransformer })
   phone: string | null;
 
   @Column({ nullable: true })
