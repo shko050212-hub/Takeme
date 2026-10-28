@@ -208,10 +208,15 @@ export class AuthService {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new BadRequestException('User not found');
 
+    if (!user.otpSecret) {
+      throw new BadRequestException('OTP가 등록되지 않은 사용자입니다.');
+    }
+
     const verified = speakeasy.totp.verify({
       secret: user.otpSecret,
       encoding: 'base32',
-      token
+      token,
+      window: 1
     });
 
     if (verified) {
