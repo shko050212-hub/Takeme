@@ -60,6 +60,7 @@ class RoutePlan {
   final double distanceM;
   final double durationS;
   final int turnCount;
+  final List<TrafficSegment> traffic; // 교통 상황 색 표시용
   final String criteriaFromServer; // 서버가 실제로 적용했다고 알려준 기준 (검증용)
   final DateTime createdAt;
 
@@ -72,6 +73,7 @@ class RoutePlan {
     required this.distanceM,
     required this.durationS,
     required this.turnCount,
+    required this.traffic,
     required this.criteriaFromServer,
   }) : createdAt = DateTime.now();
 
@@ -131,6 +133,7 @@ class DriverNavigator extends ChangeNotifier {
   // ── 위치 ──
   GeoPoint? position;
   double? accuracy;
+  double? heading; // 진행 방향 (화살표 회전)
   String? gpsError;
   bool follow = true;
   int sentCount = 0;
@@ -281,7 +284,7 @@ class DriverNavigator extends ChangeNotifier {
       final first = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
-      _onPosition(GeoPoint(first.latitude, first.longitude), acc: first.accuracy);
+      _onPosition(GeoPoint(first.latitude, first.longitude), acc: first.accuracy, gpsHeading: first.heading);
       map.centerOn(position!, zoom: 15);
       await previewRoutes();
 
@@ -291,7 +294,11 @@ class DriverNavigator extends ChangeNotifier {
       ).listen(
         (p) {
           // 시뮬레이션·테스트 경로 중에는 실제 GPS 로 버스를 움직이지 않음
-          if (!simulating && !testMode) _onPosition(GeoPoint(p.latitude, p.longitude), acc: p.accuracy);
+          if (!simulating && !testMode) {
+            // 움직일 때만 GPS 방향을 믿음 (정지 중에는 방향 값이 흔들림)
+            _onPosition(GeoPoint(p.latitude, p.longitude),
+                acc: p.accuracy, gpsHeading: p.speed > 1 ? p.heading : null);
+          }
         },
         onError: (e) {
           gpsError = 'GPS 오류: $e';
@@ -347,6 +354,10 @@ class DriverNavigator extends ChangeNotifier {
     final criteria = c is Map
         ? 'priority=${c['priority']}, avoid=${(c['avoid'] as List?)?.join(',') ?? '-'}'
         : '서버가 기준을 알려주지 않음 (서버 업데이트 필요)';
+    final traffic = <TrafficSegment>[
+      for (final t in (r['traffic'] as List? ?? []))
+        TrafficSegment((t['from'] as num).toInt(), (t['to'] as num).toInt(), (t['state'] as num?)?.toInt() ?? 0),
+    ];
     final plan = RoutePlan(
       mode: m,
       origin: origin,
@@ -356,6 +367,7 @@ class DriverNavigator extends ChangeNotifier {
       distanceM: toDouble(r['distance']) ?? cum.last,
       durationS: toDouble(r['duration']) ?? cum.last / 8,
       turnCount: (r['turnCount'] as num?)?.toInt() ?? guides.length,
+      traffic: traffic,
       criteriaFromServer: criteria,
     );
     debugPrint('[nav] ${m.key}: ${plan.distanceM.round()}m ${plan.durationS.round()}s '
@@ -413,6 +425,7 @@ class DriverNavigator extends ChangeNotifier {
     if (driving) return;
     map.setRoutes(
       primary: slots[mode]!.plan?.path,
+      traffic: slots[mode]!.plan?.traffic,
       alternate: slots[mode.other]!.plan?.path,
       stops: _stopsJson(stops),
       academy: academy,
@@ -477,7 +490,8 @@ class DriverNavigator extends ChangeNotifier {
     _progress = 0;
     _offRouteCount = 0;
     _simMeters = 0;
-    map.setRoutes(primary: plan.path, stops: _stopsJson(activeStops), academy: academy, fit: false);
+    map.setRoutes(
+        primary: plan.path, traffic: plan.traffic, stops: _stopsJson(activeStops), academy: academy, fit: false);
     _updateProgress();
   }
 
@@ -541,7 +555,7 @@ class DriverNavigator extends ChangeNotifier {
     for (final s in stops) {
       s.passed = false;
     }
-    if (position != null) map.setMyLocation(position!);
+    if (position != null) map.moveMe(position!, heading: heading);
     await previewRoutes();
   }
 
@@ -552,14 +566,14 @@ class DriverNavigator extends ChangeNotifier {
     rerouting = false;
     routeWarning = null;
     _routeSeq++;
-    map.hideBus();
+    map.resetZoom();
   }
 
   void setFollow(bool v) {
     follow = v;
     if (v && position != null) {
       if (driving) {
-        map.moveBus(position!, follow: true);
+        map.moveMe(position!, heading: heading, follow: true, navigating: true);
       } else {
         map.centerOn(position!);
       }
@@ -580,17 +594,24 @@ class DriverNavigator extends ChangeNotifier {
 
   // ───────────── 위치 처리 ─────────────
 
-  void _onPosition(GeoPoint p, {double? acc, bool simulated = false}) {
+  void _onPosition(GeoPoint p, {double? acc, double? gpsHeading, bool simulated = false}) {
+    final prev = position;
     position = p;
     if (acc != null) accuracy = acc;
+    // 진행 방향: GPS 방향이 있으면 사용, 없으면 이전 위치에서 계산 (2m 이상 움직였을 때)
+    if (gpsHeading != null && gpsHeading >= 0) {
+      heading = gpsHeading;
+    } else if (prev != null && distanceM(prev, p) > 2) {
+      heading = bearingDeg(prev, p);
+    }
 
     if (!driving) {
-      map.setMyLocation(p);
+      map.moveMe(p, heading: heading);
       notifyListeners();
       return;
     }
 
-    map.moveBus(p, follow: follow);
+    map.moveMe(p, heading: heading, follow: follow, navigating: true);
     final mayLeaveDevice = serverLive && !testMode && (!simulated || simSendToServer);
     if (mayLeaveDevice && vehicleId != null && SocketService().isConnected) {
       SocketService().sendLocationUpdate(vehicleId: vehicleId!, lat: p.lat, lng: p.lng);
