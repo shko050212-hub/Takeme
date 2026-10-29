@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { API_BASE_URL } from './config';
 
 const getDaysInMonth = (year, month) => {
@@ -11,18 +11,21 @@ const getFirstDayOfMonth = (year, month) => {
 
 const monthNames = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 
+const formatYMD = (year, month, day) => {
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
 const toDateStr = (val) => {
   if (!val) return '';
   if (typeof val === 'string') return val.split('T')[0];
   if (val instanceof Date) {
-    return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
+    return formatYMD(val.getFullYear(), val.getMonth(), val.getDate());
   }
   return String(val);
 };
 
 export default function LogViewer({ buses, students, currentTab = 'LOG', isClosing }) {
-  
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [selectedBusId, setSelectedBusId] = useState(buses?.length > 0 ? buses[0].id : null);
 
   useEffect(() => {
@@ -30,16 +33,17 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       setSelectedBusId(buses[0].id);
     }
   }, [buses, selectedBusId]);
-  
-  // LOG state
+
+  // LOG state & in-memory cache for instant date switching
   const [logs, setLogs] = useState([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
-  
+  const logsCacheRef = useRef(new Map());
+
   // ABSENCE state
   const [absences, setAbsences] = useState([]);
   const [selectedStudentForAbsence, setSelectedStudentForAbsence] = useState(null);
   const [absenceRange, setAbsenceRange] = useState({ start: null, end: null });
-  
+
   // HOLIDAY state
   const [holidays, setHolidays] = useState([]);
   const [holidayRange, setHolidayRange] = useState({ start: null, end: null });
@@ -48,32 +52,58 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
   const [holidayToDelete, setHolidayToDelete] = useState(null);
   const [isSavingHoliday, setIsSavingHoliday] = useState(false);
   const [isDeletingHoliday, setIsDeletingHoliday] = useState(false);
-  
-  const calendarRef = useRef(null);
-  
-  // Generate 13 months
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const monthsData = [];
-  
-  for (let i = -6; i <= 6; i++) {
-    let m = currentMonth + i;
-    let y = currentYear;
-    while (m < 0) { m += 12; y -= 1; }
-    while (m > 11) { m -= 12; y += 1; }
-    monthsData.push({ year: y, month: m });
-  }
 
+  const calendarRef = useRef(null);
+  const hasScrolledRef = useRef(false);
+
+  // Precompute 13 months metadata once
+  const { currentYear, currentMonth, todayStr, monthsData } = useMemo(() => {
+    const now = new Date();
+    const cMonth = now.getMonth();
+    const cYear = now.getFullYear();
+    const tStr = toDateStr(now);
+    const list = [];
+
+    for (let i = -6; i <= 6; i++) {
+      let m = cMonth + i;
+      let y = cYear;
+      while (m < 0) { m += 12; y -= 1; }
+      while (m > 11) { m -= 12; y += 1; }
+      const daysInMonth = getDaysInMonth(y, m);
+      const firstDay = getFirstDayOfMonth(y, m);
+      const daysArray = Array.from({ length: daysInMonth }, (_, idx) => {
+        const d = idx + 1;
+        return {
+          day: d,
+          dateStr: formatYMD(y, m, d),
+        };
+      });
+      const blanks = Array.from({ length: firstDay }, (_, idx) => idx);
+      list.push({
+        year: y,
+        month: m,
+        isCurrentMonth: y === cYear && m === cMonth,
+        daysArray,
+        blanks,
+      });
+    }
+    return { currentYear: cYear, currentMonth: cMonth, todayStr: tStr, monthsData: list };
+  }, []);
+
+  const selectedDateStr = useMemo(() => toDateStr(selectedDate), [selectedDate]);
+
+  // Instant scroll to current month on open (without smooth-scroll lag)
   useLayoutEffect(() => {
-    if (calendarRef.current) {
+    if (calendarRef.current && !hasScrolledRef.current) {
       const currentMonthElement = calendarRef.current.querySelector('[data-is-current="true"]');
       if (currentMonthElement) {
         calendarRef.current.scrollTop = currentMonthElement.offsetTop - calendarRef.current.offsetTop - 20;
+        hasScrolledRef.current = true;
       }
     }
-  }, [currentTab]);
+  }, []);
 
-  const fetchAbsences = async () => {
+  const fetchAbsences = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/routing/absences${selectedBusId ? `?vehicleId=${selectedBusId}` : ''}`);
       const data = await res.json();
@@ -81,12 +111,12 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [selectedBusId]);
 
-  const fetchHolidays = async () => {
+  const fetchHolidays = useCallback(async () => {
     try {
       const activeAcademyId = localStorage.getItem('takeme_selected_academy_id') || (() => {
-        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch(e){ return ''; }
+        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch (e) { return ''; }
       })();
       const res = await fetch(`${API_BASE_URL}/routing/holidays${activeAcademyId ? `?academyId=${activeAcademyId}` : ''}`);
       const data = await res.json();
@@ -94,38 +124,119 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
+  // Load holidays once on mount so calendar dots are always ready
+  useEffect(() => {
+    fetchHolidays();
+  }, [fetchHolidays]);
+
+  // Fetch logs with cache + AbortController for fast, non-blocking date selection
   useEffect(() => {
     if (currentTab === 'LOG' && selectedBusId) {
-      const fetchLogs = async () => {
+      const cacheKey = `${selectedDateStr}_${selectedBusId}`;
+      const cached = logsCacheRef.current.get(cacheKey);
+
+      if (cached) {
+        setLogs(cached);
+        setIsLoadingLogs(false);
+      } else {
         setIsLoadingLogs(true);
+      }
+
+      const controller = new AbortController();
+      const fetchLogs = async () => {
         try {
-          const year = selectedDate.getFullYear();
-          const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-          const day = String(selectedDate.getDate()).padStart(2, '0');
-          const dateStr = `${year}-${month}-${day}`;
-          
-          const res = await fetch(`${API_BASE_URL}/routing/daily-logs?date=${dateStr}&vehicleId=${selectedBusId}`);
+          const res = await fetch(
+            `${API_BASE_URL}/routing/daily-logs?date=${selectedDateStr}&vehicleId=${selectedBusId}`,
+            { signal: controller.signal }
+          );
           const data = await res.json();
-          setLogs(Array.isArray(data) ? data : []);
+          const safeData = Array.isArray(data) ? data : [];
+          logsCacheRef.current.set(cacheKey, safeData);
+          setLogs(safeData);
         } catch (e) {
-          console.error(e);
+          if (e.name !== 'AbortError') {
+            console.error(e);
+          }
         } finally {
-          setIsLoadingLogs(false);
+          if (!controller.signal.aborted) {
+            setIsLoadingLogs(false);
+          }
         }
       };
       fetchLogs();
+
+      return () => controller.abort();
     } else if (currentTab === 'ABSENCE') {
       fetchAbsences();
     } else if (currentTab === 'HOLIDAY') {
       fetchHolidays();
     }
-  }, [currentTab, selectedDate, selectedBusId]);
+  }, [currentTab, selectedDateStr, selectedBusId, fetchAbsences, fetchHolidays]);
+
+  // Background prefetch recent 5 days for the selected bus to make clicking recent dates instant
+  useEffect(() => {
+    if (currentTab !== 'LOG' || !selectedBusId) return;
+    const timer = setTimeout(() => {
+      const base = new Date();
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(base);
+        d.setDate(base.getDate() - i);
+        const dStr = toDateStr(d);
+        const key = `${dStr}_${selectedBusId}`;
+        if (!logsCacheRef.current.has(key)) {
+          fetch(`${API_BASE_URL}/routing/daily-logs?date=${dStr}&vehicleId=${selectedBusId}`)
+            .then(r => r.json())
+            .then(data => {
+              if (Array.isArray(data)) {
+                logsCacheRef.current.set(key, data);
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [currentTab, selectedBusId]);
+
+  // Precompute O(1) lookup structures for holidays and absences
+  const holidayRanges = useMemo(() => {
+    return holidays.map(h => ({
+      start: toDateStr(h.startDate),
+      end: toDateStr(h.endDate),
+    }));
+  }, [holidays]);
+
+  const isDateHoliday = useCallback((dateStr) => {
+    for (let i = 0; i < holidayRanges.length; i++) {
+      if (dateStr >= holidayRanges[i].start && dateStr <= holidayRanges[i].end) {
+        return true;
+      }
+    }
+    return false;
+  }, [holidayRanges]);
+
+  const absenceRanges = useMemo(() => {
+    return absences.map(a => ({
+      start: toDateStr(a.startDate),
+      end: toDateStr(a.endDate),
+    }));
+  }, [absences]);
+
+  const getAbsenceCountForDate = useCallback((dateStr) => {
+    let count = 0;
+    for (let i = 0; i < absenceRanges.length; i++) {
+      if (dateStr >= absenceRanges[i].start && dateStr <= absenceRanges[i].end) {
+        count++;
+      }
+    }
+    return count;
+  }, [absenceRanges]);
 
   const handleDateClick = (year, month, day) => {
     const clickedDate = new Date(year, month, day);
-    
+
     if (currentTab === 'LOG') {
       setSelectedDate(clickedDate);
     } else if (currentTab === 'ABSENCE' && selectedStudentForAbsence) {
@@ -147,31 +258,20 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
     }
   };
 
-  const isSameDate = (d1, d2) => {
-    if (!d1 || !d2) return false;
-    return d1.getFullYear() === d2.getFullYear() && 
-           d1.getMonth() === d2.getMonth() && 
-           d1.getDate() === d2.getDate();
-  };
-
-  const isDateInRange = (date, start, end) => {
+  const isDateStrInRange = (dateStr, start, end) => {
     if (!start) return false;
-    if (!end) return isSameDate(date, start);
-    
-    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
-    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
-    return d >= s && d <= e;
+    const sStr = toDateStr(start);
+    if (!end) return dateStr === sStr;
+    const eStr = toDateStr(end);
+    return dateStr >= sStr && dateStr <= eStr;
   };
 
   const saveAbsence = async () => {
     if (!selectedStudentForAbsence || !absenceRange.start) return;
-    
-    const startStr = `${absenceRange.start.getFullYear()}-${String(absenceRange.start.getMonth() + 1).padStart(2, '0')}-${String(absenceRange.start.getDate()).padStart(2, '0')}`;
-    const endStr = absenceRange.end 
-      ? `${absenceRange.end.getFullYear()}-${String(absenceRange.end.getMonth() + 1).padStart(2, '0')}-${String(absenceRange.end.getDate()).padStart(2, '0')}`
-      : startStr;
-      
+
+    const startStr = toDateStr(absenceRange.start);
+    const endStr = absenceRange.end ? toDateStr(absenceRange.end) : startStr;
+
     try {
       await fetch(`${API_BASE_URL}/routing/absence`, {
         method: 'POST',
@@ -200,16 +300,14 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
   const saveHoliday = async () => {
     if (!holidayRange.start) return;
-    
-    const startStr = `${holidayRange.start.getFullYear()}-${String(holidayRange.start.getMonth() + 1).padStart(2, '0')}-${String(holidayRange.start.getDate()).padStart(2, '0')}`;
-    const endStr = holidayRange.end 
-      ? `${holidayRange.end.getFullYear()}-${String(holidayRange.end.getMonth() + 1).padStart(2, '0')}-${String(holidayRange.end.getDate()).padStart(2, '0')}`
-      : startStr;
-      
+
+    const startStr = toDateStr(holidayRange.start);
+    const endStr = holidayRange.end ? toDateStr(holidayRange.end) : startStr;
+
     setIsSavingHoliday(true);
     try {
       const activeAcademyId = localStorage.getItem('takeme_selected_academy_id') || (() => {
-        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch(e){ return undefined; }
+        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch (e) { return undefined; }
       })();
       await fetch(`${API_BASE_URL}/routing/holiday`, {
         method: 'POST',
@@ -247,71 +345,55 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
     }
   };
 
-  const getDayClasses = (dateObj, isSelected, isToday) => {
-    let classes = 'h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all relative ';
-    
+  const getDayClasses = (dateStr) => {
+    let classes = 'w-10 h-10 mx-auto rounded-full flex items-center justify-center text-sm font-bold transition-colors relative ';
+    const isSelected = dateStr === selectedDateStr;
+    const isToday = dateStr === todayStr;
+
     if (currentTab === 'ABSENCE' && selectedStudentForAbsence) {
-      if (isDateInRange(dateObj, absenceRange.start, absenceRange.end)) {
-        return classes + 'bg-red-500 text-white shadow-md transform scale-110 ring-2 ring-red-300 ring-offset-2';
+      if (isDateStrInRange(dateStr, absenceRange.start, absenceRange.end)) {
+        return classes + 'bg-red-500 text-white shadow-md scale-110 ring-2 ring-red-300 ring-offset-2';
       }
     } else if (currentTab === 'HOLIDAY') {
-      if (isDateInRange(dateObj, holidayRange.start, holidayRange.end)) {
-        return classes + 'bg-orange-500 text-white shadow-md transform scale-110 ring-2 ring-orange-300 ring-offset-2';
+      if (isDateStrInRange(dateStr, holidayRange.start, holidayRange.end)) {
+        return classes + 'bg-orange-500 text-white shadow-md scale-110 ring-2 ring-orange-300 ring-offset-2';
       }
-      const isRegisteredHoliday = holidays.some(h => {
-        const s = toDateStr(h.startDate);
-        const e = toDateStr(h.endDate);
-        const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-        return dateStr >= s && dateStr <= e;
-      });
-      if (isRegisteredHoliday) {
+      if (isDateHoliday(dateStr)) {
         return classes + 'bg-orange-100 text-orange-700 font-black border border-orange-300 hover:bg-orange-200';
       }
     } else if (currentTab === 'LOG') {
-      if (isSelected) return classes + 'bg-blue-600 text-white shadow-md transform scale-110';
+      if (isSelected) return classes + 'bg-blue-600 text-white shadow-md scale-110';
     }
 
     if (isToday) return classes + 'bg-blue-50 text-blue-700 border border-blue-200';
     return classes + 'hover:bg-slate-100 text-slate-700';
   };
 
-  const getBusStudents = () => {
+  const busStudents = useMemo(() => {
     if (!students || !selectedBusId) return [];
-    return students.filter(s => 
-      s.assignedBusId === selectedBusId || 
+    return students.filter(s =>
+      s.assignedBusId === selectedBusId ||
       s.assignedVehicle?.id === selectedBusId ||
       s.assignedVehicleId === selectedBusId ||
       s.schedules?.some(sch => sch.assignedVehicle?.id === selectedBusId || sch.assignedVehicleId === selectedBusId)
     );
-  };
+  }, [students, selectedBusId]);
 
-  // Rendering calendar dots for absences/holidays
-  const renderDots = (dateObj) => {
-    const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-    
-    // Holiday check
-    const isHoliday = holidays.some(h => {
-      const s = toDateStr(h.startDate);
-      const e = toDateStr(h.endDate);
-      return dateStr >= s && dateStr <= e;
-    });
-    if (isHoliday) {
-      return <div className="absolute bottom-1 flex justify-center w-full"><span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span></div>;
+  const renderDots = (dateStr) => {
+    if (isDateHoliday(dateStr)) {
+      return <div className="absolute bottom-1 flex justify-center w-full pointer-events-none"><span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span></div>;
     }
-    
+
     if (currentTab === 'ABSENCE') {
-      const dayAbsences = absences.filter(a => {
-        const s = toDateStr(a.startDate);
-        const e = toDateStr(a.endDate);
-        return dateStr >= s && dateStr <= e;
-      });
-      if (dayAbsences.length > 0) {
+      const count = getAbsenceCountForDate(dateStr);
+      if (count > 0) {
+        const dots = Math.min(count, 3);
         return (
-          <div className="absolute bottom-1 flex justify-center w-full gap-0.5 flex-wrap px-1">
-            {dayAbsences.slice(0, 3).map((a, i) => (
+          <div className="absolute bottom-1 flex justify-center w-full gap-0.5 flex-wrap px-1 pointer-events-none">
+            {Array.from({ length: dots }, (_, i) => (
               <span key={i} className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
             ))}
-            {dayAbsences.length > 3 && <span className="w-1 h-1 rounded-full bg-slate-400"></span>}
+            {count > 3 && <span className="w-1 h-1 rounded-full bg-slate-400"></span>}
           </div>
         );
       }
@@ -323,92 +405,92 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
     <div className={`absolute inset-0 z-[2000] flex bg-slate-50 h-full overflow-hidden transition-all duration-300 ${isClosing ? 'animate-slide-out-right' : 'animate-slide-in-right'}`}>
       
       {/* Calendar Area (50% width) */}
-      <div className="w-1/2 h-full border-r border-slate-200 flex flex-col bg-white transition-all duration-300">
+      <div className="w-1/2 h-full border-r border-slate-200 flex flex-col bg-white">
         
         {/* Calendar Header */}
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100/50 backdrop-blur z-20">
           <h2 className="text-lg font-black text-slate-800">📅 날짜 선택</h2>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedDate(new Date());
+              if (calendarRef.current) {
+                const el = calendarRef.current.querySelector('[data-is-current="true"]');
+                if (el) calendarRef.current.scrollTop = el.offsetTop - calendarRef.current.offsetTop - 20;
+              }
+            }}
+            className="px-3 py-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
+          >
+            오늘로 이동
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-12 scroll-smooth" ref={calendarRef}>
-            {monthsData.map((mData, index) => {
-              const isCurrentMonth = mData.year === currentYear && mData.month === currentMonth;
-              const daysInMonth = getDaysInMonth(mData.year, mData.month);
-              const firstDay = getFirstDayOfMonth(mData.year, mData.month);
-              const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-              const blanks = Array.from({ length: firstDay }, (_, i) => i);
-
-              return (
-                <div key={index} data-is-current={isCurrentMonth} className="max-w-md mx-auto">
-                  <h3 className="text-xl font-black text-slate-800 mb-4">{mData.year}년 {monthNames[mData.month]}</h3>
-                  <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                    {['일', '월', '화', '수', '목', '금', '토'].map(d => (
-                      <div key={d} className={`text-xs font-bold ${d === '일' ? 'text-red-500' : d === '토' ? 'text-blue-500' : 'text-slate-400'}`}>{d}</div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {blanks.map(b => <div key={`blank-${b}`} className="h-10"></div>)}
-                    {daysArray.map(day => {
-                      const dateObj = new Date(mData.year, mData.month, day);
-                      const isSelected = isSameDate(dateObj, selectedDate);
-                      const isToday = isSameDate(dateObj, new Date());
-                      
-                      return (
-                        <div key={day} className="relative">
-                          <button
-                            onClick={() => handleDateClick(mData.year, mData.month, day)}
-                            className={getDayClasses(dateObj, isSelected, isToday)}
-                          >
-                            {day}
-                          </button>
-                          {renderDots(dateObj)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Action Buttons below calendar depending on state */}
-          {currentTab === 'ABSENCE' && absenceRange.start && (
-            <div className="p-4 border-t bg-white shadow-lg flex justify-between items-center animate-slide-up">
-              <div>
-                <div className="text-xs text-slate-500 font-bold">선택된 기간</div>
-                <div className="font-black text-red-600">
-                  {absenceRange.start.toLocaleDateString()} {absenceRange.end && `~ ${absenceRange.end.toLocaleDateString()}`}
-                </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-12" ref={calendarRef}>
+          {monthsData.map((mData, index) => (
+            <div key={index} data-is-current={mData.isCurrentMonth} className="max-w-md mx-auto">
+              <h3 className="text-xl font-black text-slate-800 mb-4">{mData.year}년 {monthNames[mData.month]}</h3>
+              <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                {['일', '월', '화', '수', '목', '금', '토'].map(d => (
+                  <div key={d} className={`text-xs font-bold ${d === '일' ? 'text-red-500' : d === '토' ? 'text-blue-500' : 'text-slate-400'}`}>{d}</div>
+                ))}
               </div>
-              <button onClick={saveAbsence} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-xl font-bold shadow-md transition-all">
-                결석 저장하기
+              <div className="grid grid-cols-7 gap-1">
+                {mData.blanks.map(b => <div key={`blank-${b}`} className="h-10"></div>)}
+                {mData.daysArray.map(({ day, dateStr }) => (
+                  <div key={day} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => handleDateClick(mData.year, mData.month, day)}
+                      className={getDayClasses(dateStr)}
+                    >
+                      {day}
+                    </button>
+                    {renderDots(dateStr)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Action Buttons below calendar depending on state */}
+        {currentTab === 'ABSENCE' && absenceRange.start && (
+          <div className="p-4 border-t bg-white shadow-lg flex justify-between items-center animate-slide-up">
+            <div>
+              <div className="text-xs text-slate-500 font-bold">선택된 기간</div>
+              <div className="font-black text-red-600">
+                {absenceRange.start.toLocaleDateString()} {absenceRange.end && `~ ${absenceRange.end.toLocaleDateString()}`}
+              </div>
+            </div>
+            <button onClick={saveAbsence} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-xl font-bold shadow-md transition-all">
+              결석 저장하기
+            </button>
+          </div>
+        )}
+
+        {currentTab === 'HOLIDAY' && holidayRange.start && (
+          <div className="p-4 border-t bg-white shadow-lg flex justify-between items-center animate-slide-up">
+            <div>
+              <div className="text-xs text-slate-500 font-bold">휴업 예정 기간</div>
+              <div className="font-black text-orange-600">
+                {holidayRange.start.toLocaleDateString()} {holidayRange.end && `~ ${holidayRange.end.toLocaleDateString()}`}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHolidayRange({ start: null, end: null })}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+              >
+                선택 취소
+              </button>
+              <button onClick={() => setShowHolidayConfirm(true)} className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-xl font-bold shadow-md transition-all text-sm">
+                휴업일 저장하기
               </button>
             </div>
-          )}
-
-          {currentTab === 'HOLIDAY' && holidayRange.start && (
-            <div className="p-4 border-t bg-white shadow-lg flex justify-between items-center animate-slide-up">
-              <div>
-                <div className="text-xs text-slate-500 font-bold">휴업 예정 기간</div>
-                <div className="font-black text-orange-600">
-                  {holidayRange.start.toLocaleDateString()} {holidayRange.end && `~ ${holidayRange.end.toLocaleDateString()}`}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setHolidayRange({ start: null, end: null })}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
-                >
-                  선택 취소
-                </button>
-                <button onClick={() => setShowHolidayConfirm(true)} className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-xl font-bold shadow-md transition-all text-sm">
-                  휴업일 저장하기
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
       {/* Right Side Area (50%) */}
       <div className="w-1/2 h-full flex flex-col bg-slate-50">
@@ -613,48 +695,48 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
             )}
 
             {currentTab === 'ABSENCE' && (
-                <div className="grid grid-cols-1 gap-4">
-                  {getBusStudents().map(student => {
-                    const studentAbsences = absences.filter(a => (a.student?.id || a.studentId) === student.id);
-                    const isSelected = selectedStudentForAbsence?.id === student.id;
-                    
-                    return (
-                      <div key={student.id} className={`bg-white rounded-2xl border p-4 transition-all shadow-sm ${isSelected ? 'ring-2 ring-red-500 border-transparent' : 'hover:border-slate-300'}`}>
-                        <div className="flex justify-between items-center">
-                          <div className="font-black text-slate-800 text-lg">{student.name} <span className="text-xs text-slate-400 font-normal ml-2">{student.raw?.['유치원명'] || student.raw?.['학교명']}</span></div>
-                          <button 
-                            onClick={() => {
-                              setSelectedStudentForAbsence(isSelected ? null : student);
-                              setAbsenceRange({ start: null, end: null });
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isSelected ? 'bg-red-500 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
-                          >
-                            {isSelected ? '선택 취소' : '결석 등록'}
-                          </button>
-                        </div>
-                        
-                        {studentAbsences.length > 0 && (
-                          <div className="mt-4 space-y-2 border-t pt-3">
-                            <div className="text-xs text-slate-400 font-bold mb-2">등록된 결석 이력</div>
-                            {studentAbsences.map(a => (
-                              <div key={a.id} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg text-sm border">
-                                <span className="font-medium text-slate-700">{a.startDate} {a.startDate !== a.endDate ? `~ ${a.endDate}` : ''}</span>
-                                <button onClick={() => deleteAbsence(a.id)} className="text-slate-400 hover:text-red-500 transition-colors">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+              <div className="grid grid-cols-1 gap-4">
+                {busStudents.map(student => {
+                  const studentAbsences = absences.filter(a => (a.student?.id || a.studentId) === student.id);
+                  const isSelected = selectedStudentForAbsence?.id === student.id;
+                  
+                  return (
+                    <div key={student.id} className={`bg-white rounded-2xl border p-4 transition-all shadow-sm ${isSelected ? 'ring-2 ring-red-500 border-transparent' : 'hover:border-slate-300'}`}>
+                      <div className="flex justify-between items-center">
+                        <div className="font-black text-slate-800 text-lg">{student.name} <span className="text-xs text-slate-400 font-normal ml-2">{student.raw?.['유치원명'] || student.raw?.['학교명']}</span></div>
+                        <button 
+                          onClick={() => {
+                            setSelectedStudentForAbsence(isSelected ? null : student);
+                            setAbsenceRange({ start: null, end: null });
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isSelected ? 'bg-red-500 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+                        >
+                          {isSelected ? '선택 취소' : '결석 등록'}
+                        </button>
                       </div>
-                    );
-                  })}
-                  {getBusStudents().length === 0 && (
-                    <div className="text-center p-8 text-slate-500 font-bold">이 차량에 배정된 원생이 없습니다.</div>
-                  )}
-                </div>
-              )}
-            </div>
+                      
+                      {studentAbsences.length > 0 && (
+                        <div className="mt-4 space-y-2 border-t pt-3">
+                          <div className="text-xs text-slate-400 font-bold mb-2">등록된 결석 이력</div>
+                          {studentAbsences.map(a => (
+                            <div key={a.id} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg text-sm border">
+                              <span className="font-medium text-slate-700">{a.startDate} {a.startDate !== a.endDate ? `~ ${a.endDate}` : ''}</span>
+                              <button onClick={() => deleteAbsence(a.id)} className="text-slate-400 hover:text-red-500 transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {busStudents.length === 0 && (
+                  <div className="text-center p-8 text-slate-500 font-bold">이 차량에 배정된 원생이 없습니다.</div>
+                )}
+              </div>
+            )}
+          </div>
           </>
         )}
       </div>
@@ -747,11 +829,11 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         
-        .animate-slide-in-right { animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .animate-slide-out-right { animation: slideOutRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .animate-fade-in { animation: fadeIn 0.2s ease forwards; }
-        .animate-scale-up { animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-slide-in-right { animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-slide-out-right { animation: slideOutRight 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-fade-in { animation: fadeIn 0.15s ease forwards; }
+        .animate-scale-up { animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

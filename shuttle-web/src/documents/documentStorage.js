@@ -103,6 +103,28 @@ export function downloadDocument(doc) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export function previewDocumentInNewTab(doc) {
+  if (!doc || !doc.fileBlob) {
+    alert('미리보기할 파일 데이터가 없습니다.');
+    return;
+  }
+  const ext = (doc.fileName || '').split('.').pop().toLowerCase();
+  let blob = doc.fileBlob;
+  if (ext === 'pdf' && blob.type !== 'application/pdf') {
+    blob = new Blob([blob], { type: 'application/pdf' });
+  } else if (['jpg', 'jpeg'].includes(ext) && !blob.type.startsWith('image/')) {
+    blob = new Blob([blob], { type: 'image/jpeg' });
+  } else if (ext === 'png' && !blob.type.startsWith('image/')) {
+    blob = new Blob([blob], { type: 'image/png' });
+  }
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank');
+  if (!win) {
+    alert('팝업 차단이 감지되었습니다. 브라우저에서 팝업을 허용해주세요.');
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 export function formatFileSize(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   const k = 1024;

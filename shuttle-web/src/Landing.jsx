@@ -6,6 +6,9 @@ export default function Landing() {
   const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'otp' | 'otp-setup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('ACADEMY_ADMIN'); // 'ACADEMY_ADMIN' | 'TEACHER'
   const [otpToken, setOtpToken] = useState('');
@@ -219,6 +222,7 @@ export default function Landing() {
     if (!isEmailVerified) return alert('이메일 인증을 완료해주세요.');
     if (!role) return alert('역할을 선택해주세요.');
     if (!validatePassword(password)) return alert('비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다.');
+    if (password !== confirmPassword) return alert('비밀번호가 일치하지 않습니다.');
 
     if (role === 'TEACHER') {
       if (!isAuthCodeVerified) return alert('원 인증코드를 먼저 확인해주세요.');
@@ -239,6 +243,9 @@ export default function Landing() {
         alert(data.message || '교사 회원가입이 완료되었습니다! 원장선생님의 반 배정 후 이용 가능합니다.');
         setMode('login');
         setPassword('');
+        setConfirmPassword('');
+        setShowPassword(false);
+        setShowConfirmPassword(false);
       } else {
         alert(data.message || '회원가입에 실패했습니다.');
       }
@@ -256,6 +263,9 @@ export default function Landing() {
       setUserId(data.userId);
       setQrCodeUrl(data.qrCodeUrl);
       setMode('otp-setup');
+      setConfirmPassword('');
+      setShowPassword(false);
+      setShowConfirmPassword(false);
     } else {
       alert(data.message);
       if (data.message && data.message.includes('잠겼습니다')) {
@@ -275,6 +285,7 @@ export default function Landing() {
       alert('OTP 연동이 완료되었습니다. 로그인해주세요.');
       setMode('login');
       setPassword('');
+      setConfirmPassword('');
       setOtpToken('');
     } else {
       alert('OTP 코드가 올바르지 않습니다.');
@@ -331,7 +342,34 @@ export default function Landing() {
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">비밀번호</label>
-              <input type="password" placeholder="비밀번호 입력" value={password} onChange={e=>setPassword(e.target.value)} className="form-input" required />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="비밀번호 입력"
+                  value={password}
+                  onChange={e=>setPassword(e.target.value)}
+                  className="form-input !pr-11"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 transition-colors"
+                  title={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                >
+                  {showPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
             <button type="submit" className="btn-primary w-full py-3 text-base font-bold shadow-md shadow-blue-500/20">로그인</button>
             {showSelfUnlock && (
@@ -482,7 +520,18 @@ export default function Landing() {
               </div>
             )}
             <div className="text-center mt-4">
-              <button type="button" onClick={() => { setMode('signup'); setRole('ACADEMY_ADMIN'); }} className="text-sm font-medium text-blue-600 hover:underline">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup');
+                  setRole('ACADEMY_ADMIN');
+                  setPassword('');
+                  setConfirmPassword('');
+                  setShowPassword(false);
+                  setShowConfirmPassword(false);
+                }}
+                className="text-sm font-medium text-blue-600 hover:underline"
+              >
                 회원가입
               </button>
             </div>
@@ -558,21 +607,21 @@ export default function Landing() {
 
             {/* Teacher Specific: Kindergarten Auth Code */}
             {role === 'TEACHER' && (
-              <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  원 인증코드 <span className="text-red-500">*</span>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  원 인증코드
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="원 인증코드 6자리 (예: EOAUH2)"
+                    placeholder="원 인증코드 6자리 입력"
                     value={authCode}
                     onChange={e => {
                       setAuthCode(e.target.value.toUpperCase());
                       setIsAuthCodeVerified(false);
                     }}
                     disabled={isAuthCodeVerified || isVerifyingAuthCode}
-                    className="form-input uppercase tracking-wider font-mono font-semibold"
+                    className="form-input uppercase"
                     maxLength={10}
                     required
                   />
@@ -590,7 +639,7 @@ export default function Landing() {
                   </button>
                 </div>
                 {isAuthCodeVerified && (
-                  <div className="text-xs font-semibold text-emerald-600 pt-0.5">
+                  <div className="text-xs font-semibold text-emerald-600 mt-1 pl-1">
                     소속: <strong>{verifiedAcademyName}</strong> (가입 후 원장선생님께서 담당 반을 배정합니다)
                   </div>
                 )}
@@ -628,7 +677,7 @@ export default function Landing() {
                   placeholder="메일 인증코드 6자리" 
                   value={emailCode} 
                   onChange={e=>setEmailCode(e.target.value)} 
-                  className="form-input text-center font-mono font-bold" 
+                  className="form-input text-center font-bold" 
                   required 
                 />
                 <button 
@@ -674,28 +723,101 @@ export default function Landing() {
             {/* Password */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">비밀번호</label>
-              <input 
-                type="password" 
-                placeholder="영문, 숫자, 특수문자 포함 8자 이상" 
-                value={password} 
-                onChange={e=>setPassword(e.target.value)} 
-                className="form-input" 
-                required 
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="영문, 숫자, 특수문자 포함 8자 이상"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="form-input !pr-11"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 transition-colors"
+                  title={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                >
+                  {showPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
               {password && !validatePassword(password) && (
                 <p className="text-xs text-red-500 mt-1 pl-1">영문, 숫자, 특수문자를 모두 포함(8자 이상)해야 합니다.</p>
+              )}
+              {password && validatePassword(password) && (
+                <p className="text-xs text-emerald-600 mt-1 pl-1">사용 가능한 안전한 비밀번호입니다.</p>
+              )}
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">비밀번호 확인</label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="비밀번호를 한 번 더 입력해주세요"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className="form-input !pr-11"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(prev => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 transition-colors"
+                  title={showConfirmPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  aria-label={showConfirmPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                >
+                  {showConfirmPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              {confirmPassword && (
+                password === confirmPassword ? (
+                  <p className="text-xs text-emerald-600 mt-1 pl-1">비밀번호가 일치합니다.</p>
+                ) : (
+                  <p className="text-xs text-red-500 mt-1 pl-1">비밀번호가 일치하지 않습니다.</p>
+                )
               )}
             </div>
 
             <button 
               type="submit" 
               className="btn-primary w-full py-3 font-bold text-sm shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed" 
-              disabled={!isEmailVerified || !validatePassword(password) || (role === 'TEACHER' && !isAuthCodeVerified)}
+              disabled={!isEmailVerified || !validatePassword(password) || password !== confirmPassword || (role === 'TEACHER' && !isAuthCodeVerified)}
             >
               {role === 'ACADEMY_ADMIN' ? '원장선생님 가입 완료' : '유치원 교사 가입 완료'}
             </button>
             <div className="text-center mt-3">
-              <button type="button" onClick={() => setMode('login')} className="text-xs font-semibold text-slate-500 hover:underline">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setPassword('');
+                  setConfirmPassword('');
+                  setShowPassword(false);
+                  setShowConfirmPassword(false);
+                }}
+                className="text-xs font-semibold text-slate-500 hover:underline"
+              >
                 이미 계정이 있으신가요? 로그인하기
               </button>
             </div>

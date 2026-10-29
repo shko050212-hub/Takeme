@@ -4,6 +4,7 @@ import {
   getDocuments,
   deleteDocument,
   downloadDocument,
+  previewDocumentInNewTab,
   formatFileSize,
   getExpiryRecords,
   saveExpiryRecord,
@@ -61,6 +62,12 @@ export default function DocumentManager({
   const [uploadCategory, setUploadCategory] = useState('safety');
   const [uploadNote, setUploadNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Document Preview Modal States
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewType, setPreviewType] = useState('unsupported'); // 'pdf' | 'image' | 'text' | 'unsupported'
+  const [previewText, setPreviewText] = useState('');
 
 
   const fileInputRef = useRef(null);
@@ -184,6 +191,66 @@ export default function DocumentManager({
   };
 
   // --------------------------------------------------------------------------
+  // Document Preview Handlers
+  // --------------------------------------------------------------------------
+  const handleOpenPreview = async (doc) => {
+    if (!doc || !doc.fileBlob) {
+      alert('미리보기할 파일 데이터를 찾을 수 없습니다.');
+      return;
+    }
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    const ext = doc.fileName?.split('.').pop()?.toLowerCase() || '';
+    const mime = doc.fileType?.toLowerCase() || '';
+
+    if (ext === 'pdf' || mime.includes('pdf')) {
+      const blob = doc.fileBlob.type === 'application/pdf'
+        ? doc.fileBlob
+        : new Blob([doc.fileBlob], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+      setPreviewType('pdf');
+      setPreviewText('');
+      setPreviewDoc(doc);
+    } else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext) || mime.startsWith('image/')) {
+      const url = URL.createObjectURL(doc.fileBlob);
+      setPreviewUrl(url);
+      setPreviewType('image');
+      setPreviewText('');
+      setPreviewDoc(doc);
+    } else if (['txt', 'csv', 'json', 'md', 'log'].includes(ext) || mime.startsWith('text/')) {
+      try {
+        const text = await doc.fileBlob.text();
+        setPreviewText(text);
+        setPreviewType('text');
+        setPreviewUrl('');
+        setPreviewDoc(doc);
+      } catch (e) {
+        setPreviewType('unsupported');
+        setPreviewUrl('');
+        setPreviewDoc(doc);
+      }
+    } else {
+      setPreviewType('unsupported');
+      setPreviewUrl('');
+      setPreviewText('');
+      setPreviewDoc(doc);
+    }
+  };
+
+  const handleClosePreview = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl('');
+    setPreviewText('');
+    setPreviewDoc(null);
+  };
+
+  // --------------------------------------------------------------------------
   // Expiry Alert System Handlers
   // --------------------------------------------------------------------------
   const handleOpenExpiryModal = (bus) => {
@@ -206,7 +273,6 @@ export default function DocumentManager({
         const [y, m, d] = currentVal.split('-').map(Number);
         const parsed = new Date(y, m - 1, d);
         if (!isNaN(parsed.getTime())) {
-          // 만약 기존 날짜가 미래면 기존 날짜 기준으로 연장, 이미 지났으면 오늘 기준으로 연장
           baseDate = parsed > new Date() ? parsed : new Date();
         }
       }
@@ -366,7 +432,7 @@ export default function DocumentManager({
         </div>
       </div>
 
-      {/* Sub Navigation Pill Tabs (스크롤 없이 기능별 원클릭 분리) */}
+      {/* Sub Navigation Pill Tabs */}
       <div className="bg-white border-b border-slate-200 px-8 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
         <div className="flex items-center gap-2">
           <button
@@ -377,7 +443,7 @@ export default function DocumentManager({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            법정 서식 자동 발급
+            법정 서식 자동 발급 (6종)
           </button>
           <button
             onClick={() => setActiveSubTab('expiry')}
@@ -415,7 +481,7 @@ export default function DocumentManager({
 
         {/* 탭 안내 가이드 문구 */}
         <div className="text-xs text-slate-400 font-medium hidden sm:block">
-          {activeSubTab === 'templates' && '호차를 선택하면 차량번호와 탑승 원생 명부가 서식에 자동 완성됩니다.'}
+          {activeSubTab === 'templates' && '호차 및 원생을 선택하면 차량번호와 탑승 원생 명부가 법정 서식에 자동 완성됩니다.'}
           {activeSubTab === 'expiry' && '자동차 종합보험, 정기검사, 안전교육 4대 법정 기한을 관리합니다.'}
           {activeSubTab === 'documents' && '업로드하여 영구 보관 중인 서류들을 검색하고 다운로드할 수 있습니다.'}
         </div>
@@ -450,7 +516,7 @@ export default function DocumentManager({
       <div className="flex-1 overflow-y-auto p-8 space-y-6">
 
 
-        {/* Legal Expiry Traffic-Light Dashboard Section (만료일 탭 선택 시에만 단독 렌더링) */}
+        {/* Legal Expiry Traffic-Light Dashboard Section */}
         {activeSubTab === 'expiry' && (
           <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5 animate-in fade-in">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -675,20 +741,20 @@ export default function DocumentManager({
         </div>
         )}
 
-        {/* Legal Templates Section (법정 서식 자동 발급 탭 선택 시에만 렌더링) */}
+        {/* Legal Templates Section (법정 서식 자동 발급 탭) */}
         {activeSubTab === 'templates' && (
           <div className="bg-white border border-slate-200/90 rounded-2xl p-7 shadow-xs space-y-6 animate-in fade-in">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
               <div className="flex items-center gap-3">
                 <div>
                   <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
-                    데이터베이스 연동 법정 서식 자동 발급
+                    데이터베이스 연동 법정 서식 자동 발급 (6종)
                     <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-md">
-                      당일 날짜 & DB 명부 연동
+                      A4 법적 규격 & DB 자동 기입
                     </span>
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    호차를 선택하면 차량번호, 기사님, 동승보호자, 그리고 <strong>해당 호차 배정 실제 원생 명부</strong>가 서식에 자동으로 채워집니다.
+                    호차를 선택하면 차량번호, 기사님, 동승보호자, 정류장 노선, 그리고 <strong>해당 호차 배정 실제 원생 명부·알레르기 정보</strong>가 법정 양식에 자동으로 채워집니다.
                   </p>
                 </div>
               </div>
@@ -736,88 +802,174 @@ export default function DocumentManager({
               </div>
             )}
 
-            {/* Template Action Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <button
-                onClick={() => handleDownloadTemplate('safety')}
-                className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
-              >
-                <div>
-                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
-                    일일 안전점검표 {activeBus ? `(${activeBus.name})` : ''}
+            {/* Template Action Cards (6 Legal & Operational Forms) */}
+            <div className="space-y-4">
+              <div className="text-xs font-extrabold text-slate-600 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                <span>통학차량 비치 및 일일 점검 법정 서식 (4종)</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  onClick={() => handleDownloadTemplate('safety')}
+                  className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md">법정필수</span>
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
+                        일일 안전점검표 {activeBus ? `(${activeBus.name})` : ''}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {activeBus ? '호차, 차량번호, 기사/동승자 자동 기입 (도로교통법 제53조)' : '어린이 하차확인장치·안전띠 등 9대 항목 점검표'}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    {activeBus ? '호차, 차량번호, 기사/동승자 자동 기입' : '기본 양식'}
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-blue-600 bg-white group-hover:bg-blue-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shrink-0 shadow-2xs">
-                  인쇄 / PDF
-                </span>
-              </button>
+                  <span className="text-xs font-bold text-blue-600 bg-white group-hover:bg-blue-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shrink-0 shadow-2xs">
+                    인쇄 / PDF
+                  </span>
+                </button>
 
-              <button
-                onClick={() => handleDownloadTemplate('companion')}
-                className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
-              >
-                <div>
-                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
-                    동승자 탑승일지 및 승하차명부
+                <button
+                  onClick={() => handleDownloadTemplate('companion')}
+                  className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md">법정필수</span>
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
+                        동승보호자 탑승일지 및 승하차명부
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {activeBus ? `원생 명부 (${activeBusStudents.length}명) 자동 포함` : '배정 원생 승하차 및 안전띠·잔류원아 확인부'}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    {activeBus ? `원생 명부 (${activeBusStudents.length}명) 자동 포함` : '승하차 안전확인부'}
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-blue-600 bg-white group-hover:bg-blue-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shrink-0 shadow-2xs">
-                  인쇄 / PDF
-                </span>
-              </button>
+                  <span className="text-xs font-bold text-blue-600 bg-white group-hover:bg-blue-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shrink-0 shadow-2xs">
+                    인쇄 / PDF
+                  </span>
+                </button>
 
-              <button
-                onClick={() => handleDownloadTemplate('consent')}
-                className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-400 rounded-2xl transition-all text-left shadow-xs group"
-              >
-                <div>
-                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600">
-                    차량이용 및 안전동의서
+                <button
+                  onClick={() => handleDownloadTemplate('emergency')}
+                  className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-red-50/60 border border-slate-200 hover:border-red-400 rounded-2xl transition-all text-left shadow-xs group"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold bg-red-100 text-red-700 px-2 py-0.5 rounded-md">차량비치필수</span>
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-red-600">
+                        비상연락망 및 건강·알레르기 특이사항 명부
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {activeBus ? `[${activeBus.name}] 원아 보호자 연락처 및 알레르기·기저질환 연동` : '응급상황 대비 보호자 비상연락망 및 알레르기 명부'}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    {activeStudent ? `[${activeStudent.name}] 원아 인적사항 연동` : '보호자 서약 서식'}
+                  <span className="text-xs font-bold text-red-600 bg-white group-hover:bg-red-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-red-200 transition-colors shrink-0 shadow-2xs">
+                    인쇄 / PDF
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleDownloadTemplate('timetable')}
+                  className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-emerald-50/60 border border-slate-200 hover:border-emerald-400 rounded-2xl transition-all text-left shadow-xs group"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">운행필수</span>
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-emerald-700">
+                        호차별 운행 노선표 및 승·하차 정류장 시간표
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {activeBus ? `[${activeBus.name}] 경유 정류장 (${activeBusStudents.length}곳) 및 등·하원 예정 시각` : '운전석 비치 및 학부모 배부용 노선 시간표'}
+                    </div>
                   </div>
-                </div>
-                <span className="text-xs font-bold text-blue-600 bg-white group-hover:bg-blue-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shrink-0 shadow-2xs">
-                  인쇄 / PDF
-                </span>
-              </button>
+                  <span className="text-xs font-bold text-emerald-700 bg-white group-hover:bg-emerald-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors shrink-0 shadow-2xs">
+                    인쇄 / PDF
+                  </span>
+                </button>
+              </div>
             </div>
 
-            {/* Individual Student Selector for Consent */}
-            {availableStudents.length > 0 && (
-              <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <span className="text-slate-600 font-bold">
-                  동의서 대상 원생 개별 선택:
-                </span>
-                <select
-                  value={selectedStudentId}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 text-xs outline-none"
-                >
-                  {availableStudents.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name} ({st.raw?.['유치원명'] || st.raw?.['학교명'] || ''} {st.raw?.['연령'] || st.raw?.['학년'] || ''} {st.raw?.['반명'] ? `| ${st.raw?.['반명']}` : ''})
-                    </option>
-                  ))}
-                </select>
+            {/* Individual Student Consent & Handover Forms (2 Legal Forms) */}
+            <div className="space-y-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-extrabold text-slate-600 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                  <span>원아별 학부모 제출 법정 동의서 서식 (2종)</span>
+                </div>
+
+                {availableStudents.length > 0 && (
+                  <div className="flex items-center gap-2 bg-indigo-50/70 px-3 py-1.5 rounded-xl border border-indigo-200 text-xs">
+                    <span className="text-indigo-900 font-bold">
+                      동의서 대상 원생 선택:
+                    </span>
+                    <select
+                      value={selectedStudentId}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      className="bg-white border border-indigo-200 rounded-lg px-2.5 py-1 font-bold text-slate-800 text-xs outline-none cursor-pointer"
+                    >
+                      {availableStudents.map((st) => (
+                        <option key={st.id} value={st.id}>
+                          {st.name} ({st.className || st.raw?.['반명'] || st.raw?.['연령'] || '원생'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-            )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  onClick={() => handleDownloadTemplate('consent')}
+                  className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-400 rounded-2xl transition-all text-left shadow-xs group"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md">입소필수</span>
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">
+                        어린이 통학차량 이용 신청 및 안전동의서
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {activeStudent ? `[${activeStudent.name}] 원아 인적사항·탑승지 자동 연동` : '통학차량 탑승 안전수칙 보호자 서약서'}
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600 bg-white group-hover:bg-indigo-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-indigo-200 transition-colors shrink-0 shadow-2xs">
+                    인쇄 / PDF
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleDownloadTemplate('handover')}
+                  className="flex items-center justify-between p-5 bg-slate-50/60 hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-400 rounded-2xl transition-all text-left shadow-xs group"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md">감사필수</span>
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">
+                        영유아 귀가 동의서 및 응급처치 동의서
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {activeStudent ? `[${activeStudent.name}] 지정 인계 보호자(대리인) 및 응급이송 동의서` : '하원 시 대리인 인계 확인 및 119 응급처치 위임 동의서'}
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600 bg-white group-hover:bg-indigo-600 group-hover:text-white px-3 py-1.5 rounded-xl border border-indigo-200 transition-colors shrink-0 shadow-2xs">
+                    인쇄 / PDF
+                  </span>
+                </button>
+              </div>
+            </div>
 
             {/* Print Note */}
             <div className="text-[11px] text-slate-400 bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 leading-relaxed">
-              <strong>작성 안내</strong>: [인쇄 / PDF] 버튼을 누르면 A4 표준 법정 서식으로 자동 조판된 인쇄 미리보기가 열립니다. 날짜(당일)와 호차·원생 정보는 자동 기입되며, 점검 체크란은 법적 효력을 위해 현장 수기 체크용 빈 양식으로 인쇄됩니다.
+              <strong>작성 안내</strong>: [인쇄 / PDF] 버튼을 누르면 A4 표준 법정 서식으로 자동 조판된 인쇄 미리보기가 열립니다. 날짜(당일)와 호차·원생·알레르기 정보는 DB에서 자동 기입되며, 점검 체크란 및 보호자 서명란은 법적 효력을 위해 현장 수기 작성용 양식으로 인쇄됩니다.
             </div>
           </div>
         )}
 
-        {/* Registered Documents Vault Section (등록 서류 보관함 탭 선택 시에만 렌더링) */}
+        {/* Registered Documents Vault Section */}
         {activeSubTab === 'documents' && (
           <div className="space-y-6 animate-in fade-in">
             {/* Filter and Search Bar */}
@@ -929,13 +1081,17 @@ export default function DocumentManager({
               >
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      onClick={() => handleOpenPreview(doc)}
+                      className="flex items-center gap-3 min-w-0 cursor-pointer group/title"
+                      title="클릭하여 서류 미리보기"
+                    >
                       {getFileIcon(doc.fileName)}
                       <div className="min-w-0">
                         <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md inline-block mb-1">
                           {doc.category}
                         </span>
-                        <h3 className="font-bold text-sm text-slate-800 leading-snug break-all" title={doc.title}>
+                        <h3 className="font-bold text-sm text-slate-800 group-hover/title:text-blue-600 transition-colors leading-snug break-all" title={doc.title}>
                           {doc.title}
                         </h3>
                       </div>
@@ -977,16 +1133,28 @@ export default function DocumentManager({
                   </div>
                 </div>
 
-                {/* Direct Download Button */}
-                <button
-                  onClick={() => downloadDocument(doc)}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-xs active:scale-[0.98]"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  파일 다운로드
-                </button>
+                {/* Preview & Download Buttons */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleOpenPreview(doc)}
+                    className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-800 text-slate-700 hover:text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-xs active:scale-[0.98]"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    미리보기
+                  </button>
+                  <button
+                    onClick={() => downloadDocument(doc)}
+                    className="flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-xs active:scale-[0.98]"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    다운로드
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1288,7 +1456,123 @@ export default function DocumentManager({
           </div>
         </div>
       )}
+
+      {/* Document Preview Modal */}
+      {previewDoc && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[2200] p-4"
+          onClick={handleClosePreview}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full h-[86vh] flex flex-col border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                {getFileIcon(previewDoc.fileName)}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-md">
+                      {previewDoc.category}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {previewDoc.fileName} ({formatFileSize(previewDoc.fileSize)})
+                    </span>
+                  </div>
+                  <h3 className="text-base font-black text-slate-800 truncate mt-0.5" title={previewDoc.title}>
+                    {previewDoc.title}
+                  </h3>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {(previewType === 'pdf' || previewType === 'image' || previewType === 'text') && (
+                  <button
+                    onClick={() => previewDocumentInNewTab(previewDoc)}
+                    className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+                    title="새 탭에서 크게 열기 및 인쇄"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    새 창으로 열기
+                  </button>
+                )}
+                <button
+                  onClick={() => downloadDocument(previewDoc)}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  파일 다운로드
+                </button>
+                <button
+                  onClick={handleClosePreview}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors text-lg font-bold ml-1"
+                  title="닫기"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 bg-slate-100 p-4 overflow-hidden flex items-center justify-center">
+              {previewType === 'pdf' && previewUrl && (
+                <iframe
+                  src={previewUrl}
+                  title={previewDoc.title}
+                  className="w-full h-full rounded-xl border border-slate-200 bg-white shadow-inner"
+                />
+              )}
+
+              {previewType === 'image' && previewUrl && (
+                <div className="w-full h-full flex items-center justify-center overflow-auto bg-slate-900/5 rounded-xl p-4">
+                  <img
+                    src={previewUrl}
+                    alt={previewDoc.title}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-md bg-white"
+                  />
+                </div>
+              )}
+
+              {previewType === 'text' && (
+                <div className="w-full h-full bg-white rounded-xl border border-slate-200 p-5 overflow-auto shadow-inner">
+                  <pre className="text-xs font-mono text-slate-800 whitespace-pre-wrap break-all leading-relaxed">
+                    {previewText || '(내용이 없는 텍스트 파일입니다.)'}
+                  </pre>
+                </div>
+              )}
+
+              {previewType === 'unsupported' && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-10 max-w-md w-full text-center shadow-sm">
+                  <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
+                    {getFileIcon(previewDoc.fileName)}
+                  </div>
+                  <h4 className="text-base font-extrabold text-slate-800 mb-1.5">
+                    브라우저 직접 미리보기를 지원하지 않는 형식입니다
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-5">
+                    한글(HWP), 엑셀(XLSX), 워드(DOCX) 등의 전용 문서 파일은 아래 버튼을 눌러 다운로드한 후 전용 프로그램에서 열람해주세요.<br />
+                    <span className="text-[11px] text-slate-400">(PDF, JPG/PNG 이미지, TXT/CSV 파일은 즉시 미리보기가 지원됩니다.)</span>
+                  </p>
+                  <button
+                    onClick={() => downloadDocument(previewDoc)}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    {previewDoc.fileName} 다운로드
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
