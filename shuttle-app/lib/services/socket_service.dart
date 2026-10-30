@@ -65,11 +65,26 @@ class SocketService {
   }
 
   void onLocationUpdated(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('locationUpdated');
     _socket?.on('locationUpdated', (data) {
       if (data is Map<String, dynamic>) {
         callback(data);
       } else if (data is Map) {
         callback(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  /// 원장 웹에서 탑승지 추가/삭제 시 지도교사 앱으로 푸시 알림 수신
+  void onTeacherPush(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('teacherPush');
+    _socket?.on('teacherPush', (data) {
+      if (data is Map<String, dynamic>) {
+        callback(data);
+      } else if (data is Map) {
+        callback(Map<String, dynamic>.from(data));
+      } else {
+        callback(<String, dynamic>{});
       }
     });
   }

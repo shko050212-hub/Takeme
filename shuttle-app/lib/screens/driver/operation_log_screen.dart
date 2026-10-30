@@ -190,7 +190,7 @@ class _OperationLogScreenState extends State<OperationLogScreen> {
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _logs.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (_, i) => _dayCard(_logs[i]),
       ),
     );

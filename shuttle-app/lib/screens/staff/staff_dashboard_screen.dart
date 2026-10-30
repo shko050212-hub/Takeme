@@ -60,6 +60,19 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     if (user == null) return;
 
     SocketService().connect(ApiService().token);
+    if (user.role != 'DRIVER') {
+      SocketService().onTeacherPush((data) {
+        if (!mounted) return;
+        final msg = data['message']?.toString() ?? '탑승지 정보가 변경되었습니다.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('📢 $msg'),
+            backgroundColor: const Color(0xFF2563EB),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      });
+    }
 
     final vehicle = await ApiService().getTeacherVehicle(user.email);
     final students = await ApiService().getTeacherStudents(user.email);

@@ -137,6 +137,17 @@ export class RoutingService {
     '#84cc16'  // lime
   ];
   private colorIndex = 0;
+  private routeUpdateNotifier?: (academyId?: number, message?: string) => void;
+
+  public registerRouteUpdateNotifier(fn: (academyId?: number, message?: string) => void) {
+    this.routeUpdateNotifier = fn;
+  }
+
+  private notifyRouteUpdated(academyId?: number, message?: string) {
+    try {
+      this.routeUpdateNotifier?.(academyId, message);
+    } catch {}
+  }
 
   private getDistinctColor(): string {
     const color = this.colorPalette[this.colorIndex % this.colorPalette.length];
@@ -151,7 +162,7 @@ export class RoutingService {
     if (userId && !isNaN(Number(userId))) {
       return this.academyRepository.findOne({ where: { owner: { id: Number(userId) } } });
     }
-    return this.academyRepository.findOne({ where: {} });
+    return this.academyRepository.findOne({ where: {}, order: { id: 'DESC' } });
   }
 
   async getAllAcademies() {
@@ -194,12 +205,17 @@ export class RoutingService {
       `DELETE FROM operation_logs WHERE "vehicleId" IN (SELECT id FROM vehicles WHERE "academyId" = $1)`,
       [academy.id]
     ).catch(() => {});
-    await this.studentRepository.query(
-      `DELETE FROM pickup_point WHERE "academy_id" = $1`,
-      [academy.id]
-    ).catch(() => {});
-    
-    // Delete students and vehicles belonging to this academy
+    // Preserve existing driver/teacher assignments before recreating vehicles
+    const oldVehicles = await this.vehicleRepository.find({
+      where: { academy: { id: academy.id } },
+      relations: { driverUser: true, teacherUser: true },
+    });
+    const oldStaffByBus = new Map<string, Vehicle>();
+    oldVehicles.forEach((ov, idx) => {
+      oldStaffByBus.set(ov.busNumber || `${idx + 1}호차`, ov);
+    });
+
+    // Delete students and vehicles belonging to this academy (keep pickup_point intact)
     await this.studentRepository.delete({ academy: { id: academy.id } });
     await this.vehicleRepository.delete({ academy: { id: academy.id } });
 
@@ -211,15 +227,21 @@ export class RoutingService {
 
     // 2. Save Vehicles and Assign Colors
     for (const v of vehicles) {
+      const busNum = v.busNumber || `${savedVehicles.length + 1}호차`;
+      const prevV = oldStaffByBus.get(busNum) || oldVehicles[savedVehicles.length];
       const newVehicle = this.vehicleRepository.create({
-        busNumber: v.busNumber || `${savedVehicles.length + 1}호차`,
+        busNumber: busNum,
         plateNumber: v.plateNumber || '',
-        driverName: v.driverName || '미정',
-        driverPhone: v.driverPhone || '000-0000-0000',
-        teacherName: v.teacherName || '미정',
-        teacherPhone: v.teacherPhone || '000-0000-0000',
+        driverName: v.driverName || prevV?.driverName || '미정',
+        driverPhone: v.driverPhone || prevV?.driverPhone || '000-0000-0000',
+        teacherName: v.teacherName || prevV?.teacherName || '미정',
+        teacherPhone: v.teacherPhone || prevV?.teacherPhone || '000-0000-0000',
         capacity: Number(v.capacity) || 25,
         academy: academy,
+        driverUser: prevV?.driverUser || undefined,
+        driverApprovalStatus: prevV?.driverApprovalStatus || 'UNREGISTERED',
+        teacherUser: prevV?.teacherUser || undefined,
+        teacherApprovalStatus: prevV?.teacherApprovalStatus || 'UNREGISTERED',
       });
       const saved = await this.vehicleRepository.save(newVehicle);
       
@@ -537,7 +559,9 @@ export class RoutingService {
         academy.authCode = code;
       }
     }
-    return await this.academyRepository.save(academy);
+    const savedAcademy = await this.academyRepository.save(academy);
+    this.notifyRouteUpdated(savedAcademy.id);
+    return savedAcademy;
   }
 
   async updateVehicleZone(vehicleId: number, email: string, polygonCoordinates: any[]) {
@@ -797,6 +821,7 @@ export class RoutingService {
       }
     }
 
+    this.notifyRouteUpdated(academy.id);
     return { success: true, count: newStudents.length };
   }
 
@@ -973,6 +998,7 @@ export class RoutingService {
     });
 
     const saved = await this.studentRepository.save(student);
+    this.notifyRouteUpdated(academy.id);
 
     return {
       success: true,
@@ -999,6 +1025,7 @@ export class RoutingService {
     if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
 
     await this.studentRepository.delete({ id: studentId, academy: { id: academy.id } });
+    this.notifyRouteUpdated(academy.id);
     return { success: true };
   }
 
@@ -1358,7 +1385,16 @@ export class RoutingService {
       longitude: body.longitude,
       academy: academy
     });
-    return this.pickupPointRepository.save(point);
+    const saved = await this.pickupPointRepository.save(point);
+    const pushMsg = `[탑승지 추가 알림] 원장님이 새 탑승지 '${body.name}'을(를) 추가했습니다.`;
+    await this.parentMessageRepository.save(
+      this.parentMessageRepository.create({
+        targetRoles: ['TEACHER', 'SHUTTLE_TEACHER'],
+        message: pushMsg,
+      }),
+    ).catch(() => {});
+    this.notifyRouteUpdated(academy.id, pushMsg);
+    return saved;
   }
 
   async getPickupPoints(academyId?: number, userId?: number) {
@@ -1368,7 +1404,20 @@ export class RoutingService {
   }
 
   async deletePickupPoint(id: number) {
+    const existing = await this.pickupPointRepository.findOne({
+      where: { id },
+      relations: { academy: true },
+    }).catch(() => null);
     await this.pickupPointRepository.delete(id);
+    const label = existing?.name ? `'${existing.name}' ` : '';
+    const pushMsg = `[탑승지 삭제 알림] 원장님이 탑승지 ${label}항목을 삭제했습니다.`;
+    await this.parentMessageRepository.save(
+      this.parentMessageRepository.create({
+        targetRoles: ['TEACHER', 'SHUTTLE_TEACHER'],
+        message: pushMsg,
+      }),
+    ).catch(() => {});
+    this.notifyRouteUpdated(existing?.academy?.id, pushMsg);
     return { success: true };
   }
 

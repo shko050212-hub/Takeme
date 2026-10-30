@@ -29,7 +29,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly jwtService: JwtService,
     @InjectRepository(Vehicle) private readonly vehicleRepository: Repository<Vehicle>,
     @InjectRepository(Student) private readonly studentRepository: Repository<Student>,
-  ) {}
+  ) {
+    this.routingService.registerRouteUpdateNotifier((academyId, message) => {
+      if (message) {
+        this.broadcastTeacherPush(message, academyId);
+      }
+      this.broadcastRouteUpdated(academyId);
+    });
+  }
 
   async handleConnection(client: Socket) {
     const token =
@@ -71,6 +78,27 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (this.server) {
       this.server.to(room).emit('vehicleOperatingStatus', payload);
       this.server.emit('vehicleOperatingStatus', payload);
+    }
+  }
+
+  /** Broadcast route/pickup-point/academy update */
+  broadcastRouteUpdated(academyId?: number) {
+    if (this.server) {
+      this.server.emit('routeUpdated', {
+        academyId: academyId ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** 원장 웹에서 탑승지 추가/삭제 시 지도교사에게 푸시 알림 전송 */
+  broadcastTeacherPush(message: string, academyId?: number) {
+    if (this.server) {
+      this.server.emit('teacherPush', {
+        message,
+        academyId: academyId ?? null,
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 

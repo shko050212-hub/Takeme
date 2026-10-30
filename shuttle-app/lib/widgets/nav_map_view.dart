@@ -28,6 +28,7 @@ class NavMapController {
   }
 
   late final WebViewController web;
+  VoidCallback? onUserDrag;
   bool _ready = false;
   final List<String> _pending = [];
 
@@ -38,6 +39,8 @@ class NavMapController {
         web.runJavaScript(js);
       }
       _pending.clear();
+    } else if (m.message == 'drag') {
+      onUserDrag?.call();
     }
   }
 
@@ -122,6 +125,7 @@ const String _html = '''
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.control.attribution({ position: 'bottomleft', prefix: false }).addAttribution('&copy; OpenStreetMap').addTo(map);
+    map.on('dragstart', function () { TakemeNav.postMessage('drag'); });
 
     var routeLayer = L.layerGroup().addTo(map);
     var altLine = null, academy = null, stopMarkers = [];
@@ -146,7 +150,7 @@ const String _html = '''
       routeLayer.clearLayers();
       if (altLine) { map.removeLayer(altLine); altLine = null; }
       if (alt && alt.length > 1) {
-        altLine = L.polyline(toLL(alt), { color: '#64748b', weight: 5, opacity: 0.7, dashArray: '8 10' }).addTo(map);
+        altLine = L.polyline(toLL(alt), { color: '#64748b', weight: 5, opacity: 0.7, dashArray: '8 10' }).addTo(routeLayer);
         pts = pts.concat(toLL(alt));
       }
       if (pri && pri.length > 1) {
@@ -178,7 +182,14 @@ const String _html = '''
       if (me) pts.push(me.getLatLng());
       if (pts.length > 0) {
         lastBounds = L.latLngBounds(pts);
-        if (fit && !zoomedIn) map.fitBounds(lastBounds, { padding: [40, 40] });
+        if (fit && !zoomedIn) {
+          map.invalidateSize();
+          map.fitBounds(lastBounds, { padding: [50, 50], maxZoom: 16 });
+          setTimeout(function () {
+            map.invalidateSize();
+            if (!zoomedIn && lastBounds) map.fitBounds(lastBounds, { padding: [50, 50], maxZoom: 16 });
+          }, 150);
+        }
       }
     };
 
@@ -211,8 +222,12 @@ const String _html = '''
       anim = requestAnimationFrame(step);
     };
 
-    window.centerOn = function (lat, lng, zoom) { map.setView([lat, lng], zoom); };
-    window.fitAll = function () { zoomedIn = false; if (lastBounds) map.fitBounds(lastBounds, { padding: [40, 40] }); };
+    window.centerOn = function (lat, lng, zoom) { map.invalidateSize(); map.setView([lat, lng], zoom); };
+    window.fitAll = function () {
+      zoomedIn = false;
+      map.invalidateSize();
+      if (lastBounds) map.fitBounds(lastBounds, { padding: [50, 50], maxZoom: 16 });
+    };
     window.resetZoom = function () { zoomedIn = false; };
 
     window.markStop = function (i) {
