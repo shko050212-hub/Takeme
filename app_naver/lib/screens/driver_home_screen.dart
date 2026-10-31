@@ -22,6 +22,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   late final NaverMapController _map;
   late final DriverNavigator _nav;
   Timer? _ticker;
+  bool _confirmingStop = false;
+  Timer? _confirmStopTimer;
 
   @override
   void initState() {
@@ -37,36 +39,45 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _confirmStopTimer?.cancel();
     _nav.dispose();
     super.dispose();
   }
 
-  Future<void> _confirmStopDrive() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('운행 종료', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('오늘의 운행을 종료하고 위치 전송을 멈출까요?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('계속 운행', style: TextStyle(color: AppColors.slate600)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.dangerRed),
-            child: const Text('종료하기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await _nav.stop();
+  Future<void> _handleStopDrive() async {
+    if (!_confirmingStop) {
+      setState(() => _confirmingStop = true);
+      _confirmStopTimer?.cancel();
+      _confirmStopTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _confirmingStop = false);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('운행을 종료하려면 [한 번 더 터치]하세요.'),
+          backgroundColor: AppColors.dangerRed,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    _confirmStopTimer?.cancel();
+    _confirmingStop = false;
+    await _nav.stop();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('운행이 정상적으로 종료되었습니다. (위치 전송 중단)'),
+          backgroundColor: AppColors.slate900,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
   void _showStopListSheet() async {
-    _map.setInteractive(false);
+    _map.setVisible(false);
     try {
       await showModalBottomSheet(
         context: context,
@@ -141,7 +152,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         },
       );
     } finally {
-      _map.setInteractive(true);
+      _map.setVisible(true);
     }
   }
 
@@ -653,36 +664,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     required Color color,
     Color bgColor = Colors.white,
   }) {
-    return Material(
-      color: bgColor,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.25)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 15, color: color),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
-              ),
-            ],
-          ),
+    return SizedBox(
+      height: 38,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 16, color: color),
+        label: Text(
+          label,
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+        ),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: bgColor,
+          foregroundColor: color,
+          side: BorderSide(color: color.withValues(alpha: 0.35)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          elevation: 0,
         ),
       ),
     );
@@ -779,14 +778,37 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 ],
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _confirmStopDrive,
-                    icon: const Icon(Icons.stop_circle_outlined, size: 18, color: Colors.white),
-                    label: const Text('운행 종료', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                    onPressed: _handleStopDrive,
+                    onLongPress: () async {
+                      _confirmStopTimer?.cancel();
+                      _confirmingStop = false;
+                      await _nav.stop();
+                      if (mounted) {
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('운행이 즉시 종료되었습니다.'),
+                            backgroundColor: AppColors.slate900,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    icon: Icon(
+                      _confirmingStop ? Icons.warning_amber_rounded : Icons.stop_circle_outlined,
+                      size: 20,
+                      color: Colors.white,
+                    ),
+                    label: Text(
+                      _confirmingStop ? '한 번 더 터치 (종료)' : '운행 종료',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.dangerRed,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: _confirmingStop ? const Color(0xFFB91C1C) : AppColors.dangerRed,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      elevation: 0,
+                      elevation: _confirmingStop ? 4 : 0,
                     ),
                   ),
                 ),
@@ -950,26 +972,34 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             width: double.infinity,
             height: 52,
             child: ElevatedButton.icon(
-              onPressed: _nav.busy
-                  ? null
-                  : () {
-                      if (_nav.destination == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('목적지를 먼저 설정해주세요.'),
-                            backgroundColor: AppColors.dangerRed,
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                        _openDestinationSearch(context);
-                        return;
-                      }
-                      _nav.startDrive(test: false);
-                    },
+              onPressed: () {
+                if (_nav.busy) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('경로를 계산 중입니다. 잠시만 기다려주세요.'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                  return;
+                }
+                if (_nav.destination == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('목적지를 먼저 설정해주세요.'),
+                      backgroundColor: AppColors.dangerRed,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                  _openDestinationSearch(context);
+                  return;
+                }
+                _nav.startDrive(test: false);
+              },
               icon: const Icon(Icons.navigation, color: Colors.white),
               label: const Text('운행 시작 (실제 GPS 추적)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.naverGreen,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
               ),
@@ -982,29 +1012,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             width: double.infinity,
             height: 42,
             child: OutlinedButton.icon(
-              onPressed: _nav.busy
-                  ? null
-                  : () async {
-                      if (_nav.destination == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('목적지를 먼저 설정해주세요.'),
-                            backgroundColor: AppColors.dangerRed,
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                        _openDestinationSearch(context);
-                        return;
-                      }
-                      await _nav.startDrive(test: true);
-                      _nav.startSimulation();
-                    },
+              onPressed: () async {
+                if (_nav.busy) return;
+                if (_nav.destination == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('목적지를 먼저 설정해주세요.'),
+                      backgroundColor: AppColors.dangerRed,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                  _openDestinationSearch(context);
+                  return;
+                }
+                await _nav.startDrive(test: true);
+                _nav.startSimulation();
+              },
               icon: const Icon(Icons.play_circle_outline, size: 18, color: AppColors.slate700),
               label: const Text(
                 '모의 주행 테스트 (PC 가상 자동 이동)',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.slate700),
               ),
               style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
                 side: const BorderSide(color: AppColors.slate300),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
@@ -1022,15 +1052,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     required RoutePlan? plan,
     required bool isSelected,
   }) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+    return Material(
+      color: isSelected ? AppColors.naverGreenLight : AppColors.slate50,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
         onTap: () => _nav.selectMode(mode),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.naverGreenLight : AppColors.slate50,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isSelected ? AppColors.naverGreen : AppColors.slate200,
