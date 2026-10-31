@@ -156,6 +156,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
+  void _openSettings() async {
+    _map.setVisible(false);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const DriverSettingsScreen()),
+      );
+    } finally {
+      _map.setVisible(true);
+      if (mounted) setState(() {});
+    }
+  }
+
   void _openDestinationSearch(BuildContext context) async {
     _map.setVisible(false);
     try {
@@ -301,11 +313,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 22),
           tooltip: '설정',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DriverSettingsScreen()),
-            );
-          },
+          onPressed: _openSettings,
         ),
         IconButton(
           icon: const Icon(Icons.logout, size: 20),
@@ -511,8 +519,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                             ? AppColors.dangerRed.withValues(alpha: 0.4)
                             : AppColors.slate300,
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 36),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
@@ -520,17 +528,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   const SizedBox(width: 6),
                   ElevatedButton.icon(
                     onPressed: () => _openDestinationSearch(context),
-                    icon: const Icon(Icons.search, size: 13, color: Colors.white),
+                    icon: const Icon(Icons.search, size: 14, color: Colors.white),
                     label: Text(
                       _nav.destination != null ? '변경' : '목적지 설정',
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _nav.destination != null ? AppColors.primaryBlue : AppColors.naverGreen,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: const Size(0, 36),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
@@ -665,7 +673,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     Color bgColor = Colors.white,
   }) {
     return SizedBox(
-      height: 38,
+      height: 40,
       child: OutlinedButton.icon(
         onPressed: onTap,
         icon: Icon(icon, size: 16, color: color),
@@ -677,8 +685,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           backgroundColor: bgColor,
           foregroundColor: color,
           side: BorderSide(color: color.withValues(alpha: 0.35)),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-          minimumSize: Size.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          minimumSize: const Size(0, 40),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           elevation: 0,
@@ -875,17 +883,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 ),
                 ElevatedButton.icon(
                   onPressed: () => _openDestinationSearch(context),
-                  icon: const Icon(Icons.search, size: 13, color: Colors.white),
+                  icon: const Icon(Icons.search, size: 14, color: Colors.white),
                   label: Text(
                     _nav.destination != null ? '변경' : '목적지 설정',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _nav.destination != null ? AppColors.primaryBlue : AppColors.naverGreen,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: const Size(0, 36),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   ),
@@ -919,7 +927,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   label: const Text(
                     '목적지 초기화',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -931,8 +939,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                           ? AppColors.dangerRed.withValues(alpha: 0.4)
                           : AppColors.slate300,
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    minimumSize: const Size(0, 36),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   ),
