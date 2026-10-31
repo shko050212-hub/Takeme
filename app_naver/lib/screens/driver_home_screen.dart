@@ -832,7 +832,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final fastSlot = _nav.slots[RouteMode.fast]?.plan;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -847,108 +847,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 목적지 상태 및 목적지 초기화 바
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              color: _nav.destination != null ? AppColors.dangerRedBg.withValues(alpha: 0.2) : AppColors.slate50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _nav.destination != null
-                    ? AppColors.dangerRed.withValues(alpha: 0.25)
-                    : AppColors.slate200,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.place,
-                  size: 15,
-                  color: _nav.destination != null ? AppColors.dangerRed : AppColors.slate500,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _nav.destination != null
-                        ? '선택된 목적지: ${_nav.destinationName}'
-                        : '현재 목적지: 미설정 상태',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: _nav.destination != null ? AppColors.slate900 : AppColors.slate600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _openDestinationSearch(context),
-                  icon: const Icon(Icons.search, size: 14, color: Colors.white),
-                  label: Text(
-                    _nav.destination != null ? '변경' : '목적지 설정',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _nav.destination != null ? AppColors.primaryBlue : AppColors.naverGreen,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    if (_nav.destination == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('이미 목적지가 초기화(미설정)되어 있습니다.'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    } else {
-                      _nav.clearDestination();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('목적지가 초기화되었습니다.'),
-                          backgroundColor: AppColors.slate800,
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    }
-                  },
-                  icon: Icon(
-                    Icons.refresh,
-                    size: 13,
-                    color: _nav.destination != null ? AppColors.dangerRed : AppColors.slate600,
-                  ),
-                  label: const Text(
-                    '목적지 초기화',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _nav.destination != null ? AppColors.dangerRed : AppColors.slate600,
-                    backgroundColor: _nav.destination != null ? AppColors.dangerRedBg : AppColors.slate100,
-                    side: BorderSide(
-                      color: _nav.destination != null
-                          ? AppColors.dangerRed.withValues(alpha: 0.4)
-                          : AppColors.slate300,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           // 걸리는 시간 2종류: 큰길 기준 vs 최단길 기준 선택 카드
           Row(
             children: [
@@ -973,12 +871,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
           // 큰 운행 시작 버튼 (실제 GPS 기반 추적)
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 50,
             child: ElevatedButton.icon(
               onPressed: () {
                 if (_nav.busy) {
