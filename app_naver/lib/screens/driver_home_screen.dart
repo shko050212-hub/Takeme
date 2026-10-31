@@ -43,6 +43,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     super.dispose();
   }
 
+  void _showMessage(String text, {Color? bg, Duration? duration}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+          content: Text(text),
+          backgroundColor: bg ?? AppColors.slate800,
+          duration: duration ?? const Duration(milliseconds: 1800),
+        ),
+      );
+  }
+
   Future<void> _handleStopDrive() async {
     if (!_confirmingStop) {
       setState(() => _confirmingStop = true);
@@ -50,13 +65,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       _confirmStopTimer = Timer(const Duration(seconds: 4), () {
         if (mounted) setState(() => _confirmingStop = false);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('운행을 종료하려면 [한 번 더 터치]하세요.'),
-          backgroundColor: AppColors.dangerRed,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showMessage('운행을 종료하려면 [한 번 더 터치]하세요.', bg: AppColors.dangerRed);
       return;
     }
 
@@ -65,13 +74,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     await _nav.stop();
     if (mounted) {
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('운행이 정상적으로 종료되었습니다. (위치 전송 중단)'),
-          backgroundColor: AppColors.slate900,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showMessage('운행이 정상적으로 종료되었습니다. (위치 전송 중단)', bg: AppColors.slate900);
     }
   }
 
@@ -663,21 +666,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   OutlinedButton.icon(
                     onPressed: () {
                       if (_nav.destination == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('이미 목적지가 초기화(미설정)되어 있습니다.'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
+                        _showMessage('이미 목적지가 초기화(미설정)되어 있습니다.');
                       } else {
                         _nav.clearDestination();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('목적지 및 경유지가 초기화되었습니다.'),
-                            backgroundColor: AppColors.slate800,
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
+                        _showMessage('목적지 및 경유지가 초기화되었습니다.', bg: AppColors.slate800);
                       }
                     },
                     icon: Icon(
@@ -825,21 +817,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
               label: '목적지 초기화',
               onTap: () {
                 if (_nav.destination == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('이미 목적지가 초기화(미설정)되어 있습니다.'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
+                  _showMessage('이미 목적지가 초기화(미설정)되어 있습니다.');
                 } else {
                   _nav.clearDestination();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('목적지 및 경유지가 초기화되었습니다.'),
-                      backgroundColor: AppColors.slate800,
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
+                  _showMessage('목적지 및 경유지가 초기화되었습니다.', bg: AppColors.slate800);
                 }
               },
               color: _nav.destination != null ? AppColors.dangerRed : AppColors.slate600,
@@ -994,13 +975,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                       await _nav.stop();
                       if (mounted) {
                         setState(() {});
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('운행이 즉시 종료되었습니다.'),
-                            backgroundColor: AppColors.slate900,
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
+                        _showMessage('운행이 즉시 종료되었습니다.', bg: AppColors.slate900);
                       }
                     },
                     icon: Icon(
@@ -1081,22 +1056,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             child: ElevatedButton.icon(
               onPressed: () {
                 if (_nav.busy) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('경로를 계산 중입니다. 잠시만 기다려주세요.'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
+                  _showMessage('경로를 계산 중입니다. 잠시만 기다려주세요.');
                   return;
                 }
                 if (_nav.destination == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('목적지를 먼저 설정해주세요.'),
-                      backgroundColor: AppColors.dangerRed,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
+                  _showMessage('목적지를 먼저 설정해주세요.', bg: AppColors.dangerRed);
                   _openDestinationSearch(context);
                   return;
                 }
@@ -1122,13 +1086,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
               onPressed: () async {
                 if (_nav.busy) return;
                 if (_nav.destination == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('목적지를 먼저 설정해주세요.'),
-                      backgroundColor: AppColors.dangerRed,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
+                  _showMessage('목적지를 먼저 설정해주세요.', bg: AppColors.dangerRed);
                   _openDestinationSearch(context);
                   return;
                 }

@@ -54,27 +54,36 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     });
   }
 
+  void _showNotice(String text, {Color? bg, Duration? duration}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+          content: Text(text),
+          backgroundColor: bg ?? AppColors.slate800,
+          duration: duration ?? const Duration(milliseconds: 1800),
+        ),
+      );
+  }
+
   void _addPlaceAsWaypoint(PlaceItem item) {
     widget.nav.addWaypoint(item.name, item.point, asFinal: true);
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('[경유지 추가 완료] ${item.name} (총 ${widget.nav.totalDestinationsCount}개소)'),
-        backgroundColor: AppColors.naverGreenDark,
-        duration: const Duration(seconds: 2),
-      ),
+    _showNotice(
+      '[경유지 추가 완료] ${item.name} (총 ${widget.nav.totalDestinationsCount}개소)',
+      bg: AppColors.naverGreenDark,
     );
   }
 
   void _setPlaceAsSingleDestination(PlaceItem item) {
     widget.nav.setDestination(item.name, item.point);
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('[단독 목적지 설정] ${item.name}'),
-        backgroundColor: AppColors.primaryBlue,
-        duration: const Duration(seconds: 2),
-      ),
+    _showNotice(
+      '[단독 목적지 설정] ${item.name}',
+      bg: AppColors.primaryBlue,
     );
   }
 
@@ -88,35 +97,22 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
 
   void _clearDestination() {
     if (widget.nav.destination == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('이미 목적지가 초기화되어 있습니다.'),
-          duration: Duration(seconds: 1),
-        ),
-      );
+      _showNotice('이미 목적지가 초기화되어 있습니다.');
       return;
     }
 
     widget.nav.clearDestination();
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('목적지가 초기화되었습니다.'),
-        backgroundColor: AppColors.slate800,
-        duration: Duration(seconds: 2),
-      ),
-    );
+    _showNotice('목적지가 초기화되었습니다.', bg: AppColors.slate800);
   }
 
   void _pickOnMap() {
     Navigator.of(context).pop();
     widget.nav.togglePickOnMapMode();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('지도의 원하는 위치를 클릭하면 목적지로 지정됩니다.'),
-        backgroundColor: AppColors.warningOrange,
-        duration: Duration(seconds: 3),
-      ),
+    _showNotice(
+      '지도의 원하는 위치를 클릭하면 목적지로 지정됩니다.',
+      bg: AppColors.warningOrange,
+      duration: const Duration(seconds: 3),
     );
   }
 
