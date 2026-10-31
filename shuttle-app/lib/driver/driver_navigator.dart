@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -13,15 +14,14 @@ import '../widgets/nav_map_view.dart';
 import 'geo.dart';
 
 /// 경로 모드. 서버 /directions 가 카카오 길찾기에 실제로 보내는 기준:
-/// - safe: priority=RECOMMEND + avoid=[uturn]  (추천 경로 + 유턴 회피)
-/// - fast: priority=TIME                        (최단 시간)
-/// 카카오 API 에는 도로 위험도 정보가 없으므로, '안전'은 이 두 기준까지만 의미한다.
+/// - safe: priority=RECOMMEND + avoid=[uturn]  (큰 길·간선도로 추천 경로 + 유턴 회피)
+/// - fast: priority=DISTANCE                   (최단 거리 우선 탐색)
 enum RouteMode { safe, fast }
 
 extension RouteModeInfo on RouteMode {
   String get key => this == RouteMode.fast ? 'fast' : 'safe';
   String get title => this == RouteMode.fast ? '빠른 경로' : '안전 경로';
-  String get criteria => this == RouteMode.fast ? '최단 시간 우선' : '추천 도로 · 유턴 회피';
+  String get criteria => this == RouteMode.fast ? '거리 우선 탐색' : '큰 길 우선 · 유턴 회피';
   RouteMode get other => this == RouteMode.fast ? RouteMode.safe : RouteMode.fast;
 }
 
@@ -35,10 +35,15 @@ class NavException implements Exception {
 class NavStop {
   final String name;
   final GeoPoint point;
+  final String stopMemo; // 정차 위치 안내 메모 (예: "○○아파트 정문 앞, 오른쪽에 정차")
   final bool isTest; // 테스트 경로용 가짜 정류장 (서버·학부모에게 보내지 않음)
   bool passed = false;
+  bool saidApproach = false;
   int pathIndex = 0;
-  NavStop(this.name, this.point, {this.isTest = false});
+  NavStop(this.name, this.point, {String? stopMemo, this.isTest = false})
+      : stopMemo = (stopMemo != null && stopMemo.trim().isNotEmpty)
+            ? stopMemo.trim()
+            : '$name 정문 앞, 오른쪽에 정차';
 }
 
 class NavGuide {
@@ -60,6 +65,7 @@ class RoutePlan {
   final double distanceM;
   final double durationS;
   final int turnCount;
+  final List<TrafficSegment> traffic; // 교통 상황 색 표시용
   final String criteriaFromServer; // 서버가 실제로 적용했다고 알려준 기준 (검증용)
   final DateTime createdAt;
 
@@ -72,11 +78,19 @@ class RoutePlan {
     required this.distanceM,
     required this.durationS,
     required this.turnCount,
+    required this.traffic,
     required this.criteriaFromServer,
   }) : createdAt = DateTime.now();
 
   double get avgSpeed => durationS > 0 ? math.max(2, distanceM / durationS) : 8;
   String get minutesText => '${(durationS / 60).ceil()}분';
+  String get kmText => '${(distanceM / 1000).toStringAsFixed(1)}km';
+  String get etaClockText {
+    final t = DateTime.now().add(Duration(seconds: durationS.round()));
+    final ampm = t.hour < 12 ? '오전' : '오후';
+    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    return '$ampm $h12:${t.minute.toString().padLeft(2, '0')} 도착 예정';
+  }
 }
 
 enum PlanStatus { idle, loading, ready, error }
@@ -93,12 +107,33 @@ class _RouteInput {
   _RouteInput(this.waypoints, this.destination);
 }
 
+/// 공공데이터포털 어린이 보호구역 주요 지점 + 유치원/정류장 반경 보호구역
+const List<(String, GeoPoint)> _publicSchoolZones = [
+  ('안산 중앙어린이보호구역', GeoPoint(37.3195, 126.8360)),
+  ('고잔초등학교 어린이보호구역', GeoPoint(37.3238, 126.8282)),
+  ('송산초등학교 어린이보호구역', GeoPoint(37.7435, 127.0965)),
+  ('민락어린이보호구역', GeoPoint(37.7478, 127.1021)),
+  ('삼현초등학교 어린이보호구역', GeoPoint(37.7392, 127.1088)),
+];
+
 /// 기사 앱의 운행·내비게이션 상태
 class DriverNavigator extends ChangeNotifier {
-  DriverNavigator(this.map);
+  DriverNavigator(this.map) {
+    map.onUserDrag = () {
+      if (follow) {
+        follow = false;
+        notifyListeners();
+      }
+    };
+  }
+
+  static const MethodChannel _overlayChannel = MethodChannel('com.takeme.shuttle_app/overlay');
 
   final NavMapController map;
   final FlutterTts _tts = FlutterTts();
+
+  // ── 다른 앱 위에 표시(오버레이) 권한 상태 ──
+  bool overlayPermissionGranted = true;
 
   // ── 불러온 정보 ──
   bool loading = true;
@@ -109,6 +144,7 @@ class DriverNavigator extends ChangeNotifier {
   String? loadError;
 
   // ── 경로 비교 (운행 전) ──
+  bool routePreviewing = false; // '경로 탐색' 버튼을 눌러 안전/빠른 경로를 비교·선택 중인 화면 여부
   RouteMode mode = RouteMode.safe;
   final Map<RouteMode, PlanSlot> slots = {RouteMode.safe: PlanSlot(), RouteMode.fast: PlanSlot()};
   int _previewSeq = 0;
@@ -127,10 +163,32 @@ class DriverNavigator extends ChangeNotifier {
   int _progress = 0;
   int _offRouteCount = 0;
   DateTime _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastAutoRouteSync = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // ── 안전 운전 보조 & 지도교사 출발 신호 ──
+  int speedKmh = 0;
+  int _prevSpeedKmh = 0;
+  DateTime _prevSpeedAt = DateTime.now();
+  bool inSchoolZone = false;
+  String? schoolZoneName;
+  bool isOverspeeding = false;
+  DateTime _lastOverspeedAlert = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastSuddenStopAlert = DateTime.fromMillisecondsSinceEpoch(0);
+  String? departSignalBanner; // 지도교사 "출발하셔도 됩니다" 배너 메시지
+  Timer? _departBannerTimer;
+  bool emergencySending = false;
+
+  /// 시속 5km 이상 주행 중인지 여부 (주행 중 조작 잠금 기준)
+  bool get isMovingFast => driving && speedKmh >= 5;
+
+  /// 현재 도로 제한 속도 (어린이 보호구역: 30km/h, 일반 도로: 50km/h)
+  int get speedLimitKmh => inSchoolZone ? 30 : 50;
 
   // ── 위치 ──
   GeoPoint? position;
   double? accuracy;
+  double? heading; // 진행 방향 (화살표 회전 및 12시 방향 정렬)
+  bool headingUp = true; // 주행 중 진행 방향이 화면 위쪽(12시)을 향하도록 지도 회전
   String? gpsError;
   bool follow = true;
   int sentCount = 0;
@@ -146,6 +204,7 @@ class DriverNavigator extends ChangeNotifier {
 
   List<NavStop> get activeStops => testMode ? _testStops : stops;
   bool get socketConnected => SocketService().isConnected;
+  int get offlineQueuedCount => SocketService().queuedLocationCount;
 
   NavStop? get nextStop {
     for (final s in activeStops) {
@@ -171,11 +230,32 @@ class DriverNavigator extends ChangeNotifier {
     return distanceM(position!, s.point);
   }
 
+  String get remainingKmText => '${(remainingM / 1000).toStringAsFixed(1)}km';
+
+  String get remainingKmNumberText {
+    final km = remainingM / 1000;
+    return km >= 10 ? '${km.round()}' : km.toStringAsFixed(1);
+  }
+
+  /// 티맵 하단바 표시용 (오전/오후, HH:MM)
+  (String, String) get etaAmPmAndTime {
+    final a = active;
+    final t = a == null
+        ? DateTime.now()
+        : DateTime.now().add(Duration(seconds: (remainingM / a.avgSpeed).round()));
+    final ampm = t.hour < 12 ? '오전' : '오후';
+    final h12 = (t.hour % 12 == 0 ? 12 : t.hour % 12).toString().padLeft(2, '0');
+    final min = t.minute.toString().padLeft(2, '0');
+    return (ampm, '$h12:$min');
+  }
+
   String get etaText {
     final a = active;
     if (a == null) return '-';
     final t = DateTime.now().add(Duration(seconds: (remainingM / a.avgSpeed).round()));
-    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final ampm = t.hour < 12 ? '오전' : '오후';
+    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    return '$ampm $h12:${t.minute.toString().padLeft(2, '0')} 도착 예정';
   }
 
   String get remainingMinutesText {
@@ -193,12 +273,95 @@ class DriverNavigator extends ChangeNotifier {
     return null;
   }
 
+  /// 그다음(두 번째) 회전 안내 (거리, 문구) — 티맵 좌상단 보조 안내박스 및 백그라운드 오버레이 2단 표시용
+  (double, String)? get secondTurn {
+    final a = active;
+    if (a == null) return null;
+    var foundFirst = false;
+    for (final g in a.guides) {
+      if (g.pathIndex > _progress) {
+        if (!foundFirst) {
+          foundFirst = true;
+        } else {
+          return (a.cum[g.pathIndex] - a.cum[_progress], g.text);
+        }
+      }
+    }
+    return null;
+  }
+
+  // ───────────── 백그라운드 다른 앱 위에 표시(오버레이) 및 화면 켜짐 유지 ─────────────
+
+  String _turnTypeOf(String text) {
+    if (text.contains('유턴') || text.contains('U턴')) return 'uturn';
+    if (text.contains('좌회전')) return 'left';
+    if (text.contains('우회전')) return 'right';
+    if (text.contains('왼쪽')) return 'slight_left';
+    if (text.contains('오른쪽')) return 'slight_right';
+    if (text.contains('목적지') || text.contains('경유지')) return 'goal';
+    return 'straight';
+  }
+
+  Future<void> _setKeepScreenOn(bool enabled) async {
+    try {
+      await _overlayChannel.invokeMethod<bool>('setKeepScreenOn', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  Future<void> refreshOverlayPermission() async {
+    try {
+      final ok = await _overlayChannel.invokeMethod<bool>('canDrawOverlays');
+      if (ok != null && ok != overlayPermissionGranted) {
+        overlayPermissionGranted = ok;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// 운행 시작 시 오버레이 권한 확인: 미허용이면 푸시 알림을 발송하여 설정으로 유도
+  Future<void> _ensureOverlayPermissionOnStart() async {
+    try {
+      final ok = await _overlayChannel.invokeMethod<bool>('ensureOverlayPermission');
+      if (ok != null) {
+        overlayPermissionGranted = ok;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> openOverlaySettings() async {
+    try {
+      await _overlayChannel.invokeMethod<bool>('openOverlaySettings');
+    } catch (_) {}
+  }
+
+  void _syncOverlay() {
+    final t1 = nextTurn;
+    final t2 = secondTurn;
+    _overlayChannel.invokeMethod('updateOverlay', {
+      'driving': driving,
+      'turn1Dist': t1 == null ? '직진' : formatDistance(t1.$1),
+      'turn1Text': t1 == null ? '경로를 따라 주행' : t1.$2,
+      'turn1Type': t1 == null ? 'straight' : _turnTypeOf(t1.$2),
+      'turn2Dist': t2 == null ? '' : formatDistance(t2.$1),
+      'turn2Type': t2 == null ? 'straight' : _turnTypeOf(t2.$2),
+    }).catchError((_) {});
+  }
+
+  /// 주행 중(시속 5km 이상) 조작 잠금 시 음성 안내
+  void warnLockedWhileMoving() {
+    _speak('주행 중에는 안전을 위해 조작이 제한됩니다. 정차 후 이용해 주세요.');
+  }
+
   /// 운행 전 화면에 보여줄 데이터 문제 안내
   String? get setupNotice {
     if (loadError != null) return loadError;
     if (vehicleId == null) return '배정된 차량이 없습니다. 원장님께 차량 배정을 요청하세요.';
     if (academy == null && stops.isEmpty) return '유치원 위치와 정류장 정보가 없어 경로를 계산할 수 없습니다.';
-    if (stops.isEmpty) return '오늘 배정된 정류장이 없습니다. 유치원까지의 경로만 표시합니다. (관리자 웹에서 원아·차량 배정을 확인하세요)';
+    if (stops.isEmpty && position != null && academy != null && distanceM(position!, academy!) < 60) {
+      return '현재 위치가 목적지(유치원)와 거의 같습니다. 원장 웹에서 탑승지를 추가하거나 유치원 위치를 변경해 주세요.';
+    }
+    if (stops.isEmpty) return '오늘 배정된 정류장이 없습니다. 유치원까지의 경로만 표시합니다. (관리자 웹에서 원아·탑승지를 추가하세요)';
     if (academy == null) return '유치원 위치가 없어 마지막 정류장을 도착지로 사용합니다.';
     return null;
   }
@@ -221,6 +384,90 @@ class DriverNavigator extends ChangeNotifier {
     return data;
   }
 
+  /// 급정거·과속 등 안전운전 기록을 서버 운행 일지에 자동 전송 (기사 수동 입력 불필요)
+  Future<void> _logSafetyEventToServer(String type, String detail) async {
+    if (!serverLive || testMode) return;
+    try {
+      await _post('/teacher/driving-event', {'type': type, 'detail': detail});
+    } catch (e) {
+      debugPrint('[nav] logDrivingEvent failed: $e');
+    }
+  }
+
+  /// 긴급 버튼 (길게 눌렀을 때만 호출): 사고·고장 시 원장님 및 타 호차에 즉시 알림 전송
+  Future<bool> triggerEmergency() async {
+    if (emergencySending) return false;
+    emergencySending = true;
+    notifyListeners();
+    try {
+      await _post('/teacher/emergency');
+      _speak('긴급 사고 및 고장 알림을 원장님과 타 차량에 전송했습니다. 안전한 곳에 정차해 주세요.');
+      emergencySending = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      actionError = '긴급 알림 전송 실패: $e';
+      _speak('긴급 알림 전송에 실패했습니다.');
+      emergencySending = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// 서버에서 배정 차량·유치원·정류장(원아+탑승지) 목록을 새로 불러와 경로를 갱신한다.
+  Future<void> refreshRouteFromServer({bool speak = false, String? customSpeakText}) async {
+    final user = ApiService().currentUser;
+    if (user == null) return;
+    try {
+      final v = await ApiService().getTeacherVehicle(user.email);
+      if (v != null) {
+        vehicleId = int.tryParse('${v['id']}');
+        vehicleName = '${v['name'] ?? ''}';
+      }
+      final route = await ApiService().getTeacherRoute(user.email);
+      if (route != null) {
+        vehicleId ??= route.vehicleId;
+        if (route.academyLat != null && route.academyLng != null) {
+          academy = GeoPoint(route.academyLat!, route.academyLng!);
+        }
+        final passedNames = stops.where((s) => s.passed).map((s) => s.name).toSet();
+        final approachedNames = stops.where((s) => s.saidApproach).map((s) => s.name).toSet();
+        stops
+          ..clear()
+          ..addAll(route.stops.map((s) {
+            final stop = NavStop(
+              s.name,
+              GeoPoint(s.latitude, s.longitude),
+              stopMemo: s.stopMemo ?? s.address,
+            );
+            stop.passed = passedNames.contains(s.name);
+            stop.saidApproach = approachedNames.contains(s.name);
+            return stop;
+          }));
+      }
+      loadError = null;
+      notifyListeners();
+      if (driving && !testMode) {
+        if (customSpeakText != null) {
+          _speak(customSpeakText);
+        } else if (speak) {
+          _speak('변경된 탑승지를 반영하여 경로를 다시 안내합니다.');
+        }
+        await _reroute(reason: 'route-updated', fit: false);
+      } else if (!driving) {
+        if (customSpeakText != null) {
+          _speak(customSpeakText);
+        } else if (speak) {
+          _speak('노선과 탑승지 정보를 새로고침했습니다.');
+        }
+        await previewRoutes();
+      }
+    } catch (e) {
+      loadError = '정보를 불러오지 못했습니다: $e';
+      notifyListeners();
+    }
+  }
+
   // ───────────── 초기화 ─────────────
 
   Future<void> init() async {
@@ -229,9 +476,12 @@ class DriverNavigator extends ChangeNotifier {
       await _tts.setSpeechRate(0.45); // 조금 천천히
     } catch (_) {}
 
+    await refreshOverlayPermission();
+
     final user = ApiService().currentUser;
     if (user != null) {
       SocketService().connect(ApiService().token);
+      _registerSocketListeners();
       try {
         final v = await ApiService().getTeacherVehicle(user.email);
         if (v != null) {
@@ -246,7 +496,11 @@ class DriverNavigator extends ChangeNotifier {
           }
           stops
             ..clear()
-            ..addAll(route.stops.map((s) => NavStop(s.name, GeoPoint(s.latitude, s.longitude))));
+            ..addAll(route.stops.map((s) => NavStop(
+                  s.name,
+                  GeoPoint(s.latitude, s.longitude),
+                  stopMemo: s.stopMemo ?? s.address,
+                )));
         }
         if (vehicleId != null) SocketService().joinVehicleRoom(vehicleId!);
       } catch (e) {
@@ -259,6 +513,55 @@ class DriverNavigator extends ChangeNotifier {
 
     await _startLocation(); // 첫 위치가 잡히면 경로 비교를 시작
     if (position == null) await previewRoutes(); // GPS 가 없어도 유치원 기준으로 비교
+  }
+
+  void _registerSocketListeners() {
+    // 1) 지도교사 "출발하셔도 됩니다" 신호 수신
+    SocketService().onDriverDepartSignal((data) {
+      final vId = int.tryParse('${data['vehicleId'] ?? ''}');
+      if (vehicleId != null && vId != null && vId != vehicleId) return;
+      _onReceiveDepartSignal(stopName: data['stopName']?.toString());
+    });
+
+    // 2) 지도교사 학부모 메시지 응답 등 기사 TTS 수신
+    SocketService().onDriverTts((data) {
+      final msg = data['message']?.toString();
+      if (msg != null && msg.isNotEmpty) {
+        _speak(msg);
+      }
+    });
+
+    // 3) 학부모 결석 신청 / 원장 탑승지 변경 시 경로 자동 갱신
+    SocketService().onRouteUpdated((data) {
+      final now = DateTime.now();
+      if (now.difference(_lastAutoRouteSync).inSeconds < 2) return;
+      _lastAutoRouteSync = now;
+      refreshRouteFromServer(
+        speak: true,
+        customSpeakText: driving ? '경로가 변경되었습니다. 바뀐 경로로 다시 안내합니다.' : null,
+      );
+    });
+  }
+
+  void _onReceiveDepartSignal({String? stopName}) {
+    // 현재 정류장 부근(80m 이내)에 정차 중이면 해당 정류장을 통과 완료 처리하고 다음 정류장으로 전환
+    final s = nextStop;
+    if (s != null && position != null && distanceM(position!, s.point) <= 80) {
+      final idx = activeStops.indexOf(s);
+      s.passed = true;
+      if (idx >= 0) map.markStopPassed(idx);
+    }
+
+    final next = nextStop;
+    departSignalBanner = next != null ? '출발하셔도 됩니다 · 다음: ${next.name}' : '출발하셔도 됩니다 · 유치원으로 이동';
+    _departBannerTimer?.cancel();
+    _departBannerTimer = Timer(const Duration(seconds: 7), () {
+      departSignalBanner = null;
+      notifyListeners();
+    });
+
+    _speak(next != null ? '출발하셔도 됩니다. 다음 정류장은 ${next.name}입니다.' : '출발하셔도 됩니다. 유치원으로 이동합니다.');
+    notifyListeners();
   }
 
   // ───────────── 위치 (운행 전부터 내 위치 표시) ─────────────
@@ -278,20 +581,52 @@ class DriverNavigator extends ChangeNotifier {
         return;
       }
       gpsError = null;
-      final first = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-      _onPosition(GeoPoint(first.latitude, first.longitude), acc: first.accuracy);
-      map.centerOn(position!, zoom: 15);
-      await previewRoutes();
+      try {
+        final first = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 8),
+          ),
+        );
+        _onPosition(
+          GeoPoint(first.latitude, first.longitude),
+          acc: first.accuracy,
+          gpsHeading: first.heading,
+          speedMps: first.speed,
+        );
+        if (!routePreviewing && !driving) {
+          map.centerOn(position!, zoom: 15);
+        }
+        await previewRoutes();
+      } catch (e) {
+        gpsError = '실내 또는 GPS 신호 약함';
+        debugPrint('[nav] initial position timeout/error: $e');
+        notifyListeners();
+      }
 
       _gpsSub?.cancel();
       _gpsSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 3),
       ).listen(
         (p) {
+          gpsError = null;
           // 시뮬레이션·테스트 경로 중에는 실제 GPS 로 버스를 움직이지 않음
-          if (!simulating && !testMode) _onPosition(GeoPoint(p.latitude, p.longitude), acc: p.accuracy);
+          if (!simulating && !testMode) {
+            final hadPosition = position != null;
+            // 움직일 때만 GPS 방향을 믿음 (정지 중에는 방향 값이 흔들림)
+            _onPosition(
+              GeoPoint(p.latitude, p.longitude),
+              acc: p.accuracy,
+              gpsHeading: p.speed > 1 ? p.heading : null,
+              speedMps: p.speed,
+            );
+            if (!hadPosition && !driving) {
+              if (!routePreviewing) {
+                map.centerOn(position!, zoom: 15);
+              }
+              previewRoutes();
+            }
+          }
         },
         onError: (e) {
           gpsError = 'GPS 오류: $e';
@@ -315,12 +650,20 @@ class DriverNavigator extends ChangeNotifier {
   }
 
   Future<RoutePlan> _fetchPlan(RouteMode m, GeoPoint origin, _RouteInput input) async {
-    final r = await _post('/directions', {
-      'origin': origin.toJson(),
+    var effectiveOrigin = origin;
+    if (input.waypoints.isNotEmpty && distanceM(origin, input.destination) < 25) {
+      effectiveOrigin = GeoPoint(origin.lat + 0.0002, origin.lng + 0.0002);
+    }
+    final raw = await _post('/directions/', {
+      'origin': effectiveOrigin.toJson(),
       'destination': input.destination.toJson(),
       'waypoints': input.waypoints.take(30).map((s) => s.point.toJson()).toList(),
       'mode': m.key,
-    }) as Map<String, dynamic>;
+    });
+    if (raw is! Map<String, dynamic>) {
+      throw NavException('경로 서버 응답 형식이 올바르지 않습니다.');
+    }
+    final r = raw;
 
     final path = [
       for (final p in (r['path'] as List? ?? [])) GeoPoint(toDouble(p['lat']) ?? 0, toDouble(p['lng']) ?? 0),
@@ -347,6 +690,10 @@ class DriverNavigator extends ChangeNotifier {
     final criteria = c is Map
         ? 'priority=${c['priority']}, avoid=${(c['avoid'] as List?)?.join(',') ?? '-'}'
         : '서버가 기준을 알려주지 않음 (서버 업데이트 필요)';
+    final traffic = <TrafficSegment>[
+      for (final t in (r['traffic'] as List? ?? []))
+        TrafficSegment((t['from'] as num).toInt(), (t['to'] as num).toInt(), (t['state'] as num?)?.toInt() ?? 0),
+    ];
     final plan = RoutePlan(
       mode: m,
       origin: origin,
@@ -356,6 +703,7 @@ class DriverNavigator extends ChangeNotifier {
       distanceM: toDouble(r['distance']) ?? cum.last,
       durationS: toDouble(r['duration']) ?? cum.last / 8,
       turnCount: (r['turnCount'] as num?)?.toInt() ?? guides.length,
+      traffic: traffic,
       criteriaFromServer: criteria,
     );
     debugPrint('[nav] ${m.key}: ${plan.distanceM.round()}m ${plan.durationS.round()}s '
@@ -383,7 +731,7 @@ class DriverNavigator extends ChangeNotifier {
     await Future.wait(RouteMode.values.map((m) async {
       try {
         final plan = await _fetchPlan(m, origin, input);
-        if (seq != _previewSeq) return; // 더 최근 요청이 있으면 버림 (응답 역전 방지)
+        if (seq != _previewSeq) return;
         slots[m]!
           ..plan = plan
           ..status = PlanStatus.ready
@@ -391,7 +739,7 @@ class DriverNavigator extends ChangeNotifier {
       } catch (e) {
         if (seq != _previewSeq) return;
         slots[m]!
-          ..plan = null // 실패한 모드에 예전 경로를 남겨 두지 않음
+          ..plan = null
           ..status = PlanStatus.error
           ..error = e.toString();
       }
@@ -409,13 +757,50 @@ class DriverNavigator extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// '경로 탐색' 버튼 클릭 시: 안전 경로를 기본 선택하고 전체 경로가 한눈에 보이도록 지도를 축소·비교
+  Future<void> openRoutePreview() async {
+    actionError = null;
+    mode = RouteMode.safe;
+    routePreviewing = true;
+    map.resetZoom();
+    _drawPreview();
+    notifyListeners();
+    if (position == null) {
+      await _startLocation();
+    }
+    await previewRoutes();
+    map.fitAll();
+  }
+
+  /// 경로 탐색 화면에서 이전 준비 화면으로 돌아가기
+  void closeRoutePreview() {
+    routePreviewing = false;
+    actionError = null;
+    _drawPreview();
+    if (position != null) {
+      map.centerOn(position!, zoom: 15);
+    }
+    notifyListeners();
+  }
+
   void _drawPreview() {
     if (driving) return;
+    if (!routePreviewing) {
+      map.setRoutes(
+        stops: _stopsJson(stops),
+        academy: academy,
+        fit: position == null,
+      );
+      return;
+    }
+    map.resetZoom();
     map.setRoutes(
       primary: slots[mode]!.plan?.path,
+      traffic: slots[mode]!.plan?.traffic,
       alternate: slots[mode.other]!.plan?.path,
       stops: _stopsJson(stops),
       academy: academy,
+      fit: true,
     );
   }
 
@@ -441,7 +826,7 @@ class DriverNavigator extends ChangeNotifier {
   }
 
   /// 운행 중 재탐색 (최근 요청만 반영, 실패하면 이전 경로를 유지하고 경고 표시)
-  Future<void> _reroute({required String reason}) async {
+  Future<void> _reroute({required String reason, bool fit = false}) async {
     final pos = position;
     final input = _inputFor(activeStops);
     if (pos == null || input == null) return;
@@ -451,7 +836,7 @@ class DriverNavigator extends ChangeNotifier {
     try {
       final plan = await _fetchPlan(mode, pos, input);
       if (seq != _routeSeq) return;
-      _activate(plan);
+      _activate(plan, fit: fit);
       routeWarning = null;
     } catch (e) {
       if (seq != _routeSeq) return;
@@ -467,8 +852,23 @@ class DriverNavigator extends ChangeNotifier {
     }
   }
 
-  void _activate(RoutePlan plan) {
+  double? _roadBearingAt(List<GeoPoint> path, int index) {
+    if (path.length < 2) return null;
+    final startIdx = math.min(math.max(index, 0), path.length - 1);
+    for (var i = startIdx + 1; i < path.length; i++) {
+      if (distanceM(path[startIdx], path[i]) > 3) {
+        return bearingDeg(path[startIdx], path[i]);
+      }
+    }
+    return null;
+  }
+
+  void _activate(RoutePlan plan, {bool fit = false}) {
     active = plan;
+    final initialRoadHeading = _roadBearingAt(plan.path, 0);
+    if (initialRoadHeading != null) {
+      heading = initialRoadHeading;
+    }
     var from = 0;
     for (final s in activeStops.where((s) => !s.passed)) {
       s.pathIndex = nearestIndex(plan.path, s.point, from: from);
@@ -477,8 +877,21 @@ class DriverNavigator extends ChangeNotifier {
     _progress = 0;
     _offRouteCount = 0;
     _simMeters = 0;
-    map.setRoutes(primary: plan.path, stops: _stopsJson(activeStops), academy: academy, fit: false);
+
+    final shouldFitOverview = fit && (!driving || !follow);
+    if (shouldFitOverview) map.resetZoom();
+    map.setHeadingUp(headingUp);
+    map.setRoutes(
+      primary: plan.path,
+      traffic: plan.traffic,
+      stops: _stopsJson(activeStops),
+      academy: academy,
+      fit: shouldFitOverview,
+    );
     _updateProgress();
+    if (driving && position != null) {
+      map.moveMe(position!, heading: heading, follow: follow, navigating: true);
+    }
   }
 
   // ───────────── 실제 운행 ─────────────
@@ -496,24 +909,32 @@ class DriverNavigator extends ChangeNotifier {
       if (position == null) await _startLocation();
       if (position == null) throw NavException(gpsError ?? '현재 위치를 확인할 수 없습니다.');
       await _post('/teacher/start-operation');
+      routePreviewing = false;
       driving = true;
       serverLive = true;
       testMode = false;
       sentCount = 0;
       follow = true;
+      headingUp = true;
       SocketService().connect(ApiService().token);
+      _registerSocketListeners();
+      if (vehicleId != null) SocketService().joinVehicleRoom(vehicleId!);
       SocketService().sendOperationStatus(vehicleId: vehicleId!, isOperating: true);
 
-      // 미리 계산한 경로가 지금 위치 근처에서 출발하면 그대로 사용
+      // 운행 중 화면 꺼짐 방지 활성화 + 다른 앱 위에 표시 권한 확인
+      unawaited(_setKeepScreenOn(true));
+      unawaited(_ensureOverlayPermissionOnStart());
+
       final ready = slots[mode]!.plan;
       if (ready != null &&
           distanceM(ready.origin, position!) < 150 &&
           DateTime.now().difference(ready.createdAt).inMinutes < 10) {
-        _activate(ready);
+        _activate(ready, fit: false);
       } else {
-        await _reroute(reason: 'start');
+        await _reroute(reason: 'start', fit: false);
       }
       _onPosition(position!, acc: accuracy);
+      _syncOverlay();
       _speak('운행을 시작합니다. ${mode.title}로 안내합니다. 오늘도 안전 운행 부탁드립니다.');
     } catch (e) {
       actionError = e.toString();
@@ -522,46 +943,61 @@ class DriverNavigator extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> stop() async {
+  Future<void> stop({bool interiorChecked = true}) async {
     busy = true;
     notifyListeners();
     _stopSimulation();
+    unawaited(_setKeepScreenOn(false));
     if (serverLive) {
       try {
-        await _post('/teacher/end-operation');
+        await _post('/teacher/end-operation', {'interiorChecked': interiorChecked});
       } catch (_) {}
       if (vehicleId != null) SocketService().sendOperationStatus(vehicleId: vehicleId!, isOperating: false);
     }
     _resetDriving();
+    _syncOverlay();
     busy = false;
     notifyListeners();
-    _speak(testMode ? '테스트를 종료합니다.' : '운행이 종료되었습니다. 수고하셨습니다.');
+    _speak(testMode ? '테스트를 종료합니다.' : '차량 내부 확인이 완료되어 운행을 종료합니다. 수고하셨습니다.');
     testMode = false;
     _testStops.clear();
     for (final s in stops) {
       s.passed = false;
+      s.saidApproach = false;
     }
-    if (position != null) map.setMyLocation(position!);
+    if (position != null) {
+      map.moveMe(position!, heading: heading);
+      map.centerOn(position!, zoom: 15);
+    }
     await previewRoutes();
   }
 
   void _resetDriving() {
     driving = false;
+    routePreviewing = false;
     serverLive = false;
     active = null;
     rerouting = false;
     routeWarning = null;
+    speedKmh = 0;
+    inSchoolZone = false;
+    schoolZoneName = null;
+    isOverspeeding = false;
+    departSignalBanner = null;
+    _departBannerTimer?.cancel();
     _routeSeq++;
-    map.hideBus();
+    map.resetZoom();
   }
 
   void setFollow(bool v) {
     follow = v;
     if (v && position != null) {
       if (driving) {
-        map.moveBus(position!, follow: true);
+        headingUp = true;
+        map.setHeadingUp(true);
+        map.moveMe(position!, heading: heading, follow: true, navigating: true);
       } else {
-        map.centerOn(position!);
+        map.centerOn(position!, zoom: 15);
       }
     } else {
       map.fitAll();
@@ -574,31 +1010,140 @@ class DriverNavigator extends ChangeNotifier {
     if (driving) {
       setFollow(true);
     } else {
-      map.centerOn(position!);
+      map.centerOn(position!, zoom: 15);
     }
   }
 
-  // ───────────── 위치 처리 ─────────────
+  /// 주행 중 화면 방향 전환 (진행 방향 위 ↔ 북쪽 고정)
+  void toggleHeadingUp() {
+    headingUp = !headingUp;
+    map.setHeadingUp(headingUp);
+    if (driving && position != null) {
+      setFollow(true);
+    }
+    notifyListeners();
+  }
 
-  void _onPosition(GeoPoint p, {double? acc, bool simulated = false}) {
+  // ───────────── 위치 및 안전 운전 처리 ─────────────
+
+  void _evaluateSafety(GeoPoint p, {double? speedMps, required bool simulated}) {
+    final now = DateTime.now();
+    final newSpeed = simulated
+        ? 28
+        : (speedMps != null && speedMps > 0.5 ? (speedMps * 3.6).round() : 0);
+
+    // 1) 급정거 감지 (1.5초 이내에 시속 14km 이상 급감속)
+    final dtMs = now.difference(_prevSpeedAt).inMilliseconds;
+    if (driving && dtMs > 150 && dtMs <= 2000 && (_prevSpeedKmh - newSpeed) >= 14) {
+      if (now.difference(_lastSuddenStopAlert).inSeconds > 20) {
+        _lastSuddenStopAlert = now;
+        _speak('급정거가 감지되었습니다. 안전 거리를 유지해 주세요.');
+        unawaited(_logSafetyEventToServer(
+          'SUDDEN_STOP',
+          '안전운전 기록: 급정거 감지 (${_prevSpeedKmh}km/h → ${newSpeed}km/h)',
+        ));
+      }
+    }
+    _prevSpeedKmh = speedKmh;
+    _prevSpeedAt = now;
+    speedKmh = newSpeed;
+
+    // 2) 어린이 보호구역 진입 감지 (유치원 반경 300m, 정류장 반경 180m, 공공데이터 어린이보호구역 반경 300m)
+    String? detectedZone;
+    if (academy != null && distanceM(p, academy!) <= 300) {
+      detectedZone = '유치원 앞 어린이 보호구역';
+    }
+    if (detectedZone == null) {
+      for (final (zName, zPt) in _publicSchoolZones) {
+        if (distanceM(p, zPt) <= 300) {
+          detectedZone = zName;
+          break;
+        }
+      }
+    }
+    if (detectedZone == null) {
+      for (final s in activeStops) {
+        if (!s.passed && distanceM(p, s.point) <= 180) {
+          detectedZone = '${s.name} 승하차 보호구역';
+          break;
+        }
+      }
+    }
+
+    final wasInZone = inSchoolZone;
+    inSchoolZone = detectedZone != null;
+    schoolZoneName = detectedZone;
+
+    if (driving && !wasInZone && inSchoolZone) {
+      _speak('어린이 보호구역에 진입했습니다. 시속 30킬로미터 이하로 서행하세요.');
+    }
+
+    // 3) 과속 감지 (어린이 보호구역 30km/h 초과, 일반도로 80km/h 초과)
+    final limit = inSchoolZone ? 30 : 80;
+    isOverspeeding = driving && speedKmh > limit;
+    if (isOverspeeding && now.difference(_lastOverspeedAlert).inSeconds > 25) {
+      _lastOverspeedAlert = now;
+      if (inSchoolZone) {
+        _speak('어린이 보호구역 제한속도 시속 30킬로미터를 초과했습니다. 감속해 주세요.');
+        unawaited(_logSafetyEventToServer(
+          'OVERSPEED_SCHOOL_ZONE',
+          '안전운전 기록: 어린이 보호구역 과속 (${speedKmh}km/h, 제한 30km/h)',
+        ));
+      } else {
+        _speak('과속입니다. 규정 속도를 준수해 주세요.');
+        unawaited(_logSafetyEventToServer(
+          'OVERSPEED',
+          '안전운전 기록: 과속 감지 (${speedKmh}km/h)',
+        ));
+      }
+    }
+  }
+
+  void _onPosition(GeoPoint p, {double? acc, double? gpsHeading, double? speedMps, bool simulated = false}) {
+    final prev = position;
     position = p;
     if (acc != null) accuracy = acc;
+    // 진행 방향: GPS 방향이 있으면 사용, 없으면 이전 위치에서 계산 (2m 이상 움직였을 때)
+    if (gpsHeading != null && gpsHeading >= 0) {
+      heading = gpsHeading;
+    } else if (prev != null && distanceM(prev, p) > 2) {
+      heading = bearingDeg(prev, p);
+    }
+
+    _evaluateSafety(p, speedMps: speedMps, simulated: simulated);
 
     if (!driving) {
-      map.setMyLocation(p);
+      map.moveMe(p, heading: heading);
       notifyListeners();
       return;
     }
 
-    map.moveBus(p, follow: follow);
-    final mayLeaveDevice = serverLive && !testMode && (!simulated || simSendToServer);
-    if (mayLeaveDevice && vehicleId != null && SocketService().isConnected) {
-      SocketService().sendLocationUpdate(vehicleId: vehicleId!, lat: p.lat, lng: p.lng);
-      sentCount++;
-      lastSentAt = DateTime.now();
-    }
     _checkStopArrival(p);
-    _updateProgress();
+    _updateProgress(hasGpsHeading: gpsHeading != null && gpsHeading >= 0);
+    map.moveMe(p, heading: heading, follow: follow, navigating: true);
+
+    // 실제 도로 기준 남은 시간(ETA)과 위치를 서버로 자동 전송 (오프라인 시 큐에 저장 후 자동 재전송)
+    final mayLeaveDevice = serverLive && !testMode && (!simulated || simSendToServer);
+    if (mayLeaveDevice && vehicleId != null) {
+      final a = active;
+      final remSec = a == null ? null : (remainingM / a.avgSpeed).round();
+      final nextDist = nextStopDistance;
+      final nextEtaSec = (a != null && nextDist != null) ? (nextDist / a.avgSpeed).round() : null;
+      SocketService().sendLocationUpdate(
+        vehicleId: vehicleId!,
+        lat: p.lat,
+        lng: p.lng,
+        remainingSeconds: remSec,
+        remainingMeters: remainingM.round(),
+        nextStopName: nextStop?.name,
+        nextStopEtaSeconds: nextEtaSec,
+        speedKmh: speedKmh,
+      );
+      if (SocketService().isConnected) {
+        sentCount++;
+        lastSentAt = DateTime.now();
+      }
+    }
     notifyListeners();
   }
 
@@ -607,17 +1152,24 @@ class DriverNavigator extends ChangeNotifier {
     for (var i = 0; i < list.length; i++) {
       final s = list[i];
       if (s.passed) continue;
-      if (distanceM(p, s.point) < 40) {
+      final dist = distanceM(p, s.point);
+      // 1) 정류장 160m 전방 접근 시 정확한 정차 지점 메모 음성 안내
+      if (dist <= 160 && dist > 45 && !s.saidApproach) {
+        s.saidApproach = true;
+        _speak('잠시 후 다음 정류장, ${s.name}, ${s.stopMemo}해 주세요.');
+      }
+      // 2) 정류장 도착 (40m 이내)
+      if (dist < 40) {
         s.passed = true;
+        s.saidApproach = true;
         map.markStopPassed(i);
-        final next = nextStop;
-        _speak('${s.name} 정류장에 도착했습니다.${next == null ? ' 유치원으로 복귀합니다.' : ' 다음은 ${next.name} 정류장입니다.'}');
+        _speak('${s.name} 정류장에 도착했습니다. ${s.stopMemo}. 원아 탑승 후 지도교사의 출발 신호를 기다려 주세요.');
       }
       break; // 다음 정류장 하나만 확인
     }
   }
 
-  void _updateProgress() {
+  void _updateProgress({bool hasGpsHeading = false}) {
     final a = active;
     final pos = position;
     if (a == null || pos == null) return;
@@ -625,6 +1177,14 @@ class DriverNavigator extends ChangeNotifier {
     final idx = nearestIndex(a.path, pos, from: math.max(0, _progress - 5), to: _progress + 80);
     final off = distanceM(a.path[idx], pos);
     _progress = idx;
+
+    // 경로 위를 주행 중이고 GPS 진행 방향이 없거나 정지 상태일 때 현재 도로 구간의 방향을 사용해 항상 12시 방향 정렬 유지
+    if (!hasGpsHeading && off <= 45) {
+      final roadHeading = _roadBearingAt(a.path, idx);
+      if (roadHeading != null) {
+        heading = roadHeading;
+      }
+    }
 
     // 70m 이상 벗어난 상태가 3번 연속이면 재탐색 (20초에 한 번, 중복 요청 방지)
     _offRouteCount = off > 70 ? _offRouteCount + 1 : 0;
@@ -635,6 +1195,8 @@ class DriverNavigator extends ChangeNotifier {
       _reroute(reason: 'off-route');
       return;
     }
+
+    _syncOverlay();
 
     final turn = nextTurn;
     if (turn == null) return;
@@ -671,34 +1233,49 @@ class DriverNavigator extends ChangeNotifier {
     busy = true;
     actionError = null;
     notifyListeners();
-    const offsets = [(0.004, 0.003), (0.006, -0.002), (0.002, -0.005), (-0.003, -0.003)];
+    const offsets = [
+      (0.004, 0.003, '1단지 정문 앞, 오른쪽에 정차'),
+      (0.006, -0.002, '상가 입구 앞, 오른쪽에 정차'),
+      (0.002, -0.005, '어린이놀이터 앞, 오른쪽에 정차'),
+      (-0.003, -0.003, '사거리 모퉁이 지나 오른쪽에 정차'),
+    ];
     _testStops
       ..clear()
       ..addAll([
         for (var i = 0; i < offsets.length; i++)
-          NavStop('테스트 ${i + 1}', GeoPoint(center.lat + offsets[i].$1, center.lng + offsets[i].$2), isTest: true),
+          NavStop(
+            '테스트 ${i + 1}단지',
+            GeoPoint(center.lat + offsets[i].$1, center.lng + offsets[i].$2),
+            stopMemo: offsets[i].$3,
+            isTest: true,
+          ),
       ]);
     testMode = true;
     driving = true;
     serverLive = false;
     follow = true;
+    headingUp = true;
     position = center;
-    await _reroute(reason: 'test');
+    unawaited(_setKeepScreenOn(true));
+    unawaited(_ensureOverlayPermissionOnStart());
+    await _reroute(reason: 'test', fit: false);
     busy = false;
     notifyListeners();
     if (active != null) {
+      _syncOverlay();
       _speak('테스트 경로를 시작합니다. 실제 운행이 아닙니다.');
       startSimulation();
     } else {
       testMode = false;
       _resetDriving();
+      _syncOverlay();
       _testStops.clear();
       _drawPreview();
       notifyListeners();
     }
   }
 
-  /// 경로를 따라 1초마다 가짜 위치 이동 (약 40km/h)
+  /// 경로를 따라 1초마다 가짜 위치 이동 (약 28km/h)
   void startSimulation() {
     if (!driving || active == null || simulating) return;
     simulating = true;
@@ -722,6 +1299,7 @@ class DriverNavigator extends ChangeNotifier {
     _simTimer?.cancel();
     _simTimer = null;
     simulating = false;
+    speedKmh = 0;
     _offRouteTestTicks = 0;
   }
 
@@ -745,9 +1323,11 @@ class DriverNavigator extends ChangeNotifier {
 
   @override
   void dispose() {
+    _departBannerTimer?.cancel();
     _stopSimulation();
     _gpsSub?.cancel();
     _tts.stop();
+    unawaited(_setKeepScreenOn(false));
     super.dispose();
   }
 }

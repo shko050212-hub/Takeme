@@ -13,9 +13,9 @@ const NON_TURN_GUIDE_TYPES = new Set([100, 101, 1000]);
  * 모드별 실제 카카오 탐색 기준 (공식 문서의 priority / avoid 값만 사용)
  * https://developers.kakaomobility.com/docs/navi-api/waypoints/
  */
-export const ROUTE_CRITERIA: Record<RouteMode, { priority: 'RECOMMEND' | 'TIME'; avoid?: string[] }> = {
+export const ROUTE_CRITERIA: Record<RouteMode, { priority: 'RECOMMEND' | 'DISTANCE'; avoid?: string[] }> = {
   safe: { priority: 'RECOMMEND', avoid: ['uturn'] },
-  fast: { priority: 'TIME' },
+  fast: { priority: 'DISTANCE' },
 };
 
 /**
@@ -77,11 +77,21 @@ export class DirectionsService {
     // 지도에 그릴 좌표 (vertexes 는 [x1, y1, x2, y2, ...])
     const path: { lat: number; lng: number }[] = [];
     const guides: any[] = [];
+    // 도로별 교통 상태를 경로 좌표 구간으로 표시 (같은 상태가 이어지면 하나로 합침)
+    // traffic_state: 카카오 응답 예시 기준 0 정보없음, 1 정체, 2 지체, 3 서행, 4 원활
+    const traffic: { from: number; to: number; state: number }[] = [];
     let turnCount = 0;
     for (const section of route.sections ?? []) {
       for (const road of section.roads ?? []) {
         const v: number[] = road.vertexes ?? [];
+        const from = path.length;
         for (let i = 0; i + 1 < v.length; i += 2) path.push({ lat: v[i + 1], lng: v[i] });
+        const to = path.length - 1;
+        if (to <= from) continue;
+        const state = typeof road.traffic_state === 'number' ? road.traffic_state : 0;
+        const last = traffic[traffic.length - 1];
+        if (last && last.state === state && last.to >= from - 1) last.to = to;
+        else traffic.push({ from, to, state });
       }
       for (const g of section.guides ?? []) {
         guides.push({ lat: g.y, lng: g.x, guidance: g.guidance, type: g.type, distance: g.distance, duration: g.duration });
@@ -96,6 +106,7 @@ export class DirectionsService {
       distance: route.summary?.distance, // m
       duration: route.summary?.duration, // 초
       turnCount, // 회전 안내 횟수 (경로 비교용)
+      traffic, // 교통 상태 구간 (path 인덱스 기준)
       sections: (route.sections ?? []).map((s: any) => ({ distance: s.distance, duration: s.duration })),
       path,
       guides,

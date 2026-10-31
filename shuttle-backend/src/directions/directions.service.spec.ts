@@ -15,7 +15,7 @@ function kakaoResponse(priority = 'RECOMMEND') {
             {
               distance: 548,
               duration: 156,
-              roads: [{ vertexes: [127.1099, 37.3944, 127.1096, 37.3944] }],
+              roads: [{ traffic_state: 4, vertexes: [127.1099, 37.3944, 127.1096, 37.3944] }],
               guides: [
                 { x: 127.1099, y: 37.3944, type: 100, guidance: '출발지' },
                 { x: 127.1096, y: 37.3944, type: 2, guidance: '우회전' },
@@ -25,7 +25,7 @@ function kakaoResponse(priority = 'RECOMMEND') {
             {
               distance: 1224,
               duration: 410,
-              roads: [{ vertexes: [127.1134, 37.3962, 127.1086, 37.4024] }],
+              roads: [{ traffic_state: 1, vertexes: [127.1134, 37.3962, 127.1086, 37.4024] }],
               guides: [
                 { x: 127.114, y: 37.3962, type: 1, guidance: '좌회전' },
                 { x: 127.1086, y: 37.4024, type: 101, guidance: '목적지' },
@@ -62,13 +62,13 @@ describe('DirectionsService', () => {
     expect(r.criteria).toEqual({ priority: 'RECOMMEND', avoid: ['uturn'] });
   });
 
-  it('fast 모드는 최단 시간으로 요청하고 avoid 를 보내지 않는다', async () => {
-    const { service, http } = setup(kakaoResponse('TIME'));
+  it('fast 모드는 최단 거리(거리 우선)로 요청하고 avoid 를 보내지 않는다', async () => {
+    const { service, http } = setup(kakaoResponse('DISTANCE'));
     const r = await service.getRoute({ ...req, mode: 'fast' });
     const body = http.post.mock.calls[0][1];
-    expect(body.priority).toBe('TIME');
+    expect(body.priority).toBe('DISTANCE');
     expect(body).not.toHaveProperty('avoid');
-    expect(r.criteria).toEqual({ priority: 'TIME', avoid: [] });
+    expect(r.criteria).toEqual({ priority: 'DISTANCE', avoid: [] });
   });
 
   it('mode 가 없으면 safe 로 처리한다', async () => {
@@ -95,6 +95,15 @@ describe('DirectionsService', () => {
     expect(r.path).toHaveLength(4);
     expect(r.turnCount).toBe(2); // 우회전 + 좌회전 (출발지·경유지·목적지 제외)
     expect(r.sections).toHaveLength(2);
+  });
+
+  it('도로별 교통 상태를 경로 좌표 구간으로 돌려준다', async () => {
+    const { service } = setup();
+    const r = await service.getRoute(req);
+    expect(r.traffic).toEqual([
+      { from: 0, to: 1, state: 4 }, // 원활
+      { from: 2, to: 3, state: 1 }, // 정체
+    ]);
   });
 
   it('경로를 찾지 못하면 오류를 낸다', async () => {

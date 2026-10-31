@@ -29,7 +29,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly jwtService: JwtService,
     @InjectRepository(Vehicle) private readonly vehicleRepository: Repository<Vehicle>,
     @InjectRepository(Student) private readonly studentRepository: Repository<Student>,
-  ) {}
+  ) {
+    this.routingService.registerRouteUpdateNotifier((academyId, message) => {
+      if (message) {
+        this.broadcastTeacherPush(message, academyId);
+      }
+      this.broadcastRouteUpdated(academyId);
+    });
+  }
 
   async handleConnection(client: Socket) {
     const token =
@@ -66,11 +73,47 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       vehicleId,
       busNumber,
       isOperating,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
     if (this.server) {
       this.server.to(room).emit('vehicleOperatingStatus', payload);
       this.server.emit('vehicleOperatingStatus', payload);
+    }
+  }
+
+  /** Broadcast route/pickup-point/academy update */
+  broadcastRouteUpdated(academyId?: number) {
+    if (this.server) {
+      this.server.emit('routeUpdated', {
+        academyId: academyId ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** 원장 웹에서 탑승지 추가/삭제 시 지도교사에게 푸시 알림 전송 */
+  broadcastTeacherPush(message: string, academyId?: number) {
+    if (this.server) {
+      this.server.emit('teacherPush', {
+        message,
+        academyId: academyId ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** 지도교사가 탑승 완료 후 기사 앱에 "출발하셔도 됩니다" 신호 전송 */
+  broadcastDepartSignal(vehicleId: number, stopName?: string) {
+    const room = `vehicle_${vehicleId}`;
+    const payload = {
+      vehicleId,
+      stopName: stopName ?? null,
+      message: '출발하셔도 됩니다',
+      timestamp: new Date().toISOString(),
+    };
+    if (this.server) {
+      this.server.to(room).emit('driverDepartSignal', payload);
+      this.server.emit('driverDepartSignal', payload);
     }
   }
 
@@ -91,7 +134,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     client.emit('vehicleOperatingStatus', {
       vehicleId,
       isOperating: isOp,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -112,10 +155,29 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.broadcastOperationStatus(vehicleId, !!data.isOperating);
   }
 
-  // 기사 앱이 위치를 보내면 같은 차량 방 및 모든 관리자 대시보드에 실시간 전송
+  @SubscribeMessage('teacherReadyToDepart')
+  handleTeacherReadyToDepart(
+    @MessageBody() data: { vehicleId: number; stopName?: string },
+  ) {
+    const vehicleId = Number(data?.vehicleId);
+    if (!vehicleId) return;
+    this.broadcastDepartSignal(vehicleId, data?.stopName);
+  }
+
+  // 기사 앱이 위치 + 실제 도로 기준 남은 시간(ETA)을 보내면 차량 방 및 대시보드·학부모에게 실시간 전송
   @SubscribeMessage('driverLocationUpdate')
   async handleDriverLocationUpdate(
-    @MessageBody() data: { vehicleId: number; lat: number; lng: number },
+    @MessageBody()
+    data: {
+      vehicleId: number;
+      lat: number;
+      lng: number;
+      remainingSeconds?: number;
+      remainingMeters?: number;
+      nextStopName?: string;
+      nextStopEtaSeconds?: number;
+      speedKmh?: number;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const vehicleId = Number(data?.vehicleId);
@@ -131,6 +193,11 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       vehicleId,
       lat,
       lng,
+      remainingSeconds: data?.remainingSeconds ?? null,
+      remainingMeters: data?.remainingMeters ?? null,
+      nextStopName: data?.nextStopName ?? null,
+      nextStopEtaSeconds: data?.nextStopEtaSeconds ?? null,
+      speedKmh: data?.speedKmh ?? null,
       timestamp: new Date().toISOString(),
     };
 

@@ -12,14 +12,27 @@ import { OperationLog } from '../entities/operation-log.entity';
 import { StudentSchedule } from '../entities/student-schedule.entity';
 import { ScheduleOverride } from '../entities/schedule-override.entity';
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
+import { PickupPoint } from '../entities/pickup-point.entity';
 import { RoutingModule } from '../routing/routing.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Student, StudentSchedule, Vehicle, Notification, User, ParentMessage, OperationLog, ScheduleOverride, AcademyHoliday]),
-    RoutingModule
+    TypeOrmModule.forFeature([
+      Student,
+      StudentSchedule,
+      Vehicle,
+      Notification,
+      User,
+      ParentMessage,
+      OperationLog,
+      ScheduleOverride,
+      AcademyHoliday,
+      PickupPoint,
+    ]),
+    RoutingModule,
   ],
   controllers: [TeacherController],
-  providers: [TeacherService, LocationGateway]
+  providers: [TeacherService, LocationGateway],
+  exports: [LocationGateway],
 })
 export class TeacherModule {}

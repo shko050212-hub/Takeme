@@ -31,5 +31,11 @@ void main() {
       expect(formatDistance(343), '340m');
       expect(formatDistance(1260), '1.3km');
     });
+    test('진행 방향 (북 0도, 동 90도)', () {
+      const a = GeoPoint(37.5, 127.0);
+      expect(bearingDeg(a, const GeoPoint(37.501, 127.0)), closeTo(0, 0.5));
+      expect(bearingDeg(a, const GeoPoint(37.5, 127.001)), closeTo(90, 0.5));
+      expect(bearingDeg(a, const GeoPoint(37.499, 127.0)), closeTo(180, 0.5));
+    });
   });
 }

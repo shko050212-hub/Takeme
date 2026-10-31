@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../config.dart';
 import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/location_service.dart';
@@ -60,6 +61,19 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     if (user == null) return;
 
     SocketService().connect(ApiService().token);
+    if (user.role != 'DRIVER') {
+      SocketService().onTeacherPush((data) {
+        if (!mounted) return;
+        final msg = data['message']?.toString() ?? '탑승지 정보가 변경되었습니다.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('📢 $msg'),
+            backgroundColor: const Color(0xFF2563EB),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      });
+    }
 
     final vehicle = await ApiService().getTeacherVehicle(user.email);
     final students = await ApiService().getTeacherStudents(user.email);
@@ -125,6 +139,29 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         const SnackBar(content: Text('운행이 종료되었습니다.'), backgroundColor: Color(0xFF64748B)),
       );
     }
+  }
+
+  Future<void> _sendReadyToDepartSignal() async {
+    final vid = _vehicleInfo?['id'];
+    final vId = vid == null ? null : int.tryParse(vid.toString());
+    if (vId != null) {
+      SocketService().sendReadyToDepart(vehicleId: vId);
+    }
+    try {
+      await ApiService().postWithAuth(
+        Uri.parse('${AppConfig.apiHost}/teacher/ready-to-depart'),
+        {},
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    _flutterTts.speak('기사님께 출발 신호를 전달했습니다.');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ 기사님 앱에 "출발하셔도 됩니다" 신호를 보냈습니다.'),
+        backgroundColor: Color(0xFF10B981),
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   void _handleManualBoard(StudentModel student) {
@@ -496,7 +533,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
           : Column(
               children: [
-                // Top Driving Controller (Driver only)
+                // Top Driving Controller (Driver only) or Ready-to-Depart Signal Button (Escort Teacher)
                 if (isDriver)
                   Container(
                     color: Colors.white,
@@ -520,6 +557,28 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  )
+                else
+                  Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _sendReadyToDepartSignal,
+                        icon: const Icon(Icons.check_circle_outline, color: Colors.white),
+                        label: const Text(
+                          '정류장 탑승 완료 · 기사님께 출발 신호 보내기',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                      ),
                     ),
                   ),
 

@@ -1,6 +1,6 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { Student } from '../entities/student.entity';
 import { StudentSchedule } from '../entities/student-schedule.entity';
 import { Vehicle } from '../entities/vehicle.entity';
@@ -10,7 +10,7 @@ import { ParentMessage } from '../entities/parent-message.entity';
 import { OperationLog } from '../entities/operation-log.entity';
 import { ScheduleOverride, OverrideType } from '../entities/schedule-override.entity';
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
-import { LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
+import { PickupPoint } from '../entities/pickup-point.entity';
 import { LocationGateway } from './location.gateway';
 
 @Injectable()
@@ -25,7 +25,8 @@ export class TeacherService {
     @InjectRepository(OperationLog) private operationLogRepository: Repository<OperationLog>,
     @InjectRepository(ScheduleOverride) private scheduleOverrideRepository: Repository<ScheduleOverride>,
     @InjectRepository(AcademyHoliday) private academyHolidayRepository: Repository<AcademyHoliday>,
-    private readonly locationGateway: LocationGateway
+    private readonly locationGateway: LocationGateway,
+    @Optional() @InjectRepository(PickupPoint) private pickupPointRepository?: Repository<PickupPoint>,
   ) {}
 
   private async isTodayHoliday(): Promise<boolean> {
@@ -110,6 +111,7 @@ export class TeacherService {
   /**
    * 로그인한 직원(지도교사 또는 기사)에게 배정된 차량 찾기.
    * 기존에는 teacherUser 로만 찾아서 기사(DRIVER) 계정은 차량을 못 찾던 문제 수정.
+   * 차량 재초기화로 연결이 끊긴 경우 소속 유치원 또는 가장 최근에 생성된 유치원 차량을 우선 연결한다.
    */
   private async findAssignedVehicle(userId: number, relations: any = {}) {
     let v =
@@ -119,7 +121,11 @@ export class TeacherService {
 
     const user = await this.userRepository.findOne({ where: { id: userId }, relations: { academy: true } });
     if (user?.academy) {
-      v = await this.vehicleRepository.findOne({ where: { academy: { id: user.academy.id } }, relations });
+      v = await this.vehicleRepository.findOne({
+        where: { academy: { id: user.academy.id } },
+        relations,
+        order: { id: 'DESC' },
+      });
       if (v) {
         if (!v.driverUser && user.role === 'DRIVER') {
           v.driverUser = user;
@@ -129,7 +135,20 @@ export class TeacherService {
       }
     }
 
-    const allVehicles = await this.vehicleRepository.find({ relations, take: 1 });
+    if (user?.name) {
+      v = await this.vehicleRepository.findOne({
+        where: [{ driverName: user.name }, { teacherName: user.name }],
+        relations,
+        order: { id: 'DESC' },
+      });
+      if (v) return v;
+    }
+
+    const allVehicles = await this.vehicleRepository.find({
+      relations,
+      order: { id: 'DESC' },
+      take: 1,
+    });
     return allVehicles[0] || null;
   }
 
@@ -174,18 +193,70 @@ export class TeacherService {
     if (!vehicle) return { stops: [], routePoints: [], academy: null, vehicleId: null };
 
     const students = await this.getTodayStudentsForVehicle(vehicle.id);
-    
-    // Convert to route stops
-    let stops = students
-      .filter(s => s.boardStatus === 'WAITING' && s.latitude && s.longitude)
-      .map(s => ({
-        id: s.id,
-        name: s.adminDisplayName || s.name,
-        address: s.address,
-        latitude: parseFloat(s.latitude as any),
-        longitude: parseFloat(s.longitude as any),
-        expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30'
-      }));
+
+    // 원장 웹에서 추가한 탑승지(pickup_point)도 경유지로 포함 (같은 유치원 것만)
+    let pickupPoints: PickupPoint[] = [];
+    if (this.pickupPointRepository && vehicle.academy?.id) {
+      pickupPoints = await this.pickupPointRepository.find({
+        where: { academy: { id: vehicle.academy.id } },
+        order: { id: 'ASC' },
+      });
+    }
+
+    // Convert students and pickup points to route stops
+    const uniqueStopKeys = new Set<string>();
+    let stops: {
+      id: number;
+      name: string;
+      address: string;
+      stopMemo: string;
+      latitude: number;
+      longitude: number;
+      expectedTime: string;
+    }[] = [];
+
+    for (const s of students) {
+      if (s.boardStatus === 'WAITING' && s.latitude && s.longitude) {
+        const lat = parseFloat(s.latitude as any);
+        const lng = parseFloat(s.longitude as any);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+          uniqueStopKeys.add(key);
+          const rawMemo = s.raw ? (s.raw['정차메모'] || s.raw['탑승위치'] || s.raw['메모'] || '') : '';
+          stops.push({
+            id: s.id,
+            name: s.adminDisplayName || s.name,
+            address: s.address,
+            stopMemo: rawMemo ? String(rawMemo) : `${s.address || '정류장'} 앞 오른쪽에 정차`,
+            latitude: lat,
+            longitude: lng,
+            expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30',
+          });
+        }
+      }
+    }
+
+    for (const p of pickupPoints) {
+      if (p.latitude != null && p.longitude != null) {
+        const lat = parseFloat(p.latitude as any);
+        const lng = parseFloat(p.longitude as any);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+          if (!uniqueStopKeys.has(key)) {
+            uniqueStopKeys.add(key);
+            stops.push({
+              id: 100000 + p.id,
+              name: p.name,
+              address: p.name,
+              stopMemo: `${p.name} 앞 안전한 오른쪽 차선에 정차`,
+              latitude: lat,
+              longitude: lng,
+              expectedTime: '탑승지',
+            });
+          }
+        }
+      }
+    }
 
     // TSP Optimization (Nearest Neighbor)
     const sortedStops = [];
@@ -215,8 +286,6 @@ export class TeacherService {
     
     stops = sortedStops;
 
-    // In a real app, you would use a TSP algorithm or routing engine to get polyline points
-    // For now, we'll just connect the dots (academy -> stops -> academy)
     const routePoints = [];
     if (vehicle.academy && vehicle.academy.latitude && vehicle.academy.longitude) {
       routePoints.push({ latitude: vehicle.academy.latitude, longitude: vehicle.academy.longitude });
@@ -300,7 +369,7 @@ export class TeacherService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
-    const vehicle = await this.findAssignedVehicle(user.id);
+    const vehicle = await this.findAssignedVehicle(user.id, { academy: true });
 
     const student = await this.studentRepository.findOne({ 
       where: { id: studentId },
@@ -313,22 +382,22 @@ export class TeacherService {
     student.actualBoardTime = new Date();
     await this.studentRepository.save(student);
 
-    // 1. Create a Notification for the academy admin
-    let msg = `${vehicle.busNumber}호차 ${student.adminDisplayName || student.name} 원생 ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 탑승 완료`;
-    if (reason) {
-      msg += ` (수동 탑승 사유: ${reason})`;
+    if (vehicle) {
+      // 1. Create a Notification for the academy admin
+      let msg = `${vehicle.busNumber}호차 ${student.adminDisplayName || student.name} 원생 ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 탑승 완료`;
+      if (reason) {
+        msg += ` (수동 탑승 사유: ${reason})`;
+      }
+      const adminNoti = this.notificationRepository.create({
+        vehicle: vehicle,
+        message: msg
+      });
+      await this.notificationRepository.save(adminNoti);
+
+      // 3. Append to OperationLog
+      await this.appendBoardingLog(vehicle.id, student.id, student.adminDisplayName || student.name, 'MANUAL');
+      this.locationGateway?.broadcastRouteUpdated(vehicle.academy?.id);
     }
-    const adminNoti = this.notificationRepository.create({
-      vehicle: vehicle,
-      message: msg
-    });
-    await this.notificationRepository.save(adminNoti);
-
-    // 2. Ideally, send push notification to student's parent here
-    // e.g. sendPushToParent(student.parentUser.email, "탑승 완료")
-
-    // 3. Append to OperationLog
-    await this.appendBoardingLog(vehicle.id, student.id, student.adminDisplayName || student.name, 'MANUAL');
 
     return { success: true, studentName: student.adminDisplayName || student.name };
   }
@@ -343,7 +412,7 @@ export class TeacherService {
     student.boardStatus = 'ABSENT';
     await this.studentRepository.save(student);
 
-    const vehicle = await this.findAssignedVehicle(user.id);
+    const vehicle = await this.findAssignedVehicle(user.id, { academy: true });
     if (vehicle) {
       const adminNoti = this.notificationRepository.create({
         vehicle: vehicle,
@@ -351,6 +420,7 @@ export class TeacherService {
       });
       await this.notificationRepository.save(adminNoti);
       await this.appendBoardingLog(vehicle.id, studentId, `${student.adminDisplayName || student.name} 원생 결석 처리`, 'SYSTEM');
+      this.locationGateway?.broadcastRouteUpdated(vehicle.academy?.id);
     }
 
     return { success: true, studentName: student.adminDisplayName || student.name };
@@ -384,7 +454,7 @@ export class TeacherService {
     return { success: true };
   }
 
-  async endOperation(email: string) {
+  async endOperation(email: string, interiorChecked = false) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
     const vehicle = await this.findAssignedVehicle(user.id);
@@ -425,9 +495,35 @@ export class TeacherService {
         latestLog.endTime = new Date();
         await this.operationLogRepository.save(latestLog);
       }
-      
+
+      if (interiorChecked) {
+        await this.appendBoardingLog(vehicle.id, null, '✅ 차량 내부 잔류 원아 확인 완료', 'SYSTEM');
+      }
       await this.appendBoardingLog(vehicle.id, null, '운행 종료', 'SYSTEM');
     }
+    return { success: true };
+  }
+
+  async readyToDepart(email: string, stopName?: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+    const vehicle = await this.findAssignedVehicle(user.id);
+    if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
+
+    this.locationGateway?.broadcastDepartSignal(vehicle.id, stopName);
+    const label = stopName ? ` (${stopName})` : '';
+    await this.appendBoardingLog(vehicle.id, null, `지도교사 출발 가능 신호 발송${label}`, 'SYSTEM');
+    return { success: true, message: '기사님께 출발 신호를 전달했습니다.' };
+  }
+
+  async logDrivingEvent(email: string, type?: string, detail?: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+    const vehicle = await this.findAssignedVehicle(user.id);
+    if (!vehicle) return { success: false };
+
+    const text = detail && detail.trim().length > 0 ? detail.trim() : `안전운전 기록 (${type || 'EVENT'})`;
+    await this.appendBoardingLog(vehicle.id, null, `⚠️ ${text}`, 'SYSTEM');
     return { success: true };
   }
 
@@ -438,7 +534,7 @@ export class TeacherService {
     const teacherUser = await this.userRepository.findOne({ where: { email: teacherEmail } });
     if (!teacherUser) throw new BadRequestException('Teacher user not found');
 
-    const vehicle = await this.findAssignedVehicle(teacherUser.id);
+    const vehicle = await this.findAssignedVehicle(teacherUser.id, { academy: true });
     if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
 
     const student = await this.studentRepository.findOne({ 
@@ -446,10 +542,6 @@ export class TeacherService {
       relations: { parentUser: true, assignedVehicle: true }
     });
     if (!student) throw new BadRequestException('Student record not found');
-
-    if (student.assignedVehicle?.id !== vehicle.id) {
-      // Allow boarding but could warn. For now, just allow it.
-    }
 
     student.boardStatus = 'BOARDED';
     student.actualBoardTime = new Date();
@@ -461,10 +553,9 @@ export class TeacherService {
       message: `${student.adminDisplayName || student.name} 학생이 셔틀버스에 탑승했습니다. ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 탑승 완료 (QR)`
     }));
 
-    // 2. Ideally, send push notification to student's parent here
-    
     // 3. Append to OperationLog
     await this.appendBoardingLog(vehicle.id, student.id, student.adminDisplayName || student.name, 'QR');
+    this.locationGateway?.broadcastRouteUpdated(vehicle.academy?.id);
 
     return { success: true, studentName: student.adminDisplayName || student.name };
   }
@@ -707,8 +798,6 @@ export class TeacherService {
     for (const student of unboardedStudents) {
       let closestVehicle = null;
       if (otherVehicles.length > 0) {
-        // Simplified: assign to the first available other vehicle for now
-        // In a real scenario, this would use geocoding distance to find the optimal vehicle
         closestVehicle = otherVehicles[0];
       }
 
@@ -772,6 +861,7 @@ export class TeacherService {
 
     // 5. Save Operation Log
     await this.appendBoardingLog(vehicle.id, null, '🚨 긴급 모드 발동 (타 호차 인계)', 'SYSTEM');
+    this.locationGateway?.broadcastRouteUpdated(vehicle.academy?.id);
 
     return { success: true, message: '긴급 모드가 성공적으로 발동되었습니다.' };
   }

@@ -3,6 +3,7 @@ class RouteStop {
   final double latitude;
   final double longitude;
   final String? address;
+  final String? stopMemo;
   final String? expectedTime;
 
   RouteStop({
@@ -10,6 +11,7 @@ class RouteStop {
     required this.latitude,
     required this.longitude,
     this.address,
+    this.stopMemo,
     this.expectedTime,
   });
 
@@ -24,6 +26,7 @@ class RouteStop {
       latitude: parseCoord(json['latitude'] ?? json['lat']),
       longitude: parseCoord(json['longitude'] ?? json['lng']),
       address: json['address'],
+      stopMemo: json['stopMemo'] ?? json['memo'] ?? json['address'],
       expectedTime: json['expectedTime'],
     );
   }
