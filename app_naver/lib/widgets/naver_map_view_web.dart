@@ -81,9 +81,10 @@ class NaverMapControllerWeb implements NaverMapController {
   }
 
   void _send(Map<String, dynamic> msg) {
-    if (_ready && _iframe?.contentWindow != null) {
+    final win = _iframe?.contentWindow;
+    if (_ready && win != null) {
       try {
-        _iframe!.contentWindow!.postMessage(jsonEncode(msg), '*');
+        win.postMessage(jsonEncode(msg), '*');
       } catch (e) {
         debugPrint('[NaverMapViewWeb] postMessage error: $e');
       }
@@ -93,10 +94,11 @@ class NaverMapControllerWeb implements NaverMapController {
   }
 
   void _flushPending() {
-    if (_iframe?.contentWindow == null) return;
+    final win = _iframe?.contentWindow;
+    if (win == null) return;
     for (final msg in _pending) {
       try {
-        _iframe!.contentWindow!.postMessage(jsonEncode(msg), '*');
+        win.postMessage(jsonEncode(msg), '*');
       } catch (e) {
         debugPrint('[NaverMapViewWeb] flush postMessage error: $e');
       }
