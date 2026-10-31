@@ -10,21 +10,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiService().init();
 
-  // 웹 브라우저 편의 지원: URL에 ?demo=true가 있거나 세션이 없어도 자동 진입 옵션
+  // 웹 브라우저 편의 지원: 세션이 없어도 데모 모드로 자동 진입하여 바로 내비게이션 사용 가능
   if (kIsWeb && !ApiService().isLoggedIn) {
-    final query = Uri.base.queryParameters;
-    if (query['demo'] == 'true' || query['auto'] == 'true') {
-      await ApiService().setAuth(
-        'demo_token',
-        UserModel(
-          id: 'demo_driver_1',
-          email: 'demo@takeme.com',
-          name: '체험 기사님',
-          role: 'DRIVER',
-          academyName: '해맑은 유치원',
-        ),
-      );
-    }
+    await ApiService().setAuth(
+      'demo_token',
+      UserModel(
+        id: 'demo_driver_1',
+        email: 'demo@takeme.com',
+        name: '체험 기사님',
+        role: 'DRIVER',
+        academyName: '해맑은 유치원',
+      ),
+    );
   }
 
   runApp(const TakeMeDriverApp());
