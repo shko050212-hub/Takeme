@@ -209,6 +209,7 @@ export class TeacherService {
       id: number;
       name: string;
       address: string;
+      stopMemo: string;
       latitude: number;
       longitude: number;
       expectedTime: string;
@@ -221,10 +222,12 @@ export class TeacherService {
         if (!isNaN(lat) && !isNaN(lng)) {
           const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
           uniqueStopKeys.add(key);
+          const rawMemo = s.raw ? (s.raw['정차메모'] || s.raw['탑승위치'] || s.raw['메모'] || '') : '';
           stops.push({
             id: s.id,
             name: s.adminDisplayName || s.name,
             address: s.address,
+            stopMemo: rawMemo ? String(rawMemo) : `${s.address || '정류장'} 앞 오른쪽에 정차`,
             latitude: lat,
             longitude: lng,
             expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30',
@@ -245,6 +248,7 @@ export class TeacherService {
               id: 100000 + p.id,
               name: p.name,
               address: p.name,
+              stopMemo: `${p.name} 앞 안전한 오른쪽 차선에 정차`,
               latitude: lat,
               longitude: lng,
               expectedTime: '탑승지',
@@ -450,7 +454,7 @@ export class TeacherService {
     return { success: true };
   }
 
-  async endOperation(email: string) {
+  async endOperation(email: string, interiorChecked = false) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
     const vehicle = await this.findAssignedVehicle(user.id);
@@ -491,9 +495,35 @@ export class TeacherService {
         latestLog.endTime = new Date();
         await this.operationLogRepository.save(latestLog);
       }
-      
+
+      if (interiorChecked) {
+        await this.appendBoardingLog(vehicle.id, null, '✅ 차량 내부 잔류 원아 확인 완료', 'SYSTEM');
+      }
       await this.appendBoardingLog(vehicle.id, null, '운행 종료', 'SYSTEM');
     }
+    return { success: true };
+  }
+
+  async readyToDepart(email: string, stopName?: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+    const vehicle = await this.findAssignedVehicle(user.id);
+    if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
+
+    this.locationGateway?.broadcastDepartSignal(vehicle.id, stopName);
+    const label = stopName ? ` (${stopName})` : '';
+    await this.appendBoardingLog(vehicle.id, null, `지도교사 출발 가능 신호 발송${label}`, 'SYSTEM');
+    return { success: true, message: '기사님께 출발 신호를 전달했습니다.' };
+  }
+
+  async logDrivingEvent(email: string, type?: string, detail?: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+    const vehicle = await this.findAssignedVehicle(user.id);
+    if (!vehicle) return { success: false };
+
+    const text = detail && detail.trim().length > 0 ? detail.trim() : `안전운전 기록 (${type || 'EVENT'})`;
+    await this.appendBoardingLog(vehicle.id, null, `⚠️ ${text}`, 'SYSTEM');
     return { success: true };
   }
 

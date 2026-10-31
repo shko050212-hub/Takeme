@@ -38,9 +38,6 @@ export class ParentService {
   }
 
   async registerInfo(email: string, payload: any) {
-    // 1. Find or create student based on the user's email
-    // Wait, the parent registers their info. We need to find the User.
-    // We can find the student linked to this parent's email.
     let student = await this.studentRepository.findOne({ where: { raw: { email } }, relations: { schedules: true } });
     if (!student) {
       student = new Student();
@@ -55,10 +52,8 @@ export class ParentService {
       await this.studentRepository.save(student);
     }
 
-    // Clear old schedules
     await this.scheduleRepository.delete({ student: { id: student.id } });
 
-    // Save schedules
     if (payload.schedules && Array.isArray(payload.schedules)) {
       for (const sched of payload.schedules) {
         const schedule = new StudentSchedule();
@@ -69,7 +64,6 @@ export class ParentService {
         schedule.latitude = sched.latitude;
         schedule.longitude = sched.longitude;
         schedule.isCustomLocation = sched.isCustomLocation || false;
-        // Optionally find and assign vehicle here if provided
         await this.scheduleRepository.save(schedule);
       }
     }
@@ -78,7 +72,6 @@ export class ParentService {
   }
 
   async createOverride(email: string, targetDate: string, overrideType: OverrideType, reason: string) {
-    // 1. Find student linked to this parent email
     const student = await this.studentRepository.createQueryBuilder('student')
       .leftJoinAndSelect('student.parentUser', 'parentUser')
       .leftJoinAndSelect('student.studentUser', 'studentUser')
@@ -88,8 +81,6 @@ export class ParentService {
     if (!student) {
       throw new BadRequestException('연결된 원생 정보를 찾을 수 없습니다.');
     }
-
-    // 2. Time limit removed as per request
 
     let latitude = null;
     let longitude = null;
@@ -101,12 +92,12 @@ export class ParentService {
         throw new BadRequestException('변경할 주소를 입력해주세요.');
       }
       newAddress = reason;
-      
+
       const coords = await this.routingService.geocodeAddress(newAddress);
       if (!coords) {
         throw new BadRequestException('해당 주소를 좌표로 변환할 수 없습니다. 올바른 주소인지 확인해주세요.');
       }
-      
+
       latitude = coords.lat;
       longitude = coords.lng;
 
@@ -126,7 +117,6 @@ export class ParentService {
       }
     }
 
-    // 3. Create Override
     const override = this.overrideRepository.create({
       student,
       startDate: targetDate,
@@ -140,6 +130,10 @@ export class ParentService {
     } as any);
 
     await this.overrideRepository.save(override);
+    this.routingService.notifyRouteUpdated(
+      undefined,
+      `[일정 변경 알림] ${student.name} 원아의 ${overrideType === OverrideType.ABSENCE ? '결석' : '탑승 위치 변경'} 신청이 접수되었습니다.`,
+    );
     return { success: true, message: '성공적으로 신청되었습니다.' };
   }
 
@@ -175,13 +169,11 @@ export class ParentService {
       return { routePoints: [], stops: [], academy: null };
     }
 
-    // Get all students assigned to this vehicle
     const allStudents = await this.studentRepository.find({
       where: { assignedVehicle: { id: student.assignedVehicle.id } },
       relations: { academy: true }
     });
 
-    // Extract valid locations
     const stops = allStudents
       .filter(s => s.latitude && s.longitude)
       .map(s => ({
@@ -201,7 +193,7 @@ export class ParentService {
     stops.forEach(s => {
       routePoints.push({ latitude: s.latitude, longitude: s.longitude, title: s.name });
     });
-    
+
     let academyPickupPoints: any[] = [];
     if (academy) {
       academyPickupPoints = await this.pickupPointRepository.find({ where: { academy: { id: academy.id } } });
@@ -243,9 +235,9 @@ export class ParentService {
     const today = new Date();
     const tzOffset = today.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(today.getTime() - tzOffset)).toISOString().slice(0, 10);
-    
+
     const override = await this.overrideRepository.findOne({
-      where: { 
+      where: {
         student: { id: student.id },
         startDate: localISOTime,
         overrideType: OverrideType.CHANGE_LOCATION
@@ -253,7 +245,7 @@ export class ParentService {
     });
 
     if (override && override.newVehicleId) {
-      const newVehicle = await this.vehicleRepository.findOne({ 
+      const newVehicle = await this.vehicleRepository.findOne({
         where: { id: override.newVehicleId },
         relations: {
           driverUser: true,
@@ -298,7 +290,7 @@ export class ParentService {
   async readMessage(messageId: number, email: string) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
-    
+
     const msg = await this.messageRepository.findOne({ where: { id: messageId, receiverUser: { id: user.id } } });
     if (msg) {
       msg.isRead = true;
@@ -323,7 +315,7 @@ export class ParentService {
     const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     const today = new Date();
     const todayDayStr = days[today.getDay()];
-    
+
     const normalSchedule = student.schedules?.find(s => s.dayOfWeek === todayDayStr);
 
     let result = {
@@ -333,14 +325,14 @@ export class ParentService {
       vehicleName: student.assignedVehicle?.busNumber || '차량 미배정',
       teacherName: student.assignedVehicle?.teacherName || '',
       teacherPhone: student.assignedVehicle?.teacherPhone || '',
-      timeString: '15시 30분', // 임시 예상 시간
+      timeString: '15시 30분',
     };
 
     const tzOffset = today.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(today.getTime() - tzOffset)).toISOString().slice(0, 10);
 
     const override = await this.overrideRepository.findOne({
-      where: { 
+      where: {
         student: { id: student.id },
         startDate: localISOTime,
         overrideType: OverrideType.CHANGE_LOCATION
@@ -350,7 +342,7 @@ export class ParentService {
     if (override) {
       result.isChanged = true;
       result.address = override.newAddress || result.address;
-      
+
       if (override.newVehicleId) {
         const newVehicle = await this.vehicleRepository.findOne({ where: { id: override.newVehicleId } });
         if (newVehicle) {

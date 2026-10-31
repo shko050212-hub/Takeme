@@ -115,6 +115,17 @@ class MainActivity : FlutterActivity() {
                         hideOverlayWindow()
                         result.success(true)
                     }
+                    "setKeepScreenOn" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        runOnUiThread {
+                            if (enabled) {
+                                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            } else {
+                                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            }
+                        }
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }

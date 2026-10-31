@@ -143,7 +143,7 @@ export class RoutingService {
     this.routeUpdateNotifier = fn;
   }
 
-  private notifyRouteUpdated(academyId?: number, message?: string) {
+  public notifyRouteUpdated(academyId?: number, message?: string) {
     try {
       this.routeUpdateNotifier?.(academyId, message);
     } catch {}
@@ -1281,7 +1281,9 @@ export class RoutingService {
       endDate: body.endDate,
       overrideType: OverrideType.ABSENCE,
     });
-    return this.scheduleOverrideRepository.save(override);
+    const saved = await this.scheduleOverrideRepository.save(override);
+    this.notifyRouteUpdated(undefined, `[결석 등록] ${student.name} 원아 결석이 등록되었습니다.`);
+    return saved;
   }
 
   async getAbsences(vehicleId?: number) {
@@ -1299,6 +1301,7 @@ export class RoutingService {
 
   async deleteAbsence(id: number) {
     await this.scheduleOverrideRepository.delete(id);
+    this.notifyRouteUpdated(undefined, `[결석 취소] 원아 결석 처리가 취소되었습니다.`);
     return { success: true };
   }
 

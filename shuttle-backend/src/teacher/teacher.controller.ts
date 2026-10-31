@@ -60,15 +60,37 @@ export class TeacherController {
   }
 
   @Post('end-operation')
-  async endOperation(@AuthEmail() email: string) {
+  async endOperation(
+    @AuthEmail() email: string,
+    @Body() body?: { interiorChecked?: boolean },
+  ) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
-    return this.teacherService.endOperation(email);
+    return this.teacherService.endOperation(email, body?.interiorChecked);
+  }
+
+  @Post('ready-to-depart')
+  async readyToDepart(
+    @AuthEmail() email: string,
+    @Body() body?: { stopName?: string },
+  ) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.readyToDepart(email, body?.stopName);
+  }
+
+  @Post('driving-event')
+  async logDrivingEvent(
+    @AuthEmail() email: string,
+    @Body() body: { type: string; detail: string },
+  ) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.logDrivingEvent(email, body?.type, body?.detail);
   }
 
   @Post('student/:id/memo')
   async updateMemo(
-    @Param('id') studentId: number, 
-    @AuthEmail() email: string, @Body() body: { memo: string }
+    @Param('id') studentId: number,
+    @AuthEmail() email: string,
+    @Body() body: { memo: string },
   ) {
     return this.teacherService.updateMemo(email, studentId, body.memo);
   }
@@ -79,7 +101,7 @@ export class TeacherController {
   @Roles('STUDENT', 'PARENT')
   async studentBoardByQR(
     @AuthEmail() studentEmail: string,
-    @Body('teacherEmail') teacherEmail: string
+    @Body('teacherEmail') teacherEmail: string,
   ) {
     if (!studentEmail || !teacherEmail) throw new BadRequestException('필수 정보 누락');
     return this.teacherService.studentBoardByQR(studentEmail, teacherEmail);
@@ -93,11 +115,11 @@ export class TeacherController {
   @Post('send-message')
   @Post('message')
   async sendMessage(
-    @AuthEmail() email: string, 
-    @Body('message') message: string, 
+    @AuthEmail() email: string,
+    @Body('message') message: string,
     @Body('studentIds') studentIds: number[],
     @Body('parentIds') parentIds: number[] = [],
-    @Body('staffUserIds') staffUserIds: number[] = []
+    @Body('staffUserIds') staffUserIds: number[] = [],
   ) {
     return this.teacherService.sendMessage(email, message, studentIds, parentIds, staffUserIds);
   }
@@ -106,7 +128,7 @@ export class TeacherController {
   async replyMessage(
     @AuthEmail() email: string,
     @Body('messageId') messageId: number,
-    @Body('action') action: 'WAIT' | 'GO_AHEAD'
+    @Body('action') action: 'WAIT' | 'GO_AHEAD',
   ) {
     if (!email || !messageId || !action) throw new BadRequestException('필수 정보 누락');
     return this.teacherService.replyMessage(email, messageId, action);
@@ -115,7 +137,7 @@ export class TeacherController {
   @Post('read-message')
   async readMessage(
     @AuthEmail() email: string,
-    @Body('messageId') messageId: number
+    @Body('messageId') messageId: number,
   ) {
     if (!email || !messageId) throw new BadRequestException('필수 정보 누락');
     return this.teacherService.readMessage(email, messageId);
