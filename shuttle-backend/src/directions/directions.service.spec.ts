@@ -62,13 +62,13 @@ describe('DirectionsService', () => {
     expect(r.criteria).toEqual({ priority: 'RECOMMEND', avoid: ['uturn'] });
   });
 
-  it('fast 모드는 최단 시간으로 요청하고 avoid 를 보내지 않는다', async () => {
-    const { service, http } = setup(kakaoResponse('TIME'));
+  it('fast 모드는 최단 거리(거리 우선)로 요청하고 avoid 를 보내지 않는다', async () => {
+    const { service, http } = setup(kakaoResponse('DISTANCE'));
     const r = await service.getRoute({ ...req, mode: 'fast' });
     const body = http.post.mock.calls[0][1];
-    expect(body.priority).toBe('TIME');
+    expect(body.priority).toBe('DISTANCE');
     expect(body).not.toHaveProperty('avoid');
-    expect(r.criteria).toEqual({ priority: 'TIME', avoid: [] });
+    expect(r.criteria).toEqual({ priority: 'DISTANCE', avoid: [] });
   });
 
   it('mode 가 없으면 safe 로 처리한다', async () => {

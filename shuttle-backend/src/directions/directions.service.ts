@@ -13,9 +13,9 @@ const NON_TURN_GUIDE_TYPES = new Set([100, 101, 1000]);
  * 모드별 실제 카카오 탐색 기준 (공식 문서의 priority / avoid 값만 사용)
  * https://developers.kakaomobility.com/docs/navi-api/waypoints/
  */
-export const ROUTE_CRITERIA: Record<RouteMode, { priority: 'RECOMMEND' | 'TIME'; avoid?: string[] }> = {
+export const ROUTE_CRITERIA: Record<RouteMode, { priority: 'RECOMMEND' | 'DISTANCE'; avoid?: string[] }> = {
   safe: { priority: 'RECOMMEND', avoid: ['uturn'] },
-  fast: { priority: 'TIME' },
+  fast: { priority: 'DISTANCE' },
 };
 
 /**

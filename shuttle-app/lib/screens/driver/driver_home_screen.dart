@@ -9,8 +9,9 @@ import '../settings_screen.dart';
 import 'operation_log_screen.dart';
 
 /// 기사 전용 화면 (팀 앱과 같은 크기·글꼴)
-/// - 운행 전: 전체 지도 + 아래 패널(끌어서 내리고 올리기): 차량·운행 일지·운행 시작·경로 비교
-/// - 운행 중: 전체 지도 + 왼쪽 위 회전 안내(카카오내비 방식) + 아래 운행 정보
+/// - 1단계(운행 준비): 전체 지도 + 하단 준비 패널('경로 탐색' 버튼)
+/// - 2단계(경로 탐색·선택): 전체 경로 축소 보기 + 안전 경로/빠른 경로 비교 카드 + '운행 시작' 버튼
+/// - 3단계(운행 중): 티맵 스타일 주행 화면 (상단 회전 안내 + 하단 바 + 메뉴 안에 안전/빠른 경로·운행 종료)
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
 
@@ -20,11 +21,11 @@ class DriverHomeScreen extends StatefulWidget {
 
 class _C {
   static const blue = Color(0xFF2563EB);
+  static const blueDark = Color(0xFF1D4ED8);
   static const blueBg = Color(0xFFEFF6FF);
   static const red = Color(0xFFDC2626);
   static const orange = Color(0xFFEA580C);
   static const orangeBg = Color(0xFFFFF7ED);
-  static const green = Color(0xFF059669);
   static const sky = Color(0xFF0EA5E9);
   static const slate800 = Color(0xFF1E293B);
   static const slate600 = Color(0xFF475569);
@@ -34,7 +35,7 @@ class _C {
   static const slate100 = Color(0xFFF1F5F9);
 }
 
-class _DriverHomeScreenState extends State<DriverHomeScreen> {
+class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBindingObserver {
   late final NavMapController _map;
   late final DriverNavigator _nav;
   Timer? _ticker;
@@ -42,15 +43,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _map = NavMapController();
     _nav = DriverNavigator(_map)..init();
     _ticker = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (mounted && _nav.driving) setState(() {}); // '마지막 전송 N초 전' 갱신
+      if (mounted && _nav.driving) setState(() {});
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _nav.refreshOverlayPermission();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     _nav.dispose();
     super.dispose();
@@ -63,14 +73,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(_nav.testMode ? '테스트 종료' : '운행 종료',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        content: Text(_nav.testMode ? '테스트 주행을 끝낼까요?' : '운행을 종료하고 위치 전송을 멈출까요?'),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+        content: Text(_nav.testMode ? '테스트 주행을 끝낼까요?' : '현재 운행을 종료하시겠습니까?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
           TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 주행', style: TextStyle(color: _C.slate600, fontWeight: FontWeight.w700)),
+          ),
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('종료', style: TextStyle(color: _C.red, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _C.red,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(_nav.testMode ? '테스트 종료' : '운행 종료',
+                style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -118,6 +139,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         await _nav.selectMode(_nav.mode.other);
       case 'send':
         await _confirmSendToServer();
+      case 'overlay_perm':
+        await _nav.openOverlaySettings();
       case 'settings':
         if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
     }
@@ -127,37 +150,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _nav,
-      builder: (context, _) => Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
-        appBar: AppBar(
-          leading: (!_nav.driving && _nav.routePreviewing)
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back, color: _C.slate800),
-                  tooltip: '이전 화면',
-                  onPressed: _nav.closeRoutePreview,
-                )
-              : null,
-          title: Text(
-            _nav.testMode
-                ? '테스트 주행 (실제 운행 아님)'
-                : (_nav.driving
-                    ? '운행 중'
-                    : (_nav.routePreviewing
-                        ? '경로 탐색 · 선택'
-                        : (_nav.vehicleName.isEmpty ? '기사님 운행 대시보드' : '${_nav.vehicleName} 운행 준비'))),
-            style: TextStyle(color: _nav.testMode ? _C.orange : _C.slate800),
+      builder: (context, _) => PopScope(
+        canPop: !_nav.driving && !_nav.routePreviewing,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (_nav.driving) {
+            _confirmStop();
+          } else if (_nav.routePreviewing) {
+            _nav.closeRoutePreview();
+          }
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: _nav.driving
+              ? null
+              : AppBar(
+                  leading: _nav.routePreviewing
+                      ? IconButton(
+                          icon: const Icon(Icons.arrow_back, color: _C.slate800),
+                          tooltip: '이전 화면',
+                          onPressed: _nav.closeRoutePreview,
+                        )
+                      : null,
+                  title: Text(
+                    _nav.testMode
+                        ? '테스트 주행 (실제 운행 아님)'
+                        : (_nav.routePreviewing
+                            ? '경로 탐색 · 선택'
+                            : (_nav.vehicleName.isEmpty ? '기사님 운행 대시보드' : '${_nav.vehicleName} 운행 준비')),
+                    style: TextStyle(color: _nav.testMode ? _C.orange : _C.slate800),
+                  ),
+                  actions: [_menu()],
+                  bottom: PreferredSize(
+                    preferredSize: const Size.fromHeight(1),
+                    child: Container(color: _C.slate100, height: 1),
+                  ),
+                ),
+          body: SafeArea(
+            top: _nav.driving,
+            child: _nav.loading
+                ? const Center(child: CircularProgressIndicator(color: _C.blue))
+                : _mainBody(),
           ),
-          actions: [_menu()],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(1),
-            child: Container(color: _C.slate100, height: 1),
-          ),
-        ),
-        body: SafeArea(
-          top: false,
-          child: _nav.loading
-              ? const Center(child: CircularProgressIndicator(color: _C.blue))
-              : _mainBody(),
         ),
       ),
     );
@@ -171,12 +205,60 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             children: [
               Positioned.fill(child: NavMapView(controller: _map)),
               if (_nav.driving)
-                Positioned(left: 12, top: 12, right: 64, child: _turnHeader()),
-              _mapButtons(top: 92),
-              if (_nav.simulating)
+                Positioned(left: 0, top: 0, child: _turnHeader()),
+              if (_nav.driving && !_nav.overlayPermissionGranted)
                 Positioned(
                   left: 12,
-                  bottom: 12,
+                  right: 12,
+                  top: 118,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: _nav.openOverlaySettings,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: const Color(0xEB1E293B),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.picture_in_picture_alt, color: Colors.white, size: 18),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '백그라운드 길 안내를 위해 "다른 앱 위에 표시" 권한을 켜주세요 (터치)',
+                                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            Icon(Icons.chevron_right, color: Colors.white, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_nav.driving) ...[
+                // 티맵 스타일: 하단 바 바로 위 좌·우 원형 버튼
+                Positioned(
+                  left: 14,
+                  bottom: 16,
+                  child: _mapButton(Icons.alt_route, '전체 경로 보기', () => _nav.setFollow(false)),
+                ),
+                Positioned(
+                  right: 14,
+                  bottom: 16,
+                  child: _mapButton(Icons.navigation, '내 위치로 (12시 방향 정렬)',
+                      _nav.position == null ? null : _nav.centerOnMe,
+                      iconColor: _C.blue),
+                ),
+              ] else
+                _mapButtons(top: 16),
+              if (_nav.simulating)
+                Positioned(
+                  left: 14,
+                  bottom: 76,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(color: _C.slate800, borderRadius: BorderRadius.circular(20)),
@@ -213,6 +295,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         items.add(_menuItem('send', _nav.simSendToServer ? Icons.check_box : Icons.check_box_outline_blank,
             '시뮬레이션 위치를 서버로 보내기'));
       }
+    }
+    if (!_nav.overlayPermissionGranted) {
+      items.add(_menuItem('overlay_perm', Icons.picture_in_picture_alt, '다른 앱 위에 표시 권한 설정'));
     }
     items.add(_menuItem('settings', Icons.settings_outlined, '설정'));
     return PopupMenuButton<String>(
@@ -331,7 +416,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          // 안전 경로 / 빠른 경로 간판형 비교 카드 (나란히 배치하여 둘 중 선택)
           Row(
             children: [
               Expanded(child: _routeSignboardCard(RouteMode.safe, Icons.shield_outlined)),
@@ -454,7 +538,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
+              Text(
+                m.criteria,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _C.slate500),
+              ),
+              const SizedBox(height: 6),
               body,
             ],
           ),
@@ -562,231 +651,353 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     return Icons.straight;
   }
 
-  /// 왼쪽 위 회전 안내 (카카오내비 방식): [아이콘] 거리  방면·동작
+  /// 티맵 크기·레이아웃의 파란색+하얀색 회전 안내 표지판 + 두 번째 회전 보조 안내
   Widget _turnHeader() {
     final turn = _nav.nextTurn;
-    final color = _nav.testMode ? _C.orange : const Color(0xFF1E40AF);
+    final second = _nav.secondTurn;
+    final mainBg = _nav.testMode ? _C.orange : _C.blue;
+    const subBg = _C.blueDark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          constraints: const BoxConstraints(minWidth: 200, maxWidth: 255),
+          padding: const EdgeInsets.fromLTRB(14, 12, 18, 12),
+          decoration: BoxDecoration(
+            color: mainBg,
+            borderRadius: const BorderRadius.only(
+              bottomRight: Radius.circular(12),
+            ),
+            boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 8, offset: Offset(0, 2))],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _nav.rerouting
+                  ? const SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Padding(
+                        padding: EdgeInsets.all(8),
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                      ),
+                    )
+                  : Icon(
+                      turn == null ? Icons.straight : _turnIcon(turn.$2),
+                      color: Colors.white,
+                      size: 46,
+                    ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: _nav.rerouting
+                    ? const Text(
+                        '경로 재탐색 중...',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            turn == null ? '직진' : formatDistance(turn.$1),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              height: 1.05,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            turn == null ? '경로를 따라 주행' : turn.$2,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
+        if (!_nav.rerouting && second != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: const BoxDecoration(
+              color: subBg,
+              borderRadius: BorderRadius.only(
+                bottomRight: Radius.circular(12),
+              ),
+              boxShadow: [BoxShadow(color: Color(0x26000000), blurRadius: 4, offset: Offset(0, 2))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_turnIcon(second.$2), color: Colors.white, size: 22),
+                const SizedBox(width: 6),
+                Text(
+                  formatDistance(second.$1),
+                  style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 티맵 스타일 하단 바: [ ↻ 새로고침 ]   [ 도착예정시각  남은km ]   [ ☰ 메뉴 ]
+  Widget _bottomBar() {
+    final a = _nav.active;
+    final currentMode = a?.mode ?? _nav.mode;
+    final next = _nav.nextStop;
+    final (ampm, clock) = _nav.etaAmPmAndTime;
+    final subtitle = next != null
+        ? '다음 정류장: ${next.name} · ${currentMode.title}'
+        : '유치원 이동 중 · ${currentMode.title}';
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 10, 14, 10),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 8, offset: Offset(0, 2))],
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, -2))],
       ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       child: Row(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
-            child: _nav.rerouting
-                ? const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                : Icon(turn == null ? Icons.straight : _turnIcon(turn.$2), color: Colors.white, size: 30),
+          // 왼쪽: 새로고침 아이콘 버튼 (티맵 ↻ 위치)
+          IconButton(
+            tooltip: '경로 새로고침',
+            onPressed: _nav.rerouting ? null : () => _nav.refreshRouteFromServer(speak: true),
+            icon: const Icon(Icons.refresh, size: 28, color: _C.slate800),
           ),
-          const SizedBox(width: 10),
+          // 가운데: 상단 안내줄 + 하단 도착예정시각 & 남은 km
           Expanded(
-            child: _nav.rerouting
-                ? const Text('경로를 다시 찾는 중...',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700))
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(turn == null ? '직진' : formatDistance(turn.$1),
-                          style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
-                      Text(turn == null ? '경로를 따라 주행하세요' : turn.$2,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.gps_fixed, size: 13, color: _C.slate500),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _C.slate500),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      ampm,
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: _C.slate800),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      clock,
+                      style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: _C.slate800),
+                    ),
+                    const SizedBox(width: 16),
+                    Text(
+                      _nav.remainingKmNumberText,
+                      style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: _C.slate800),
+                    ),
+                    const SizedBox(width: 2),
+                    const Text(
+                      'km',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _C.slate800),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // 오른쪽: 메뉴 버튼 (티맵 ☰ 위치 → 안전경로, 빠른경로, 운행종료)
+          IconButton(
+            tooltip: '주행 메뉴',
+            onPressed: _openDrivingMenu,
+            icon: const Icon(Icons.menu, size: 28, color: _C.slate800),
           ),
         ],
       ),
     );
   }
 
-  Widget _bottomBar() {
-    final a = _nav.active;
-    final currentMode = a?.mode ?? _nav.mode;
-    final next = _nav.nextStop;
-    final nd = _nav.nextStopDistance;
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. 상단: 현재 안내 경로 표시 + 새로고침 버튼
-          Row(
-            children: [
-              _modeChip(RouteMode.safe, currentMode == RouteMode.safe, label: '안전 경로 (추천)'),
-              const SizedBox(width: 6),
-              _modeChip(RouteMode.fast, currentMode == RouteMode.fast, label: '빠른 경로'),
-              const Spacer(),
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: _nav.rerouting ? null : () => _nav.refreshRouteFromServer(speak: true),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _C.slate100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _C.slate200),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.refresh, size: 15, color: _C.blue),
-                      SizedBox(width: 4),
-                      Text('새로고침',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _C.blue)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // 2. 도착 예정시간 · 남은 거리(몇 km 남았는지) 표시 바
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: _C.blueBg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _C.blue.withValues(alpha: 0.3)),
-            ),
-            child: Row(
+  /// 우측 하단 ☰ 메뉴 클릭 시 열리는 티맵 스타일 메뉴 시트 (안전경로 / 빠른경로 / 운행종료)
+  void _openDrivingMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final currentMode = _nav.active?.mode ?? _nav.mode;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  _nav.remainingMinutesText,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _C.blue),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: _C.slate300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 10),
-                Container(width: 1, height: 22, color: _C.slate300),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _nav.etaText,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _C.slate800),
+                const SizedBox(height: 14),
+                const Text(
+                  '경로 안내 옵션',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _C.slate800),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _menuRouteOption(
+                        ctx,
+                        RouteMode.safe,
+                        Icons.shield_outlined,
+                        '안전 경로 (추천)',
+                        currentMode == RouteMode.safe,
                       ),
-                      Text(
-                        '남은 거리 ${_nav.remainingKmText}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _C.blue),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _menuRouteOption(
+                        ctx,
+                        RouteMode.fast,
+                        Icons.bolt,
+                        '빠른 경로',
+                        currentMode == RouteMode.fast,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                if (!_nav.overlayPermissionGranted) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _nav.openOverlaySettings();
+                    },
+                    icon: const Icon(Icons.picture_in_picture_alt, color: _C.blue),
+                    label: const Text(
+                      '다른 앱 위에 표시 권한 설정 (백그라운드 안내)',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: _C.blue),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: _C.blue),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    if (_nav.simulating) {
+                      _nav.stopSimulation();
+                    } else {
+                      _nav.startSimulation();
+                    }
+                  },
+                  icon: Icon(_nav.simulating ? Icons.pause : Icons.play_arrow, color: _C.slate800),
+                  label: Text(
+                    _nav.simulating ? '주행 시뮬레이션 멈추기' : '주행 시뮬레이션 시작',
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: _C.slate800),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: const BorderSide(color: _C.slate300),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _confirmStop();
+                  },
+                  icon: const Icon(Icons.power_settings_new, color: Colors.white),
+                  label: Text(
+                    _nav.testMode ? '테스트 종료' : '운행 종료',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _C.red,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          // 3. 다음 정류장 안내
-          Text(
-            next == null
-                ? '모든 정류장 완료 · 유치원으로 이동 중'
-                : '다음 정류장  ${next.name} (${_nav.passedCount + 1}/${_nav.activeStops.length})'
-                    '${nd == null ? '' : ' · ${formatDistance(nd)}'}',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _C.slate800),
-          ),
-          if (_nav.routeWarning != null) ...[
-            const SizedBox(height: 6),
-            Text(_nav.routeWarning!, style: const TextStyle(fontSize: 12, color: _C.orange)),
-          ],
-          const SizedBox(height: 6),
-          _statusRow(),
-          const SizedBox(height: 10),
-          ElevatedButton.icon(
-            onPressed: _nav.busy ? null : _confirmStop,
-            icon: const Icon(Icons.stop_circle_outlined, color: Colors.white),
-            label: Text(_nav.testMode ? '테스트 종료' : '운행 종료 (위치 끄기)',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.white)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _C.red,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _modeChip(RouteMode m, bool selected, {required String label}) {
+  Widget _menuRouteOption(BuildContext ctx, RouteMode m, IconData icon, String title, bool selected) {
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => _nav.selectMode(m),
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        Navigator.pop(ctx);
+        _nav.selectMode(m);
+      },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? _C.blue : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: selected ? _C.blue : _C.slate300),
+          color: selected ? _C.blueBg : _C.slate100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? _C.blue : _C.slate200, width: selected ? 2 : 1),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              m == RouteMode.fast ? Icons.bolt : Icons.shield_outlined,
-              color: selected ? Colors.white : _C.slate600,
-              size: 14,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.white : _C.slate600,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
+            Icon(icon, size: 20, color: selected ? _C.blue : _C.slate600),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: selected ? _C.blue : _C.slate800,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (selected) const Icon(Icons.check_circle, size: 18, color: _C.blue),
           ],
         ),
       ),
     );
-  }
-
-  Widget _statusRow() {
-    Widget chip(IconData icon, String text, bool ok) => Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: ok ? _C.green : _C.red),
-          const SizedBox(width: 3),
-          Text(text,
-              style: TextStyle(fontSize: 12, color: ok ? _C.slate500 : _C.red, fontWeight: ok ? FontWeight.w500 : FontWeight.w700)),
-        ]);
-
-    final acc = _nav.accuracy;
-    final last = _nav.lastSentAt;
-    String sendText;
-    var sendOk = true;
-    if (_nav.testMode) {
-      sendText = '테스트: 서버 전송 안 함';
-    } else if (_nav.simulating && !_nav.simSendToServer) {
-      sendText = '시뮬레이션: 서버 전송 안 함';
-    } else if (last == null) {
-      sendText = '아직 전송 전';
-      sendOk = false;
-    } else {
-      final sec = DateTime.now().difference(last).inSeconds;
-      sendText = '$sec초 전 전송';
-      sendOk = sec < 30;
-    }
-    return Wrap(spacing: 12, runSpacing: 2, children: [
-      chip(_nav.socketConnected ? Icons.cloud_done : Icons.cloud_off,
-          _nav.socketConnected ? '서버 연결' : '서버 끊김', _nav.socketConnected),
-      chip(_nav.gpsError == null ? Icons.gps_fixed : Icons.gps_off,
-          _nav.gpsError ?? (acc == null ? 'GPS' : 'GPS ±${acc.round()}m'), _nav.gpsError == null),
-      chip(Icons.upload, sendText, sendOk),
-    ]);
   }
 
   // ───────────────────────── 지도 버튼 ─────────────────────────
 
-  /// 오른쪽 위 (지도 확대·축소 버튼 아래) — 아래 패널·회전 안내와 겹치지 않음
+  /// 오른쪽 위 (운행 준비/경로 선택 화면용)
   Widget _mapButtons({required double top}) {
     return Positioned(
       right: 10,
@@ -799,7 +1010,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     );
   }
 
-  Widget _mapButton(IconData icon, String tooltip, VoidCallback? onTap) {
+  Widget _mapButton(IconData icon, String tooltip, VoidCallback? onTap, {Color? iconColor}) {
     return Tooltip(
       message: tooltip,
       child: Material(
@@ -812,7 +1023,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           child: SizedBox(
             width: 48,
             height: 48,
-            child: Icon(icon, color: onTap == null ? _C.slate300 : _C.blue, semanticLabel: tooltip),
+            child: Icon(icon, color: onTap == null ? _C.slate300 : (iconColor ?? _C.slate800), semanticLabel: tooltip),
           ),
         ),
       ),
