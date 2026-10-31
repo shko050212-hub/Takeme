@@ -94,6 +94,12 @@ class NaverMapControllerMobile implements NaverMapController {
   void setClientId(String clientId) => _run('window.setClientId("$clientId");');
 
   @override
+  void setInteractive(bool interactive) {}
+
+  @override
+  void setVisible(bool visible) {}
+
+  @override
   void dispose() {
     _pending.clear();
   }

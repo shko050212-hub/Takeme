@@ -7,6 +7,7 @@ import '../driver/geo.dart';
 import '../services/api_service.dart';
 import '../services/destination_service.dart';
 import '../widgets/naver_map_view.dart';
+import 'destination_search_screen.dart';
 import 'driver_login_screen.dart';
 import 'driver_settings_screen.dart';
 
@@ -64,368 +65,101 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
-  void _showStopListSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.slate300,
-                    borderRadius: BorderRadius.circular(2),
+  void _showStopListSheet() async {
+    _map.setInteractive(false);
+    try {
+      await showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.slate300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('전체 정류장 목록', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                  Text('${_nav.passedCount} / ${_nav.activeStops.length} 통과',
-                      style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.naverGreenDark)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _nav.activeStops.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
-                  itemBuilder: (_, idx) {
-                    final stop = _nav.activeStops[idx];
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: stop.passed ? AppColors.slate300 : AppColors.naverGreen,
-                        child: Text(
-                          '${idx + 1}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      title: Text(
-                        stop.name,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          decoration: stop.passed ? TextDecoration.lineThrough : null,
-                          color: stop.passed ? AppColors.slate500 : AppColors.slate800,
-                        ),
-                      ),
-                      trailing: stop.passed
-                          ? const Text('[통과]', style: TextStyle(color: AppColors.slate500, fontSize: 12))
-                          : const Text('[예정]', style: TextStyle(color: AppColors.naverGreenDark, fontSize: 12, fontWeight: FontWeight.bold)),
-                    );
-                  },
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('전체 정류장 목록', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    Text('${_nav.passedCount} / ${_nav.activeStops.length} 통과',
+                        style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.naverGreenDark)),
+                  ],
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+                const SizedBox(height: 12),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _nav.activeStops.length,
+                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    itemBuilder: (_, idx) {
+                      final stop = _nav.activeStops[idx];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: stop.passed ? AppColors.slate300 : AppColors.naverGreen,
+                          child: Text(
+                            '${idx + 1}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        title: Text(
+                          stop.name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            decoration: stop.passed ? TextDecoration.lineThrough : null,
+                            color: stop.passed ? AppColors.slate500 : AppColors.slate800,
+                          ),
+                        ),
+                        trailing: stop.passed
+                            ? const Text('[통과]', style: TextStyle(color: AppColors.slate500, fontSize: 12))
+                            : const Text('[예정]', style: TextStyle(color: AppColors.naverGreenDark, fontSize: 12, fontWeight: FontWeight.bold)),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    } finally {
+      _map.setInteractive(true);
+    }
   }
 
-  void _showDestinationSearchSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width > 640 ? 520 : double.infinity,
-      ),
-      builder: (ctx) {
-        final searchCtrl = TextEditingController();
-        List<PlaceItem> results = DestinationService.popularDestinations;
-        bool searching = false;
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            void performSearch(String text) async {
-              setModalState(() {
-                searching = true;
-              });
-              final items = await DestinationService().searchPlaces(text);
-              setModalState(() {
-                results = items;
-                searching = false;
-              });
-            }
-
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.78,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.slate300,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        '목적지 설정 / 검색',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.slate900),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton.icon(
-                            onPressed: () {
-                              if (_nav.destination == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('이미 목적지가 초기화되어 있습니다.'),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              } else {
-                                _nav.clearDestination();
-                                Navigator.pop(ctx);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('목적지가 초기화되었습니다.'),
-                                    backgroundColor: AppColors.slate800,
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: Icon(
-                              Icons.refresh,
-                              size: 14,
-                              color: _nav.destination != null ? AppColors.dangerRed : AppColors.slate500,
-                            ),
-                            label: Text(
-                              '목적지 초기화',
-                              style: TextStyle(
-                                color: _nav.destination != null ? AppColors.dangerRed : AppColors.slate500,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 20),
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 검색창 + 전용 [검색] 버튼 행
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: searchCtrl,
-                          autofocus: false,
-                          textInputAction: TextInputAction.search,
-                          onSubmitted: (text) => performSearch(text),
-                          onChanged: (text) {
-                            setModalState(() {});
-                            performSearch(text);
-                          },
-                          decoration: InputDecoration(
-                            hintText: '장소명 또는 주소 검색 (예: 서울역, 강남역)',
-                            hintStyle: const TextStyle(fontSize: 13, color: AppColors.slate500),
-                            prefixIcon: IconButton(
-                              icon: const Icon(Icons.search, color: AppColors.naverGreenDark),
-                              tooltip: '검색',
-                              onPressed: () => performSearch(searchCtrl.text),
-                            ),
-                            suffixIcon: searchCtrl.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18, color: AppColors.slate500),
-                                    onPressed: () {
-                                      searchCtrl.clear();
-                                      setModalState(() {});
-                                      performSearch('');
-                                    },
-                                  )
-                                : (searching
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(12),
-                                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                                      )
-                                    : null),
-                            filled: true,
-                            fillColor: AppColors.slate50,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.slate200),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 48,
-                        child: ElevatedButton.icon(
-                          onPressed: () => performSearch(searchCtrl.text),
-                          icon: const Icon(Icons.search, size: 16, color: Colors.white),
-                          label: const Text(
-                            '검색',
-                            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.naverGreen,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 인기 추천 목적지 칩
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        ActionChip(
-                          avatar: const Icon(Icons.touch_app, size: 16, color: AppColors.warningOrange),
-                          label: const Text('지도에서 핀 찍기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.warningOrange)),
-                          backgroundColor: AppColors.warningOrangeBg,
-                          side: const BorderSide(color: AppColors.warningOrange),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _nav.togglePickOnMapMode();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('지도의 원하는 곳을 클릭하면 목적지로 지정됩니다.')),
-                            );
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ...DestinationService.popularDestinations.take(6).map((p) {
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: ActionChip(
-                              label: Text(p.name, style: const TextStyle(fontSize: 12)),
-                              backgroundColor: AppColors.slate100,
-                              onPressed: () {
-                                _nav.setDestination(p.name, p.point);
-                                Navigator.pop(ctx);
-                              },
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-
-                  // 검색 결과 리스트
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: results.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, idx) {
-                        final item = results[idx];
-                        final isCurDest = _nav.destinationName == item.name;
-
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                          onTap: () {
-                            _nav.setDestination(item.name, item.point);
-                            Navigator.pop(ctx);
-                          },
-                          leading: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: isCurDest ? AppColors.dangerRedBg : AppColors.naverGreenLight,
-                            child: Icon(
-                              isCurDest ? Icons.flag : Icons.location_on,
-                              size: 18,
-                              color: isCurDest ? AppColors.dangerRed : AppColors.naverGreenDark,
-                            ),
-                          ),
-                          title: Row(
-                            children: [
-                              Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                              if (item.category != null) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.slate100,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(item.category!, style: const TextStyle(fontSize: 10, color: AppColors.slate600)),
-                                ),
-                              ],
-                            ],
-                          ),
-                          subtitle: Text(
-                            item.address,
-                            style: const TextStyle(fontSize: 12, color: AppColors.slate500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: ElevatedButton(
-                            onPressed: () {
-                              _nav.setDestination(item.name, item.point);
-                              Navigator.pop(ctx);
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: isCurDest ? AppColors.dangerRed : AppColors.naverGreen,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                              elevation: 0,
-                            ),
-                            child: Text(
-                              isCurDest ? '현재 목적지' : '선택',
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
+  void _openDestinationSearch(BuildContext context) async {
+    _map.setVisible(false);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DestinationSearchScreen(
+            nav: _nav,
+            map: _map,
+          ),
+        ),
+      );
+    } finally {
+      _map.setVisible(true);
+      if (mounted) setState(() {});
+    }
   }
 
   @override
@@ -774,7 +508,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   ),
                   const SizedBox(width: 6),
                   ElevatedButton.icon(
-                    onPressed: () => _showDestinationSearchSheet(context),
+                    onPressed: () => _openDestinationSearch(context),
                     icon: const Icon(Icons.search, size: 13, color: Colors.white),
                     label: Text(
                       _nav.destination != null ? '변경' : '목적지 설정',
@@ -861,7 +595,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
             _buildToolBtn(
               icon: Icons.flag_outlined,
               label: _nav.destination != null ? '목적지 변경' : '목적지 설정',
-              onTap: () => _showDestinationSearchSheet(context),
+              onTap: () => _openDestinationSearch(context),
               color: AppColors.primaryBlue,
               bgColor: AppColors.primaryBlueBg,
             ),
@@ -1118,7 +852,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () => _showDestinationSearchSheet(context),
+                  onPressed: () => _openDestinationSearch(context),
                   icon: const Icon(Icons.search, size: 13, color: Colors.white),
                   label: Text(
                     _nav.destination != null ? '변경' : '목적지 설정',
@@ -1227,7 +961,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                             duration: Duration(seconds: 2),
                           ),
                         );
-                        _showDestinationSearchSheet(context);
+                        _openDestinationSearch(context);
                         return;
                       }
                       _nav.startDrive(test: false);
@@ -1259,7 +993,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                             duration: Duration(seconds: 2),
                           ),
                         );
-                        _showDestinationSearchSheet(context);
+                        _openDestinationSearch(context);
                         return;
                       }
                       await _nav.startDrive(test: true);

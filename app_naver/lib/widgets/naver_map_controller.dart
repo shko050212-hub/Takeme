@@ -21,5 +21,7 @@ abstract class NaverMapController {
   void markStopPassed(int index);
   void fitAll();
   void setClientId(String clientId);
+  void setInteractive(bool interactive);
+  void setVisible(bool visible);
   void dispose();
 }

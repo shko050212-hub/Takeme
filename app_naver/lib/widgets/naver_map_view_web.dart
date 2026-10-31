@@ -185,6 +185,21 @@ class NaverMapControllerWeb implements NaverMapController {
   }
 
   @override
+  void setInteractive(bool interactive) {
+    if (_iframe != null) {
+      _iframe!.style.pointerEvents = interactive ? 'auto' : 'none';
+    }
+  }
+
+  @override
+  void setVisible(bool visible) {
+    if (_iframe != null) {
+      _iframe!.style.display = visible ? 'block' : 'none';
+      _iframe!.style.pointerEvents = visible ? 'auto' : 'none';
+    }
+  }
+
+  @override
   void dispose() {
     _sub?.cancel();
     _pending.clear();
