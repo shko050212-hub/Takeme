@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { API_BASE_URL } from './config';
 
 const getDaysInMonth = (year, month) => {
@@ -18,6 +18,43 @@ const toDateStr = (val) => {
     return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
   }
   return String(val);
+};
+
+const renderLogIcon = (type) => {
+  switch (type) {
+    case 'OPERATION_START':
+      return (
+        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      );
+    case 'OPERATION_END':
+      return (
+        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+        </svg>
+      );
+    case 'BOARDING':
+      return (
+        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      );
+    case 'PARENT_MESSAGE':
+      return (
+        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      );
+  }
 };
 
 export default function LogViewer({ buses, students, currentTab = 'LOG', isClosing }) {
@@ -51,27 +88,36 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
   
   const calendarRef = useRef(null);
   
-  // Generate 13 months
+  // Year & Month setup: calendarYear based (1월 ~ 12월)
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
-  const monthsData = [];
-  
-  for (let i = -6; i <= 6; i++) {
-    let m = currentMonth + i;
-    let y = currentYear;
-    while (m < 0) { m += 12; y -= 1; }
-    while (m > 11) { m -= 12; y += 1; }
-    monthsData.push({ year: y, month: m });
-  }
+  const [calendarYear, setCalendarYear] = useState(currentYear);
+
+  // Generate 12 months (1월 ~ 12월) for selected calendarYear
+  const monthsData = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => ({
+      year: calendarYear,
+      month: i
+    }));
+  }, [calendarYear]);
+
+  // Year options: currentYear - 5 to currentYear + 5
+  const yearOptions = useMemo(() => {
+    return Array.from({ length: 11 }, (_, i) => currentYear - 5 + i);
+  }, [currentYear]);
 
   useLayoutEffect(() => {
     if (calendarRef.current) {
-      const currentMonthElement = calendarRef.current.querySelector('[data-is-current="true"]');
-      if (currentMonthElement) {
-        calendarRef.current.scrollTop = currentMonthElement.offsetTop - calendarRef.current.offsetTop - 20;
+      if (calendarYear === currentYear) {
+        const currentMonthElement = calendarRef.current.querySelector('[data-is-current="true"]');
+        if (currentMonthElement) {
+          calendarRef.current.scrollTop = currentMonthElement.offsetTop - calendarRef.current.offsetTop - 20;
+        }
+      } else {
+        calendarRef.current.scrollTop = 0;
       }
     }
-  }, [currentTab]);
+  }, [currentTab, calendarYear]);
 
   const fetchAbsences = async () => {
     try {
@@ -325,13 +371,90 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       {/* Calendar Area (50% width) */}
       <div className="w-1/2 h-full border-r border-slate-200 flex flex-col bg-white transition-all duration-300">
         
-        {/* Calendar Header */}
-        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100/50 backdrop-blur z-20">
-          <h2 className="text-lg font-black text-slate-800">📅 날짜 선택</h2>
+        {/* Calendar Header with Year Selector */}
+        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white z-20">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <h2 className="text-base font-black text-slate-800">날짜 선택</h2>
+            <span className="text-xs text-slate-400 font-medium">(1월 ~ 12월)</span>
+          </div>
+
+          {/* Year Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setCalendarYear(prev => prev - 1)}
+              className="p-1.5 hover:bg-white rounded-lg text-slate-600 hover:text-slate-900 transition-colors"
+              title="이전 연도"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+
+            <select
+              value={calendarYear}
+              onChange={(e) => setCalendarYear(Number(e.target.value))}
+              className="bg-white text-slate-800 font-black text-sm px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs outline-none cursor-pointer focus:ring-2 focus:ring-blue-500"
+            >
+              {yearOptions.map(y => (
+                <option key={y} value={y}>{y}년</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => setCalendarYear(prev => prev + 1)}
+              className="p-1.5 hover:bg-white rounded-lg text-slate-600 hover:text-slate-900 transition-colors"
+              title="다음 연도"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            {calendarYear !== currentYear && (
+              <button
+                type="button"
+                onClick={() => setCalendarYear(currentYear)}
+                className="ml-1 px-2 py-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              >
+                올해
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 1월 ~ 12월 Quick Month Selector Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto px-4 py-2 bg-slate-50 border-b border-slate-200">
+          {monthsData.map((mData) => {
+            const isCurrentMonth = mData.year === currentYear && mData.month === currentMonth;
+            return (
+              <button
+                key={mData.month}
+                type="button"
+                onClick={() => {
+                  const el = calendarRef.current?.querySelector(`[data-month-index="${mData.month}"]`);
+                  if (el && calendarRef.current) {
+                    calendarRef.current.scrollTop = el.offsetTop - calendarRef.current.offsetTop - 10;
+                  }
+                }}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg shrink-0 transition-all ${
+                  isCurrentMonth
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                {monthNames[mData.month]}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-12 scroll-smooth" ref={calendarRef}>
-            {monthsData.map((mData, index) => {
+            {monthsData.map((mData) => {
               const isCurrentMonth = mData.year === currentYear && mData.month === currentMonth;
               const daysInMonth = getDaysInMonth(mData.year, mData.month);
               const firstDay = getFirstDayOfMonth(mData.year, mData.month);
@@ -339,7 +462,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
               const blanks = Array.from({ length: firstDay }, (_, i) => i);
 
               return (
-                <div key={index} data-is-current={isCurrentMonth} className="max-w-md mx-auto">
+                <div key={mData.month} data-month-index={mData.month} data-is-current={isCurrentMonth} className="max-w-md mx-auto">
                   <h3 className="text-xl font-black text-slate-800 mb-4">{mData.year}년 {monthNames[mData.month]}</h3>
                   <div className="grid grid-cols-7 gap-1 text-center mb-2">
                     {['일', '월', '화', '수', '목', '금', '토'].map(d => (
@@ -417,7 +540,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
             <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                  <span>🎉</span> 유치원 휴업일(휴원) 관리
+                  유치원 휴업일(휴원) 관리
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
                   달력에서 날짜를 지정하거나 등록된 휴업일을 취소(삭제)할 수 있습니다.
@@ -441,7 +564,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
                     </button>
                   </div>
                   <div className="text-base font-black text-orange-800 mb-3">
-                    📅 {holidayRange.start.toLocaleDateString()} {holidayRange.end && `~ ${holidayRange.end.toLocaleDateString()}`}
+                    {holidayRange.start.toLocaleDateString()} {holidayRange.end && `~ ${holidayRange.end.toLocaleDateString()}`}
                     {holidayRange.end && (
                       <span className="text-xs font-semibold text-orange-600 ml-2">
                         ({Math.round((holidayRange.end - holidayRange.start) / (1000 * 60 * 60 * 24)) + 1}일간)
@@ -452,7 +575,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
                     onClick={() => setShowHolidayConfirm(true)}
                     className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2"
                   >
-                    <span>🚨</span> 이 기간을 휴업일로 저장하기
+                    이 기간을 휴업일로 저장하기
                   </button>
                 </div>
               )}
@@ -465,7 +588,9 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
 
                 {holidays.length === 0 ? (
                   <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 text-center">
-                    <div className="text-4xl mb-3">🏖️</div>
+                    <div className="w-12 h-12 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center mx-auto mb-3">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </div>
                     <p className="font-bold text-slate-600 text-sm mb-1">등록된 휴업일이 없습니다</p>
                     <p className="text-xs text-slate-400">
                       왼쪽 달력에서 시작일과 종료일을 클릭하여 휴업일을 지정해 보세요.
@@ -484,7 +609,7 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
                         >
                           <div className="flex items-start gap-3">
                             <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-lg shrink-0">
-                              🎉
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                             </div>
                             <div>
                               <div className="font-black text-slate-800 text-base flex items-center gap-2">
@@ -559,13 +684,15 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
             {currentTab === 'LOG' && (
               <div className="h-full">
                 {isLoadingLogs ? (
-                  <div className="flex flex-col items-center justify-center h-full opacity-50">
-                    <div className="text-4xl animate-bounce mb-4">📝</div>
+                  <div className="flex flex-col items-center justify-center h-full opacity-60">
+                    <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
                     <p className="text-sm font-bold text-slate-500">로그 데이터를 불러오는 중...</p>
                   </div>
                 ) : logs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full opacity-50">
-                    <div className="text-4xl mb-4 grayscale">📭</div>
+                  <div className="flex flex-col items-center justify-center h-full opacity-60">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-4">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>
+                    </div>
                     <p className="text-sm font-bold text-slate-500">선택한 날짜에 기록된 로그가 없습니다.</p>
                   </div>
                 ) : (
@@ -592,8 +719,8 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
                       const style = getTypeStyle(log.type);
                       return (
                         <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                          <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-50 bg-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 text-lg z-10">
-                            {log.icon}
+                          <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-50 bg-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
+                            {renderLogIcon(log.type)}
                           </div>
                           <div className={`w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border shadow-sm transition-all hover:shadow-md ${style}`}>
                             <div className="flex items-center justify-between space-x-2 mb-1">
@@ -663,7 +790,9 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       {showHolidayConfirm && (
         <div className="absolute inset-0 z-[3000] flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl mx-4 transform animate-scale-up">
-            <div className="text-5xl mb-4 text-center">🚨</div>
+            <div className="w-12 h-12 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
             <h3 className="text-xl font-black text-slate-800 text-center mb-2">휴업일로 지정하시겠습니까?</h3>
             <div className="text-center mb-4">
               <span className="font-black text-orange-600 text-base">
@@ -709,7 +838,9 @@ export default function LogViewer({ buses, students, currentTab = 'LOG', isClosi
       {holidayToDelete && (
         <div className="absolute inset-0 z-[3000] flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl mx-4 transform animate-scale-up">
-            <div className="text-5xl mb-4 text-center">⚠️</div>
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
             <h3 className="text-xl font-black text-slate-800 text-center mb-2">휴업일 지정을 취소하시겠습니까?</h3>
             <p className="text-slate-600 text-center mb-6 leading-relaxed text-sm">
               <b className="text-orange-600 font-bold">

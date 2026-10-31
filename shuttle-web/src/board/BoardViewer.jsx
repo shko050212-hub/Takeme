@@ -28,83 +28,13 @@ const PRESET_PHOTOS = [
   }
 ];
 
-const DEFAULT_POSTS = [
-  {
-    id: 101,
-    title: '햇살반 가을 낙엽 탐색 및 숲 체험 활동',
-    content: '오늘 햇살반 친구들과 함께 유치원 뒤뜰에서 알록달록 단풍잎과 솔방울을 모아 왕관 만들기 놀이를 했습니다. 아이들이 자연 속에서 너무 신나게 참여했어요!',
-    imageUrl: 'https://images.unsplash.com/photo-1596464716127-f2a82984de30?w=800&auto=format&fit=crop&q=80',
-    images: [],
-    authorName: '햇살반 담임선생님',
-    authorRole: 'TEACHER',
-    visibility: 'CLASS',
-    targetClass: '햇살반',
-    likeCount: 5,
-    likedUserIds: ['admin'],
-    comments: [
-      { id: 1, authorName: '민준이 어머님', authorRole: 'PARENT', content: '사진 너무 예쁘네요! 오늘도 수고 많으셨습니다 선생님~', createdAt: new Date(Date.now() - 3600000).toISOString() },
-      { id: 2, authorName: '원장선생님', authorRole: 'ADMIN', content: '햇살반 친구들 표정이 정말 밝고 예쁩니다 ^^', createdAt: new Date(Date.now() - 1800000).toISOString() }
-    ],
-    createdAt: new Date(Date.now() - 7200000).toISOString()
-  },
-  {
-    id: 102,
-    title: '[전체 공지] 10월 유치원 가을 운동회 및 꿈나무 축제 안내',
-    content: '학부모님 안녕하십니까. 다음 주 금요일 진행되는 가을 운동회 및 꿈나무 축제 일정 안내드립니다. 편안한 복장과 운동화 착용을 부탁드리며 셔틀 운행 시간표를 확인해 주시기 바랍니다.',
-    imageUrl: 'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=800&auto=format&fit=crop&q=80',
-    images: [],
-    authorName: '원장선생님',
-    authorRole: 'ADMIN',
-    visibility: 'ALL',
-    targetClass: null,
-    likeCount: 12,
-    likedUserIds: [],
-    comments: [
-      { id: 3, authorName: '지우 아버님', authorRole: 'PARENT', content: '가을 운동회 정말 기대됩니다! 가족들과 함께 참석하겠습니다.', createdAt: new Date(Date.now() - 14400000).toISOString() }
-    ],
-    createdAt: new Date(Date.now() - 86400000).toISOString()
-  },
-  {
-    id: 103,
-    title: '열매반 조물조물 클레이 도예 체험 시간',
-    content: '고사리 같은 손으로 찰흙을 빚어 나만의 예쁜 동물 그릇을 만들었어요. 집으로 가져가서 칭찬 많이 해주세요!',
-    imageUrl: 'https://images.unsplash.com/photo-1566140967404-b8b3932483f5?w=800&auto=format&fit=crop&q=80',
-    images: [],
-    authorName: '열매반 담임선생님',
-    authorRole: 'TEACHER',
-    visibility: 'CLASS',
-    targetClass: '열매반',
-    likeCount: 8,
-    likedUserIds: [],
-    comments: [
-      { id: 4, authorName: '서아 어머님', authorRole: 'PARENT', content: '집에 와서 서아가 찰흙 놀이한 거 엄청 자랑했어요 ㅎㅎ 감사해요!', createdAt: new Date(Date.now() - 28800000).toISOString() }
-    ],
-    createdAt: new Date(Date.now() - 172800000).toISOString()
-  },
-  {
-    id: 104,
-    title: '심화 B반 창의 블록 및 협동 보드게임 활동',
-    content: '심화 B반 친구들과 함께 팀을 나누어 대형 블록 성을 쌓고 협동 보드게임을 진행했습니다. 친구를 배려하며 즐겁게 활동하는 모습이 대견했습니다.',
-    imageUrl: 'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=800&auto=format&fit=crop&q=80',
-    images: [],
-    authorName: '이선생 선생님',
-    authorRole: 'TEACHER',
-    visibility: 'CLASS',
-    targetClass: '심화B반',
-    likeCount: 7,
-    likedUserIds: [],
-    comments: [
-      { id: 5, authorName: '민재 어머님', authorRole: 'PARENT', content: '블록 완성하고 엄청 뿌듯해했어요! 선생님 늘 감사합니다~', createdAt: new Date(Date.now() - 1800000).toISOString() }
-    ],
-    createdAt: new Date(Date.now() - 3600000).toISOString()
-  }
-];
+const DEFAULT_POSTS = [];
 
 export default function BoardViewer({
   isClosing = false,
   currentUser = {},
   selectedAcademyId,
-  availableClasses = ['햇살반', '열매반', '풀잎반', '새싹반'],
+  availableClasses = [],
   selectedClass = 'ALL',
   setSelectedClass,
   searchKeyword = '',
@@ -140,7 +70,7 @@ export default function BoardViewer({
     title: '',
     content: '',
     visibility: isTeacher ? 'CLASS' : 'ALL',
-    targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
+    targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || ''),
     imageUrl: PRESET_PHOTOS[0].url,
     images: [PRESET_PHOTOS[0].url],
     authorName: defaultAuthorName,
@@ -180,6 +110,16 @@ export default function BoardViewer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [previewGallery]);
 
+  // Legacy cache cleanup
+  useEffect(() => {
+    try {
+      const legacySaved = localStorage.getItem('takeme_board_posts');
+      if (legacySaved && (legacySaved.includes('햇살반 가을') || legacySaved.includes('가을 운동회') || legacySaved.includes('창의 블록'))) {
+        localStorage.removeItem('takeme_board_posts');
+      }
+    } catch (e) {}
+  }, []);
+
   // Load posts from backend or fallback to localStorage
   const fetchPosts = async () => {
     setIsLoading(true);
@@ -194,24 +134,25 @@ export default function BoardViewer({
       const res = await fetch(`${API_BASE_URL}/routing/board/posts?${queryParams.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setPosts(data);
-          localStorage.setItem('takeme_board_posts', JSON.stringify(data));
+          const cacheKey = activeAcademyId ? `takeme_board_posts_${activeAcademyId}` : 'takeme_board_posts';
+          localStorage.setItem(cacheKey, JSON.stringify(data));
           return;
         }
       }
-      // Fallback to local storage or defaults
-      const saved = localStorage.getItem('takeme_board_posts');
-      if (saved) {
-        setPosts(JSON.parse(saved));
-      } else {
-        setPosts(DEFAULT_POSTS);
-        localStorage.setItem('takeme_board_posts', JSON.stringify(DEFAULT_POSTS));
-      }
+      // Fallback to local storage (academy scoped)
+      const cacheKey = activeAcademyId ? `takeme_board_posts_${activeAcademyId}` : 'takeme_board_posts';
+      const saved = localStorage.getItem(cacheKey);
+      setPosts(saved ? JSON.parse(saved) : []);
     } catch (e) {
       console.warn('Backend fetch failed, falling back to local data', e);
-      const saved = localStorage.getItem('takeme_board_posts');
-      setPosts(saved ? JSON.parse(saved) : DEFAULT_POSTS);
+      const activeAcademyId = selectedAcademyId || localStorage.getItem('takeme_selected_academy_id') || (() => {
+        try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch(e){ return ''; }
+      })();
+      const cacheKey = activeAcademyId ? `takeme_board_posts_${activeAcademyId}` : 'takeme_board_posts';
+      const saved = localStorage.getItem(cacheKey);
+      setPosts(saved ? JSON.parse(saved) : []);
     } finally {
       setIsLoading(false);
     }
@@ -224,7 +165,11 @@ export default function BoardViewer({
   // Sync to local storage on change
   const savePostsLocal = (newPosts) => {
     setPosts(newPosts);
-    localStorage.setItem('takeme_board_posts', JSON.stringify(newPosts));
+    const activeAcademyId = selectedAcademyId || localStorage.getItem('takeme_selected_academy_id') || (() => {
+      try { return JSON.parse(localStorage.getItem('takeme_user') || '{}').academyId; } catch(e){ return ''; }
+    })();
+    const cacheKey = activeAcademyId ? `takeme_board_posts_${activeAcademyId}` : 'takeme_board_posts';
+    localStorage.setItem(cacheKey, JSON.stringify(newPosts));
   };
 
   // Filter & Sort
@@ -576,7 +521,7 @@ export default function BoardViewer({
       title: '',
       content: '',
       visibility: isTeacher ? 'CLASS' : 'ALL',
-      targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
+      targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || ''),
       imageUrl: PRESET_PHOTOS[0].url,
       images: [PRESET_PHOTOS[0].url],
       authorName: defaultAuthorName,
@@ -626,7 +571,7 @@ export default function BoardViewer({
       title: post.title,
       content: post.content,
       visibility: post.visibility || (isTeacher ? 'CLASS' : 'ALL'),
-      targetClass: post.targetClass || (isTeacher ? teacherClass : availableClasses[0]) || '햇살반',
+      targetClass: post.targetClass || (isTeacher ? teacherClass : availableClasses[0]) || '',
       imageUrl: post.imageUrl || postImages[0] || PRESET_PHOTOS[0].url,
       images: postImages,
       authorName: post.authorName || defaultAuthorName,
@@ -700,7 +645,7 @@ export default function BoardViewer({
                 title: '',
                 content: '',
                 visibility: isTeacher ? 'CLASS' : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? 'CLASS' : 'ALL'),
-                targetClass: (isTeacher && teacherClass) ? teacherClass : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? selectedClass : (availableClasses[0] || '햇살반')),
+                targetClass: (isTeacher && teacherClass) ? teacherClass : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? selectedClass : (availableClasses[0] || '')),
                 imageUrl: PRESET_PHOTOS[0].url,
                 images: [PRESET_PHOTOS[0].url],
                 authorName: defaultAuthorName,

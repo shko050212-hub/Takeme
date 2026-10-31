@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 
 import { API_BASE_URL } from '../config';
+import { getStudentDisambiguation, getTeacherDisambiguation, DisambiguatedNameTag } from '../utils/nameHelper';
 
 export default function ClassManager({
   academyId,
@@ -40,9 +41,6 @@ export default function ClassManager({
         set.add(String(t.assignedClass).trim());
       }
     });
-    if (set.size === 0) {
-      ['햇살반', '열매반', '새싹반'].forEach(c => set.add(c));
-    }
     return Array.from(set).sort();
   }, [customClasses, students, teachers]);
 
@@ -512,6 +510,7 @@ export default function ClassManager({
                   const gender = st.raw?.['성별'] || '';
                   const age = st.raw?.['연령'] || '';
                   const phone = st.raw?.['부모연락처'] || st.raw?.['보호자연락처'] || st.raw?.['학부모전화번호'] || '';
+                  const stInfo = getStudentDisambiguation(st, students);
 
                   return (
                     <div
@@ -519,8 +518,10 @@ export default function ClassManager({
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, st.id)}
                       onDragEnd={handleDragEnd}
-                      className={`p-3 bg-white rounded-2xl border transition-all cursor-grab active:cursor-grabbing select-none shadow-xs hover:shadow-md hover:border-blue-400 ${
-                        isDragging ? 'opacity-40 border-dashed border-blue-400' : 'border-slate-200'
+                      className={`p-3 rounded-2xl border transition-all cursor-grab active:cursor-grabbing select-none shadow-xs hover:shadow-md hover:border-blue-400 ${
+                        isDragging ? 'opacity-40 border-dashed border-blue-400' : ''
+                      } ${
+                        stInfo.isDuplicate ? 'bg-yellow-50/90 border-2 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border-slate-200'
                       } ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50/30' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -535,12 +536,19 @@ export default function ClassManager({
                             }}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
-                          <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0">
+                          <div className={`w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 ${
+                            stInfo.isDuplicate ? 'bg-yellow-200 text-yellow-900 border border-yellow-400' : 'bg-slate-100 text-slate-700'
+                          }`}>
                             {st.name?.[0] || '원'}
                           </div>
                           <div>
-                            <div className="flex items-center gap-1.5">
-                              <h4 className="font-extrabold text-slate-900 text-xs">{st.name}</h4>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <DisambiguatedNameTag info={stInfo} defaultColor="font-extrabold text-slate-900 text-xs" />
+                              {stInfo.isDuplicate && (
+                                <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black shrink-0">
+                                  동명이인
+                                </span>
+                              )}
                               {gender && (
                                 <span className={`text-[10px] font-bold px-1 rounded ${
                                   gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
@@ -622,44 +630,61 @@ export default function ClassManager({
                   </div>
 
                   {/* Homeroom Teacher Selection Area */}
-                  <div className="bg-white rounded-2xl p-2.5 border border-slate-200 space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-600">담당 담임교사:</span>
-                      {assignedTeacher ? (
-                        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.2 rounded-md border border-emerald-200">
-                          배정 완료
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-semibold text-slate-400">미배정</span>
-                      )}
-                    </div>
+                  {(() => {
+                    const teacherInfo = assignedTeacher ? getTeacherDisambiguation(assignedTeacher, teachers) : null;
+                    const isDup = teacherInfo?.isDuplicate;
+                    return (
+                      <div className={`rounded-2xl p-2.5 border space-y-1.5 shadow-2xs transition-all ${
+                        isDup ? 'bg-yellow-50/90 border-2 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border-slate-200'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[11px] font-bold ${isDup ? 'text-yellow-900 font-black' : 'text-slate-600'}`}>담당 담임교사:</span>
+                          <div className="flex items-center gap-1">
+                            {isDup && (
+                              <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black">
+                                동명이인
+                              </span>
+                            )}
+                            {assignedTeacher ? (
+                              <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.2 rounded-md border border-emerald-200">
+                                배정 완료
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-400">미배정</span>
+                            )}
+                          </div>
+                        </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <select
-                        value={assignedTeacher?.id || ''}
-                        onChange={(e) => handleAssignTeacherToClass(className, e.target.value)}
-                        disabled={isProcessing}
-                        className="flex-1 text-xs font-bold px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">-- 담임교사 선택 --</option>
-                        {teachers.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} 선생님 {t.assignedClass ? `(${t.assignedClass} 담임)` : '(미배정)'}
-                          </option>
-                        ))}
-                      </select>
-                      {assignedTeacher && (
-                        <button
-                          type="button"
-                          onClick={() => handleAssignTeacherToClass(className, '')}
-                          className="px-2 py-1.5 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-xl text-[11px] font-bold transition"
-                          title="담임 해제"
-                        >
-                          해제
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={assignedTeacher?.id || ''}
+                            onChange={(e) => handleAssignTeacherToClass(className, e.target.value)}
+                            disabled={isProcessing}
+                            className={`flex-1 text-xs font-bold px-2.5 py-1.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 border ${
+                              isDup ? 'bg-yellow-100 border-yellow-400 text-yellow-950 font-black' : 'bg-slate-50 border-slate-200 focus:bg-white'
+                            }`}
+                          >
+                            <option value="">-- 담임교사 선택 --</option>
+                            {teachers.map(t => (
+                              <option key={t.id} value={t.id}>
+                                {getTeacherDisambiguation(t, teachers).displayName} 선생님
+                              </option>
+                            ))}
+                          </select>
+                          {assignedTeacher && (
+                            <button
+                              type="button"
+                              onClick={() => handleAssignTeacherToClass(className, '')}
+                              className="px-2 py-1.5 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-xl text-[11px] font-bold transition"
+                              title="담임 해제"
+                            >
+                              해제
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Class Student Cards Dropzone */}
@@ -680,6 +705,7 @@ export default function ClassManager({
                       const gender = st.raw?.['성별'] || '';
                       const age = st.raw?.['연령'] || '';
                       const phone = st.raw?.['부모연락처'] || st.raw?.['보호자연락처'] || st.raw?.['학부모전화번호'] || '';
+                      const stInfo = getStudentDisambiguation(st, students);
 
                       return (
                         <div
@@ -687,18 +713,27 @@ export default function ClassManager({
                           draggable={true}
                           onDragStart={(e) => handleDragStart(e, st.id)}
                           onDragEnd={handleDragEnd}
-                          className={`p-3 bg-white rounded-2xl border transition-all cursor-grab active:cursor-grabbing select-none shadow-xs hover:shadow-md hover:border-blue-400 ${
-                            isDragging ? 'opacity-40 border-dashed border-blue-400' : 'border-slate-200'
+                          className={`p-3 rounded-2xl border transition-all cursor-grab active:cursor-grabbing select-none shadow-xs hover:shadow-md hover:border-blue-400 ${
+                            isDragging ? 'opacity-40 border-dashed border-blue-400' : ''
+                          } ${
+                            stInfo.isDuplicate ? 'bg-yellow-50/90 border-2 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border-slate-200'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center shrink-0">
+                              <div className={`w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 ${
+                                stInfo.isDuplicate ? 'bg-yellow-200 text-yellow-900 border border-yellow-400' : 'bg-blue-100 text-blue-700'
+                              }`}>
                                 {idx + 1}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <h4 className="font-extrabold text-slate-900 text-xs">{st.name}</h4>
+                                  <DisambiguatedNameTag info={stInfo} defaultColor="font-extrabold text-slate-900 text-xs" />
+                                  {stInfo.isDuplicate && (
+                                    <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black shrink-0">
+                                      동명이인
+                                    </span>
+                                  )}
                                   {gender && (
                                     <span className={`text-[10px] font-bold px-1 rounded ${
                                       gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'

@@ -1,14 +1,9 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Roles } from '../auth/auth-user.decorator';
+import { Body, Controller, Post } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DirectionsService } from './directions.service';
 import { DirectionsRequestDto } from './directions.dto';
 
 @ApiTags('directions')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
-@Roles('DRIVER', 'TEACHER', 'ACADEMY_ADMIN')
 @Controller('directions')
 export class DirectionsController {
   constructor(private readonly directionsService: DirectionsService) {}

@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TakeMe Naver Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, #map {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden;
+    }
+    
+    /* 정류장 번호 마커 */
+    .stop-marker {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #03C75A; color: #ffffff; font-weight: 800; font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      border: 3px solid #ffffff; box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+      cursor: pointer; transition: transform 0.15s ease, background-color 0.2s ease;
+    }
+    .stop-marker:hover { transform: scale(1.1); }
+    .stop-marker.passed {
+      background: #94A3B8 !important; color: #f1f5f9;
+      text-decoration: line-through;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      opacity: 0.75;
+    }
+    .stop-marker.test {
+      background: #EA580C;
+      border-style: dashed;
+    }
+
+    /* 유치원/학원 마커 */
+    .academy-marker {
+      min-width: 44px; height: 36px; padding: 0 10px; border-radius: 8px;
+      background: #2563EB; color: #ffffff; font-weight: 800; font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      border: 3px solid #ffffff; box-shadow: 0 3px 8px rgba(37,99,235,0.4);
+      white-space: nowrap;
+    }
+
+    /* 버스 / 내비게이션 위치 마커 */
+    .bus-marker-wrap {
+      width: 48px; height: 48px; position: relative;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.25s linear;
+    }
+    .bus-marker {
+      width: 42px; height: 42px; border-radius: 50%;
+      background: #03C75A; border: 3px solid #ffffff;
+      box-shadow: 0 4px 14px rgba(3,199,90,0.6);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #ffffff; font-weight: 900; font-size: 11px;
+      position: relative; z-index: 2;
+    }
+    .bus-marker .bus-icon {
+      font-size: 11px; font-weight: 900; line-height: 1;
+    }
+    .bus-marker .bus-txt {
+      font-size: 9px; line-height: 1; margin-top: 2px; letter-spacing: -0.5px;
+    }
+    .bus-pulse {
+      position: absolute; width: 48px; height: 48px; border-radius: 50%;
+      background: rgba(3,199,90,0.35); animation: pulse-ring 1.8s infinite;
+      z-index: 1;
+    }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.8); opacity: 0.9; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    /* 내 GPS 위치 마커 (현재 내 위치) */
+    .me-marker-wrap {
+      width: 32px; height: 32px; position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .me-marker {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #0284C7; border: 3px solid #ffffff;
+      box-shadow: 0 0 10px rgba(2,132,199,0.8);
+      position: relative; z-index: 2;
+    }
+    .me-pulse {
+      position: absolute; width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(2,132,199,0.3); animation: me-pulse-anim 2s infinite;
+      z-index: 1;
+    }
+    @keyframes me-pulse-anim {
+      0% { transform: scale(0.6); opacity: 0.8; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+
+    /* 상단 연동 모드 배너 */
+    #mode-banner {
+      position: absolute; top: 10px; left: 10px; z-index: 1000;
+      background: rgba(15, 23, 42, 0.88); color: #f8fafc;
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+      backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    #mode-indicator {
+      width: 9px; height: 9px; border-radius: 50%; background: #03C75A;
+      box-shadow: 0 0 6px #03C75A;
+    }
+    #mode-indicator.fallback {
+      background: #03C75A;
+    }
+
+    /* 팝업 스타일 */
+    .custom-popup {
+      font-size: 13px; font-weight: bold; color: #1e293b;
+      padding: 4px 6px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="mode-banner">
+    <span id="mode-indicator"></span>
+    <span id="mode-text">네이버 지도 연동 모드</span>
+  </div>
+  <div id="map"></div>
+
+  <script>
+    var urlParams = new URLSearchParams(window.location.search);
+    var ncpClientId = urlParams.get('clientId') || localStorage.getItem('takeme_naver_client_id') || '';
+
+    var isNaverReady = false;
+    var naverMap = null;
+    var leafletMap = null;
+
+    // 레이어 관리
+    var primaryPoly = null;
+    var alternatePoly = null;
+    var stopMarkers = [];
+    var academyMarker = null;
+    var busMarker = null;
+    var meMarker = null;
+    var lastBusLat = null;
+    var lastBusLng = null;
+
+    function sendToFlutter(msg) {
+      try {
+        var str = typeof msg === 'string' ? msg : JSON.stringify(msg);
+        if (window.TakemeNav && window.TakemeNav.postMessage) {
+          window.TakemeNav.postMessage(str);
+        }
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(msg, '*');
+        }
+      } catch (e) {
+        console.error('SendToFlutter Error:', e);
+      }
+    }
+
+    // 네이버 지도 스크립트 동적 로드 시도
+    function tryLoadNaverMap(clientId, callback) {
+      if (!clientId) {
+        callback(false);
+        return;
+      }
+      var scriptId = 'naver-map-script';
+      var existing = document.getElementById(scriptId);
+      if (existing) existing.remove();
+
+      var script = document.createElement('script');
+      script.id = scriptId;
+      script.type = 'text/javascript';
+      script.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=' + encodeURIComponent(clientId);
+      script.onload = function() {
+        if (window.naver && window.naver.maps) {
+          callback(true);
+        } else {
+          callback(false);
+        }
+      };
+      script.onerror = function() {
+        console.warn('Naver Maps script load failed. Falling back to open map tiles.');
+        callback(false);
+      };
+      document.head.appendChild(script);
+    }
+
+    function initLeafletFallback() {
+      if (leafletMap) return;
+      document.getElementById('mode-indicator').className = 'fallback';
+      document.getElementById('mode-text').innerText = '네이버 지도 스타일 (연동 준비됨)';
+
+      leafletMap = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([37.5665, 126.9780], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      }).addTo(leafletMap);
+
+      L.control.attribution({ position: 'bottomleft', prefix: false })
+        .addAttribution('&copy; OpenStreetMap | TakeMe Driver')
+        .addTo(leafletMap);
+
+      sendToFlutter({ type: 'ready', engine: 'leaflet', ncpActive: false });
+    }
+
+    function initNaverMapInstance() {
+      try {
+        if (!window.naver || !window.naver.maps) {
+          initLeafletFallback();
+          return;
+        }
+
+        if (leafletMap) {
+          leafletMap.remove();
+          leafletMap = null;
+        }
+
+        document.getElementById('mode-indicator').className = '';
+        document.getElementById('mode-text').innerText = '네이버 지도 API 정식 연동';
+
+        naverMap = new naver.maps.Map('map', {
+          center: new naver.maps.LatLng(37.5665, 126.9780),
+          zoom: 15,
+          minZoom: 6,
+          maxZoom: 19,
+          zoomControl: true,
+          zoomControlOptions: {
+            position: naver.maps.Position.TOP_RIGHT
+          }
+        });
+
+        isNaverReady = true;
+        sendToFlutter({ type: 'ready', engine: 'naver', ncpActive: true });
+      } catch (err) {
+        console.error('initNaverMapInstance Error:', err);
+        initLeafletFallback();
+      }
+    }
+
+    // 공통 마커/경로 설정 함수
+    window.setRoutes = function(pri, alt, stops, aca, fit) {
+      if (isNaverReady && naverMap) {
+        renderNaverRoutes(pri, alt, stops, aca, fit);
+      } else if (leafletMap) {
+        renderLeafletRoutes(pri, alt, stops, aca, fit);
+      }
+    };
+
+    function renderLeafletRoutes(pri, alt, stops, aca, fit) {
+      var pts = [];
+      if (alternatePoly) { leafletMap.removeLayer(alternatePoly); alternatePoly = null; }
+      if (primaryPoly) { leafletMap.removeLayer(primaryPoly); primaryPoly = null; }
+
+      if (alt && alt.length > 1) {
+        var altLL = alt.map(function(p) { return [p.lat, p.lng]; });
+        alternatePoly = L.polyline(altLL, { color: '#64748B', weight: 5, opacity: 0.7, dashArray: '8 10' }).addTo(leafletMap);
+        pts = pts.concat(altLL);
+      }
+      if (pri && pri.length > 1) {
+        var priLL = pri.map(function(p) { return [p.lat, p.lng]; });
+        primaryPoly = L.polyline(priLL, { color: '#03C75A', weight: 8, opacity: 0.95 }).addTo(leafletMap);
+        pts = pts.concat(priLL);
+      }
+
+      stopMarkers.forEach(function(m) { leafletMap.removeLayer(m); });
+      stopMarkers = [];
+      (stops || []).forEach(function(s, i) {
+        var cls = 'stop-marker' + (s.test ? ' test' : '') + (s.passed ? ' passed' : '');
+        var label = (s.test ? 'T' : '') + (i + 1);
+        var icon = L.divIcon({
+          className: '',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+          html: '<div class="' + cls + '" id="stop_node_' + i + '">' + label + '</div>'
+        });
+        var marker = L.marker([s.lat, s.lng], { icon: icon }).addTo(leafletMap);
+        if (s.name) marker.bindPopup('<div class="custom-popup">' + s.name + '</div>');
+        stopMarkers.push(marker);
+        pts.push([s.lat, s.lng]);
+      });
+
+      if (aca && aca.lat && aca.lng) {
+        if (academyMarker) leafletMap.removeLayer(academyMarker);
+        var acaIcon = L.divIcon({
+          className: '',
+          iconSize: [70, 36],
+          iconAnchor: [35, 18],
+          html: '<div class="academy-marker">유치원</div>'
+        });
+        academyMarker = L.marker([aca.lat, aca.lng], { icon: acaIcon }).addTo(leafletMap);
+        pts.push([aca.lat, aca.lng]);
+      }
+
+      if (fit !== false && pts.length > 0) {
+        leafletMap.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 16 });
+      }
+    }
+
+    function renderNaverRoutes(pri, alt, stops, aca, fit) {
+      if (alternatePoly) { alternatePoly.setMap(null); alternatePoly = null; }
+      if (primaryPoly) { primaryPoly.setMap(null); primaryPoly = null; }
+
+      var bounds = new naver.maps.LatLngBounds();
+      var hasPoints = false;
+
+      if (alt && alt.length > 1) {
+        var altPath = alt.map(function(p) {
+          var ll = new naver.maps.LatLng(p.lat, p.lng);
+          bounds.extend(ll);
+          hasPoints = true;
+          return ll;
+        });
+        alternatePoly = new naver.maps.Polyline({
+          map: naverMap,
+          path: altPath,
+          strokeColor: '#64748B',
+          strokeWeight: 5,
+          strokeOpacity: 0.7,
+          strokeStyle: 'dash'
+        });
+      }
+
+      if (pri && pri.length > 1) {
+        var priPath = pri.map(function(p) {
+          var ll = new naver.maps.LatLng(p.lat, p.lng);
+          bounds.extend(ll);
+          hasPoints = true;
+          return ll;
+        });
+        primaryPoly = new naver.maps.Polyline({
+          map: naverMap,
+          path: priPath,
+          strokeColor: '#03C75A',
+          strokeWeight: 7,
+          strokeOpacity: 0.95
+        });
+      }
+
+      stopMarkers.forEach(function(m) { m.setMap(null); });
+      stopMarkers = [];
+      (stops || []).forEach(function(s, i) {
+        var cls = 'stop-marker' + (s.test ? ' test' : '') + (s.passed ? ' passed' : '');
+        var label = (s.test ? 'T' : '') + (i + 1);
+        var ll = new naver.maps.LatLng(s.lat, s.lng);
+        bounds.extend(ll);
+        hasPoints = true;
+
+        var marker = new naver.maps.Marker({
+          position: ll,
+          map: naverMap,
+          icon: {
+            content: '<div class="' + cls + '" id="stop_node_' + i + '">' + label + '</div>',
+            size: new naver.maps.Size(32, 32),
+            anchor: new naver.maps.Point(16, 16)
+          }
+        });
+        stopMarkers.push(marker);
+      });
+
+      if (aca && aca.lat && aca.lng) {
+        if (academyMarker) academyMarker.setMap(null);
+        var acaLL = new naver.maps.LatLng(aca.lat, aca.lng);
+        bounds.extend(acaLL);
+        hasPoints = true;
+
+        academyMarker = new naver.maps.Marker({
+          position: acaLL,
+          map: naverMap,
+          icon: {
+            content: '<div class="academy-marker">유치원</div>',
+            size: new naver.maps.Size(70, 36),
+            anchor: new naver.maps.Point(35, 18)
+          }
+        });
+      }
+
+      if (fit !== false && hasPoints) {
+        naverMap.fitBounds(bounds, { top: 60, right: 40, bottom: 60, left: 40 });
+      }
+    }
+
+    // 버스 / 내비게이션 위치 마커 업데이트
+    window.moveBus = function(lat, lng, follow) {
+      if (!lat || !lng) return;
+      lastBusLat = lat;
+      lastBusLng = lng;
+
+      if (isNaverReady && naverMap) {
+        var pos = new naver.maps.LatLng(lat, lng);
+        if (!busMarker) {
+          busMarker = new naver.maps.Marker({
+            position: pos,
+            map: naverMap,
+            zIndex: 100,
+            icon: {
+              content: '<div class="bus-marker-wrap"><div class="bus-pulse"></div><div class="bus-marker"><span class="bus-icon">BUS</span><span class="bus-txt">내 위치</span></div></div>',
+              size: new naver.maps.Size(48, 48),
+              anchor: new naver.maps.Point(24, 24)
+            }
+          });
+        } else {
+          busMarker.setPosition(pos);
+        }
+        if (follow) naverMap.panTo(pos);
+      } else if (leafletMap) {
+        if (!busMarker) {
+          var icon = L.divIcon({
+            className: '',
+            iconSize: [48, 48],
+            iconAnchor: [24, 24],
+            html: '<div class="bus-marker-wrap"><div class="bus-pulse"></div><div class="bus-marker"><span class="bus-icon">BUS</span><span class="bus-txt">내 위치</span></div></div>'
+          });
+          busMarker = L.marker([lat, lng], { icon: icon, zIndexOffset: 1000 }).addTo(leafletMap);
+        } else {
+          busMarker.setLatLng([lat, lng]);
+        }
+        if (follow) leafletMap.panTo([lat, lng]);
+      }
+    };
+
+    window.hideBus = function() {
+      if (busMarker) {
+        if (isNaverReady) busMarker.setMap(null);
+        else if (leafletMap) leafletMap.removeLayer(busMarker);
+        busMarker = null;
+      }
+    };
+
+    // 현재 내 위치 (GPS) 표시
+    window.setMyLocation = function(lat, lng) {
+      if (!lat || !lng) return;
+      if (isNaverReady && naverMap) {
+        var pos = new naver.maps.LatLng(lat, lng);
+        if (!meMarker) {
+          meMarker = new naver.maps.Marker({
+            position: pos,
+            map: naverMap,
+            zIndex: 90,
+            icon: {
+              content: '<div class="me-marker-wrap"><div class="me-pulse"></div><div class="me-marker"></div></div>',
+              size: new naver.maps.Size(32, 32),
+              anchor: new naver.maps.Point(16, 16)
+            }
+          });
+        } else {
+          meMarker.setPosition(pos);
+        }
+      } else if (leafletMap) {
+        if (!meMarker) {
+          var icon = L.divIcon({
+            className: '',
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            html: '<div class="me-marker-wrap"><div class="me-pulse"></div><div class="me-marker"></div></div>'
+          });
+          meMarker = L.marker([lat, lng], { icon: icon, zIndexOffset: 900 }).addTo(leafletMap);
+        } else {
+          meMarker.setLatLng([lat, lng]);
+        }
+      }
+    };
+
+    window.centerOn = function(lat, lng, zoom) {
+      if (!lat || !lng) return;
+      if (isNaverReady && naverMap) {
+        naverMap.panTo(new naver.maps.LatLng(lat, lng));
+        if (zoom) naverMap.setZoom(zoom);
+      } else if (leafletMap) {
+        leafletMap.setView([lat, lng], zoom || 16);
+      }
+    };
+
+    window.markStopPassed = function(index) {
+      var el = document.getElementById('stop_node_' + index);
+      if (el) {
+        el.classList.add('passed');
+      }
+    };
+
+    window.fitAll = function() {
+      if (isNaverReady && naverMap && primaryPoly) {
+        var bounds = new naver.maps.LatLngBounds();
+        var path = primaryPoly.getPath();
+        for (var i = 0; i < path.getLength(); i++) bounds.extend(path.getAt(i));
+        naverMap.fitBounds(bounds, { top: 60, right: 40, bottom: 60, left: 40 });
+      } else if (leafletMap && primaryPoly) {
+        leafletMap.fitBounds(primaryPoly.getBounds(), { padding: [50, 50] });
+      }
+    };
+
+    window.setClientId = function(newId) {
+      if (!newId || newId === ncpClientId) return;
+      ncpClientId = newId;
+      try { localStorage.setItem('takeme_naver_client_id', newId); } catch(e) {}
+      tryLoadNaverMap(ncpClientId, function(ok) {
+        if (ok) initNaverMapInstance();
+      });
+    };
+
+    // 메시지 수신 리스너 (Flutter Web 및 iframe)
+    window.addEventListener('message', function(ev) {
+      var d = ev.data;
+      if (typeof d === 'string') {
+        try { d = JSON.parse(d); } catch (e) {}
+      }
+      if (!d || !d.action) return;
+
+      switch (d.action) {
+        case 'setRoutes':
+          window.setRoutes(d.primary, d.alternate, d.stops, d.academy, d.fit);
+          break;
+        case 'moveBus':
+          window.moveBus(d.lat, d.lng, d.follow);
+          break;
+        case 'hideBus':
+          window.hideBus();
+          break;
+        case 'setMyLocation':
+          window.setMyLocation(d.lat, d.lng);
+          break;
+        case 'centerOn':
+          window.centerOn(d.lat, d.lng, d.zoom);
+          break;
+        case 'markStopPassed':
+          window.markStopPassed(d.index);
+          break;
+        case 'fitAll':
+          window.fitAll();
+          break;
+        case 'setClientId':
+          window.setClientId(d.clientId);
+          break;
+      }
+    });
+
+    // 시작 로직
+    if (ncpClientId) {
+      tryLoadNaverMap(ncpClientId, function(ok) {
+        if (ok) initNaverMapInstance();
+        else initLeafletFallback();
+      });
+    } else {
+      initLeafletFallback();
+    }
+  </script>
+</body>
+</html>

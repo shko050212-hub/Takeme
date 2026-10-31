@@ -25,24 +25,28 @@ async function bootstrap() {
   // 2. CORS 화이트리스트 적용
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // 모바일 앱 요청(origin이 undefined/null) 및 승인된 웹 도메인 허용
+      // 모바일 앱 요청(origin이 undefined/null), 모든 로컬 개발 주소(localhost:*, 127.0.0.1:*) 및 승인된 웹 도메인 허용
+      const isLocalhost = Boolean(
+        origin && (
+          /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+          /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)
+        )
+      );
       const allowedOrigins = [
         'https://52.63.245.203.sslip.io',
         'http://52.63.245.203.sslip.io',
         'https://52.63.245.203',
         'http://52.63.245.203',
         'http://52.63.245.203:3000',
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:3000',
       ];
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || isLocalhost || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         callback(null, false);
       }
     },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type,Accept,Authorization,x-academy-id,x-user-id',
     credentials: true,
   });
 

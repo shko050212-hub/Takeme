@@ -82,6 +82,15 @@ export class TeacherService {
   }
 
   async getMyVehicle(email: string) {
+    if (email === 'demo@takeme.com') {
+      return {
+        id: '1',
+        name: '1호차 (12가 3456)',
+        model: '1호차 (12가 3456)',
+        polygon: [],
+      };
+    }
+
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
     
@@ -119,14 +128,40 @@ export class TeacherService {
 
     const user = await this.userRepository.findOne({ where: { id: userId }, relations: { academy: true } });
     if (user?.academy) {
-      v = await this.vehicleRepository.findOne({ where: { academy: { id: user.academy.id } }, relations });
-      if (v) {
-        if (!v.driverUser && user.role === 'DRIVER') {
+      const vehicles = await this.vehicleRepository.find({ where: { academy: { id: user.academy.id } }, relations });
+      const userPhoneNorm = user.phone ? user.phone.replace(/[^0-9]/g, '') : '';
+      const userName = (user.name || '').trim();
+
+      if (user.role === 'DRIVER') {
+        const byName = vehicles.filter(veh => veh.driverName && veh.driverName.trim() === userName);
+        if (byName.length === 1) {
+          v = byName[0];
+        } else if (byName.length > 1 && userPhoneNorm) {
+          v = byName.find(veh => veh.driverPhone && veh.driverPhone.replace(/[^0-9]/g, '') === userPhoneNorm) || byName[0];
+        } else if (byName.length > 0) {
+          v = byName[0];
+        }
+        if (v && !v.driverUser) {
           v.driverUser = user;
           await this.vehicleRepository.save(v).catch(() => {});
+          return v;
         }
-        return v;
+      } else {
+        const byName = vehicles.filter(veh => veh.teacherName && veh.teacherName.trim() === userName);
+        if (byName.length === 1) {
+          v = byName[0];
+        } else if (byName.length > 1 && userPhoneNorm) {
+          v = byName.find(veh => veh.teacherPhone && veh.teacherPhone.replace(/[^0-9]/g, '') === userPhoneNorm) || byName[0];
+        } else if (byName.length > 0) {
+          v = byName[0];
+        }
+        if (v && !v.teacherUser) {
+          v.teacherUser = user;
+          await this.vehicleRepository.save(v).catch(() => {});
+          return v;
+        }
       }
+      if (v) return v;
     }
 
     const allVehicles = await this.vehicleRepository.find({ relations, take: 1 });
@@ -163,6 +198,22 @@ export class TeacherService {
   }
 
   async getRoute(email: string) {
+    if (email === 'demo@takeme.com') {
+      return {
+        vehicleId: 1,
+        academyLat: 37.5665,
+        academyLng: 126.9780,
+        stops: [
+          { id: 1, name: '1번 정류장: 회현역·남대문', latitude: 37.5610, longitude: 126.9740, point: { lat: 37.5610, lng: 126.9740 } },
+          { id: 2, name: '2번 정류장: 명동역 사거리', latitude: 37.5580, longitude: 126.9820, point: { lat: 37.5580, lng: 126.9820 } },
+          { id: 3, name: '3번 정류장: 충무로역 입구', latitude: 37.5630, longitude: 126.9890, point: { lat: 37.5630, lng: 126.9890 } },
+          { id: 4, name: '4번 정류장: 을지로입구 교차로', latitude: 37.5670, longitude: 126.9820, point: { lat: 37.5670, lng: 126.9820 } },
+        ],
+        routePoints: [],
+        academy: { name: '해맑은 유치원' },
+      };
+    }
+
     if (await this.isTodayHoliday()) {
       return { stops: [], routePoints: [], academy: null, vehicleId: null };
     }

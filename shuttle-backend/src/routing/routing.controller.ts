@@ -353,6 +353,37 @@ export class RoutingController {
     return this.routingService.getTeachers(aId, uId);
   }
 
+  @Post('teachers/pre-register')
+  async preRegisterTeachers(
+    @Body() body: { teachers: Array<{ name: string; assignedClass?: string }>; academyId?: number },
+    @Headers('x-academy-id') headerA?: string,
+    @Headers('x-user-id') headerU?: string
+  ) {
+    const { academyId: aId, userId: uId } = this.resolveAcademyContext(headerA, body.academyId ? String(body.academyId) : undefined, headerU);
+    return this.routingService.preRegisterTeachers(body.teachers, aId, uId);
+  }
+
+  @Post('teacher/:id/approve')
+  async approveTeacher(
+    @Param('id') teacherId: string,
+    @Body('academyId') academyId?: number,
+    @Headers('x-academy-id') headerA?: string,
+    @Headers('x-user-id') headerU?: string
+  ) {
+    const { academyId: aId, userId: uId } = this.resolveAcademyContext(headerA, academyId ? String(academyId) : undefined, headerU);
+    return this.routingService.approveTeacher(Number(teacherId), aId, uId);
+  }
+
+  @Post('academy/update-from-excel')
+  async updateAcademyFromExcel(
+    @Body() body: { name?: string; academyId?: number },
+    @Headers('x-academy-id') headerA?: string,
+    @Headers('x-user-id') headerU?: string
+  ) {
+    const { academyId: aId, userId: uId } = this.resolveAcademyContext(headerA, body.academyId ? String(body.academyId) : undefined, headerU);
+    return this.routingService.updateAcademyFromExcel(body, aId, uId);
+  }
+
   @Post('teacher/assign-class')
   async assignTeacherClass(@Body() body: { teacherId: number; assignedClass: string }) {
     return this.routingService.assignTeacherClass(Number(body.teacherId), body.assignedClass);

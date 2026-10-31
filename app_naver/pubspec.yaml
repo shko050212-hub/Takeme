@@ -1,0 +1,29 @@
+name: app_naver
+description: "TakeMe Shuttle Driver App - Naver Map Edition"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.6.0
+  socket_io_client: ^3.1.6
+  shared_preferences: ^2.5.5
+  geolocator: ^14.1.2
+  webview_flutter: ^4.14.1
+  flutter_tts: ^4.2.5
+  intl: ^0.20.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

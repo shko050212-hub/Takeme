@@ -13,6 +13,7 @@ export default function AuthViewer({
   handleApproveStaff,
   handleRevokeStaff,
   handleRevokeTeacher,
+  handleApproveTeacher,
   fetchTeachers,
   refreshAllData,
   handleGenerateAuthCode,
@@ -342,25 +343,35 @@ export default function AuthViewer({
                 const className = st.className || st.raw?.['반명'] || st.raw?.['반'] || st.raw?.['학급'];
                 const parentPhone = st.parentPhone || st.raw?.['부모연락처'] || st.raw?.['보호자연락처'] || st.raw?.['연락처'];
                 const parentName = st.parentName || st.raw?.['보호자 성함'] || st.raw?.['보호자성함'] || st.raw?.['학부모성함'];
+                const stInfo = getStudentDisambiguation(st, students);
 
                 return (
                   <div 
                     key={st.id} 
-                    className="p-5 bg-white rounded-2xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between gap-4"
+                    className={`p-5 rounded-2xl border shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between gap-4 ${
+                      stInfo.isDuplicate ? 'bg-yellow-50/80 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border-slate-200'
+                    }`}
                   >
                     <div>
                       {/* Card Header: Name, Class, Status Badge */}
                       <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-black text-sm flex items-center justify-center shrink-0">
+                          <div className={`w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center shrink-0 ${
+                            stInfo.isDuplicate ? 'bg-yellow-200 text-yellow-900 border border-yellow-400' : 'bg-blue-100 text-blue-700'
+                          }`}>
                             {st.name?.[0] || '원'}
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-base font-bold text-slate-900 truncate">{st.name}</span>
+                              <DisambiguatedNameTag info={stInfo} defaultColor="text-base font-bold text-slate-900 truncate" />
                               {className && (
                                 <span className="text-[11px] bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full border border-blue-200 font-bold whitespace-nowrap">
                                   {className}
+                                </span>
+                              )}
+                              {stInfo.isDuplicate && (
+                                <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1.5 py-0.5 rounded font-black whitespace-nowrap">
+                                  동명이인
                                 </span>
                               )}
                             </div>
@@ -525,147 +536,177 @@ export default function AuthViewer({
                       {/* Driver & Teacher Cards inside */}
                       <div className="mt-4 space-y-3">
                         {/* 1. Driver Card */}
-                        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 font-black text-xs flex items-center justify-center shrink-0">
-                              기사
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-800 text-sm whitespace-nowrap">
-                                  {bus.driverName || '기사 미지정'}
+                        {(() => {
+                          const driverInfo = getDriverDisambiguation(bus, buses);
+                          const isDup = driverInfo.isDuplicate;
+                          return (
+                            <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
+                              isDup ? 'bg-yellow-50/90 border-yellow-400 ring-1 ring-yellow-300' : 'bg-slate-50 border-slate-200/80'
+                            }`}>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${
+                                  isDup ? 'bg-yellow-200 text-yellow-900 border border-yellow-400' : 'bg-emerald-100 text-emerald-700'
+                                }`}>
+                                  기사
                                 </span>
-                                {bus.driverApprovalStatus === 'APPROVED' ? (
-                                  <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap">
-                                    승인완료
-                                  </span>
-                                ) : bus.driverApprovalStatus === 'PENDING' ? (
-                                  <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full font-bold border border-orange-200 animate-pulse whitespace-nowrap">
-                                    승인대기
-                                  </span>
-                                ) : (
-                                  <span className="text-[11px] bg-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-                                    미가입
-                                  </span>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-800 text-sm whitespace-nowrap">
+                                      <DisambiguatedNameTag info={driverInfo} defaultColor="text-slate-800" />
+                                    </span>
+                                    {isDup && (
+                                      <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 rounded font-black whitespace-nowrap">
+                                        동명이인
+                                      </span>
+                                    )}
+                                    {bus.driverApprovalStatus === 'APPROVED' ? (
+                                      <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap">
+                                        승인완료
+                                      </span>
+                                    ) : bus.driverApprovalStatus === 'PENDING' ? (
+                                      <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full font-bold border border-orange-200 animate-pulse whitespace-nowrap">
+                                        승인대기
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] bg-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                        미가입
+                                      </span>
+                                    )}
+                                  </div>
+                                  {bus.driverPhone && (
+                                    <div className="text-xs text-slate-400 mt-0.5">{bus.driverPhone}</div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                {bus.isDriverLocked && handleUnlockUser && (
+                                  <button
+                                    onClick={() => handleUnlockUser(bus.driverUserId)}
+                                    className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-xs"
+                                  >
+                                    잠금 해제
+                                  </button>
+                                )}
+                                {bus.driverApprovalStatus === 'PENDING' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleApproveStaff(bus.id, 'DRIVER')}
+                                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition"
+                                    >
+                                      승인
+                                    </button>
+                                    <button
+                                      onClick={() => handleRevokeStaff(bus.id, 'DRIVER', true)}
+                                      className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
+                                    >
+                                      거절
+                                    </button>
+                                  </>
+                                )}
+                                {bus.driverApprovalStatus === 'APPROVED' && (
+                                  <button
+                                    onClick={() => handleRevokeStaff(bus.id, 'DRIVER', false)}
+                                    className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-lg transition"
+                                  >
+                                    연동 해제
+                                  </button>
                                 )}
                               </div>
-                              {bus.driverPhone && (
-                                <div className="text-xs text-slate-400 mt-0.5">{bus.driverPhone}</div>
-                              )}
                             </div>
-                          </div>
-
-                          <div className="shrink-0 flex items-center gap-1.5">
-                            {bus.isDriverLocked && handleUnlockUser && (
-                              <button
-                                onClick={() => handleUnlockUser(bus.driverUserId)}
-                                className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-xs"
-                              >
-                                잠금 해제
-                              </button>
-                            )}
-                            {bus.driverApprovalStatus === 'PENDING' && (
-                              <>
-                                <button
-                                  onClick={() => handleApproveStaff(bus.id, 'DRIVER')}
-                                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition"
-                                >
-                                  승인
-                                </button>
-                                <button
-                                  onClick={() => handleRevokeStaff(bus.id, 'DRIVER', true)}
-                                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
-                                >
-                                  거절
-                                </button>
-                              </>
-                            )}
-                            {bus.driverApprovalStatus === 'APPROVED' && (
-                              <button
-                                onClick={() => handleRevokeStaff(bus.id, 'DRIVER', false)}
-                                className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-lg transition"
-                              >
-                                연동 해제
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                          );
+                        })()}
 
                         {/* 2. Escort Teacher Card */}
-                        <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 font-black text-xs flex items-center justify-center shrink-0">
-                              동승
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-800 text-sm whitespace-nowrap">
-                                  {bus.teacherName || '지도교사 미지정'}
+                        {(() => {
+                          const teacherInfo = getShuttleTeacherDisambiguation(bus, buses);
+                          const isDup = teacherInfo.isDuplicate;
+                          return (
+                            <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
+                              isDup ? 'bg-yellow-50/90 border-yellow-400 ring-1 ring-yellow-300' : 'bg-slate-50 border-slate-200/80'
+                            }`}>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${
+                                  isDup ? 'bg-yellow-200 text-yellow-900 border border-yellow-400' : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  동승
                                 </span>
-                                {bus.teacherApprovalStatus === 'APPROVED' ? (
-                                  <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap">
-                                    승인완료
-                                  </span>
-                                ) : bus.teacherApprovalStatus === 'PENDING' ? (
-                                  <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full font-bold border border-orange-200 animate-pulse whitespace-nowrap">
-                                    승인대기
-                                  </span>
-                                ) : (
-                                  <span className="text-[11px] bg-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-                                    미가입
-                                  </span>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-800 text-sm whitespace-nowrap">
+                                      <DisambiguatedNameTag info={teacherInfo} defaultColor="text-slate-800" />
+                                    </span>
+                                    {isDup && (
+                                      <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 rounded font-black whitespace-nowrap">
+                                        동명이인
+                                      </span>
+                                    )}
+                                    {bus.teacherApprovalStatus === 'APPROVED' ? (
+                                      <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap">
+                                        승인완료
+                                      </span>
+                                    ) : bus.teacherApprovalStatus === 'PENDING' ? (
+                                      <span className="text-[11px] bg-orange-100 text-orange-700 px-2.5 py-0.5 rounded-full font-bold border border-orange-200 animate-pulse whitespace-nowrap">
+                                        승인대기
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] bg-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                        미가입
+                                      </span>
+                                    )}
+                                  </div>
+                                  {bus.teacherPhone && (
+                                    <div className="text-xs text-slate-400 mt-0.5">{bus.teacherPhone}</div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1.5">
+                                {bus.isTeacherLocked && handleUnlockUser && (
+                                  <button
+                                    onClick={() => handleUnlockUser(bus.teacherUserId)}
+                                    className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-xs"
+                                  >
+                                    잠금 해제
+                                  </button>
+                                )}
+                                {bus.teacherApprovalStatus === 'PENDING' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleApproveStaff(bus.id, 'TEACHER')}
+                                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition"
+                                    >
+                                      승인
+                                    </button>
+                                    <button
+                                      onClick={() => handleRevokeStaff(bus.id, 'TEACHER', true)}
+                                      className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
+                                    >
+                                      거절
+                                    </button>
+                                  </>
+                                )}
+                                {bus.teacherApprovalStatus === 'APPROVED' && (
+                                  <button
+                                    onClick={() => handleRevokeStaff(bus.id, 'TEACHER', false)}
+                                    className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-lg transition"
+                                  >
+                                    연동 해제
+                                  </button>
                                 )}
                               </div>
-                              {bus.teacherPhone && (
-                                <div className="text-xs text-slate-400 mt-0.5">{bus.teacherPhone}</div>
-                              )}
                             </div>
-                          </div>
-
-                          <div className="shrink-0 flex items-center gap-1.5">
-                            {bus.isTeacherLocked && handleUnlockUser && (
-                              <button
-                                onClick={() => handleUnlockUser(bus.teacherUserId)}
-                                className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-xs"
-                              >
-                                잠금 해제
-                              </button>
-                            )}
-                            {bus.teacherApprovalStatus === 'PENDING' && (
-                              <>
-                                <button
-                                  onClick={() => handleApproveStaff(bus.id, 'TEACHER')}
-                                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition"
-                                >
-                                  승인
-                                </button>
-                                <button
-                                  onClick={() => handleRevokeStaff(bus.id, 'TEACHER', true)}
-                                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition"
-                                >
-                                  거절
-                                </button>
-                              </>
-                            )}
-                            {bus.teacherApprovalStatus === 'APPROVED' && (
-                              <button
-                                onClick={() => handleRevokeStaff(bus.id, 'TEACHER', false)}
-                                className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-lg transition"
-                              >
-                                연동 해제
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 bg-slate-50/50 p-2.5 rounded-xl border border-dashed border-slate-200">
-                      기사님/교사가 앱에서 회원가입 시 '운전기사' 또는 '차량 지도교사'를 선택하고 해당 차량을 지정하면 승인 대기 목록에 표시됩니다.
-                    </div>
+                          );
+                        })()}
                   </div>
-                );
-              })}
+                </div>
+
+                <div className="text-[11px] text-slate-400 bg-slate-50/50 p-2.5 rounded-xl border border-dashed border-slate-200">
+                  기사님/교사가 앱에서 회원가입 시 '운전기사' 또는 '차량 지도교사'를 선택하고 해당 차량을 지정하면 승인 대기 목록에 표시됩니다.
+                </div>
+              </div>
+            );
+          })}
             </div>
 
             {filteredBuses.length === 0 && (
@@ -700,23 +741,48 @@ export default function AuthViewer({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {filteredTeachers.map(teacher => {
                 const currentClass = teacher.assignedClass;
+                const teacherInfo = getTeacherDisambiguation(teacher, teachers);
+                const isDup = teacherInfo.isDuplicate;
 
                 return (
-                  <div key={teacher.id} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between gap-4">
+                  <div key={teacher.id} className={`p-5 rounded-2xl border shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between gap-4 ${
+                    isDup ? 'bg-yellow-50/80 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border-slate-200'
+                  }`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-base shrink-0 shadow-xs">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base shrink-0 shadow-xs ${
+                          isDup ? 'bg-yellow-200 text-yellow-900 border border-yellow-400' : 'bg-indigo-100 text-indigo-700'
+                        }`}>
                           {teacher.name?.[0] || '교'}
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-900 text-base whitespace-nowrap">{teacher.name} 선생님</span>
-                            <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap">
-                              가입 승인됨
+                            <span className="font-bold text-slate-900 text-base whitespace-nowrap">
+                              <DisambiguatedNameTag info={teacherInfo} defaultColor="text-slate-900" /> 선생님
                             </span>
+                            {isDup && (
+                              <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1.5 py-0.5 rounded font-black whitespace-nowrap">
+                                동명이인
+                              </span>
+                            )}
+                            {(!teacher.approvalStatus || teacher.approvalStatus === 'APPROVED') && (
+                              <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-bold border border-green-200 whitespace-nowrap">
+                                가입 승인됨
+                              </span>
+                            )}
+                            {teacher.approvalStatus === 'PENDING' && (
+                              <span className="text-[11px] bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200 whitespace-nowrap">
+                                승인 대기
+                              </span>
+                            )}
+                            {teacher.approvalStatus === 'UNREGISTERED' && (
+                              <span className="text-[11px] bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-bold border border-slate-200 whitespace-nowrap">
+                                가입 대기 (엑셀 등록)
+                              </span>
+                            )}
                           </div>
-                          <div className="text-xs text-slate-500 mt-1 truncate" title={teacher.email}>
-                            <span>{teacher.email}</span>
+                          <div className="text-xs text-slate-500 mt-1 truncate" title={teacher.email || '교사 미가입'}>
+                            <span>{teacher.email || '교사 회원가입 대기 (성함·반 사전 등록됨)'}</span>
                             {teacher.phone && <span className="text-slate-400"> • {teacher.phone}</span>}
                           </div>
                         </div>
@@ -742,8 +808,18 @@ export default function AuthViewer({
                       </div>
 
                       <div className="flex items-center gap-1.5">
+                        {teacher.approvalStatus === 'PENDING' && handleApproveTeacher && (
+                          <button
+                            type="button"
+                            onClick={() => handleApproveTeacher(teacher.id)}
+                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition shadow-xs"
+                          >
+                            가입 승인
+                          </button>
+                        )}
                         {teacher.isLocked && handleUnlockUser && (
                           <button
+                            type="button"
                             onClick={() => handleUnlockUser(teacher.id)}
                             className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition shadow-xs"
                           >
@@ -751,6 +827,7 @@ export default function AuthViewer({
                           </button>
                         )}
                         <button
+                          type="button"
                           onClick={() => handleRevokeTeacher(teacher.id)}
                           className="px-3.5 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-xl transition shadow-xs"
                         >

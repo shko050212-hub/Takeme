@@ -22,6 +22,12 @@ import * as ExcelJS from 'exceljs';
 
 @Injectable()
 export class RoutingService {
+  private routeUpdateNotifier: ((academyId?: number) => void) | null = null;
+
+  public registerRouteUpdateNotifier(fn: (academyId?: number) => void) {
+    this.routeUpdateNotifier = fn;
+  }
+
   constructor(
     @InjectRepository(Vehicle)
     private vehicleRepository: Repository<Vehicle>,
@@ -88,40 +94,91 @@ export class RoutingService {
     const apiKey = this.configService.get<string>('KAKAO_REST_API_KEY');
     if (!apiKey) throw new BadRequestException('Kakao API Key is missing.');
 
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get('https://dapi.kakao.com/v2/local/search/address.json', {
-          params: { query: address },
-          headers: { Authorization: `KakaoAK ${apiKey}` }
-        })
-      );
-      
-      let documents = response.data?.documents;
-      
-      // Fallback to keyword search if address search fails (e.g., for POIs like "사동슈퍼 앞")
-      if (!documents || documents.length === 0) {
-        console.log('Geocoding address failed, trying keyword fallback for:', address);
-        const keywordResponse = await firstValueFrom(
-          this.httpService.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
-            params: { query: address.replace(/앞|뒤|옆|근처|건너편/g, '').trim() },
+    const cleanCandidates: string[] = [];
+    const raw = String(address).trim();
+    cleanCandidates.push(raw);
+
+    // 1. Remove detailed apartment unit numbers (e.g., "101동 202호", "102동", "304호", "101-202")
+    const withoutUnit = raw
+      .replace(/\s*\b\d+동\s*\d+호\b/g, '')
+      .replace(/\s*\b\d+동\b/g, '')
+      .replace(/\s*\b\d+호\b/g, '')
+      .replace(/\s*\b\d+-\d+\b/g, '')
+      .trim();
+    if (withoutUnit && withoutUnit !== raw) cleanCandidates.push(withoutUnit);
+
+    // 2. Remove parentheses and bracketed contents (e.g. "(마곡동, 마곡엠밸리)")
+    const withoutParens = raw.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+    if (withoutParens && !cleanCandidates.includes(withoutParens)) cleanCandidates.push(withoutParens);
+
+    // 3. Remove detailed apartment unit from withoutParens
+    const cleanBase = withoutParens
+      .replace(/\s*\b\d+동\s*\d+호\b/g, '')
+      .replace(/\s*\b\d+동\b/g, '')
+      .replace(/\s*\b\d+호\b/g, '')
+      .replace(/\s*\b\d+-\d+\b/g, '')
+      .trim();
+    if (cleanBase && !cleanCandidates.includes(cleanBase)) cleanCandidates.push(cleanBase);
+
+    // 4. Try road address pattern (시/도 + 시/군/구 + 도로명 + 번호)
+    const roadMatch = cleanBase.match(/([가-힣]+(?:시|도)?\s+[가-힣]+(?:구|군|시)\s+[가-힣0-9]+(?:로|길)\s+\d+(?:-\d+)?)/);
+    if (roadMatch && !cleanCandidates.includes(roadMatch[1])) cleanCandidates.push(roadMatch[1]);
+
+    // 5. Try apartment or building name inside parentheses
+    const parenMatch = raw.match(/\(([^)]+)\)/);
+    if (parenMatch) {
+      const insideClean = parenMatch[1]
+        .replace(/\s*\b\d+동\s*\d+호\b/g, '')
+        .replace(/\s*\b\d+동\b/g, '')
+        .replace(/\s*\b\d+호\b/g, '')
+        .replace(/\s*\b\d+-\d+\b/g, '')
+        .trim();
+      if (insideClean && !cleanCandidates.includes(insideClean)) {
+        cleanCandidates.push(insideClean);
+      }
+    }
+
+    for (const query of cleanCandidates) {
+      if (!query) continue;
+      try {
+        const response = await firstValueFrom(
+          this.httpService.get('https://dapi.kakao.com/v2/local/search/address.json', {
+            params: { query },
             headers: { Authorization: `KakaoAK ${apiKey}` }
           })
         );
-        documents = keywordResponse.data?.documents;
-      }
+        const docs = response.data?.documents;
+        if (docs && docs.length > 0) {
+          const x = parseFloat(docs[0].x);
+          const y = parseFloat(docs[0].y);
+          if (!isNaN(x) && !isNaN(y)) {
+            return { lat: y, lng: x };
+          }
+        }
+      } catch (e) {}
 
-      if (documents && documents.length > 0) {
-        const x = parseFloat(documents[0].x);
-        const y = parseFloat(documents[0].y);
-        console.log(`Success geocoding ${address}: lat=${y}, lng=${x}`);
-        return { lat: y, lng: x }; // Kakao returns x as longitude, y as latitude
-      }
-      console.log(`Failed to geocode completely: ${address}`);
-      return null;
-    } catch (e) {
-      console.error('Geocoding error for address:', address, e.message);
-      return null;
+      // Fallback to keyword search
+      try {
+        const kw = query.replace(/앞|뒤|옆|근처|건너편|인근/g, '').trim();
+        const kwResponse = await firstValueFrom(
+          this.httpService.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
+            params: { query: kw },
+            headers: { Authorization: `KakaoAK ${apiKey}` }
+          })
+        );
+        const kwDocs = kwResponse.data?.documents;
+        if (kwDocs && kwDocs.length > 0) {
+          const x = parseFloat(kwDocs[0].x);
+          const y = parseFloat(kwDocs[0].y);
+          if (!isNaN(x) && !isNaN(y)) {
+            return { lat: y, lng: x };
+          }
+        }
+      } catch (e) {}
     }
+
+    console.log(`Failed to geocode completely: ${address}`);
+    return null;
   }
 
   private colorPalette = [
@@ -232,8 +289,31 @@ export class RoutingService {
       vehiclePointsMap[v.busNumber] = savedVehicles[savedVehicles.length - 1];
     }
 
-    // 3. Geocode Addresses and Associate with Vehicles (with caching & deduplication)
+    // 3. Geocode Addresses and Associate with Vehicles (with caching & parallel batch pre-fetch)
     const geocodeCache = new Map<string, { lat: number, lng: number } | null>();
+
+    const uniqueLocations = new Set<string>();
+    for (const row of parsedData) {
+      const inLocation = row['등원지'] || row['탑승지'] || row['승차지'] || row['승차지(주소)'] || row['주소'] || row['도로명주소'];
+      const outLocation = row['하원지'] || row['하차지'] || row['하차지(주소)'] || row['주소'] || row['도로명주소'];
+      if (inLocation && inLocation.toString().trim()) uniqueLocations.add(inLocation.toString().trim());
+      if (outLocation && outLocation.toString().trim()) uniqueLocations.add(outLocation.toString().trim());
+    }
+
+    const locArray = Array.from(uniqueLocations);
+    const BATCH_SIZE = 15;
+    for (let i = 0; i < locArray.length; i += BATCH_SIZE) {
+      const batch = locArray.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (addr) => {
+        try {
+          const res = await this.geocodeAddress(addr);
+          geocodeCache.set(addr, res);
+        } catch (e) {
+          geocodeCache.set(addr, null);
+        }
+      }));
+    }
+
     const geocodeWithCache = async (addr: string) => {
       const cleanAddr = addr.trim();
       if (!cleanAddr) return null;
@@ -255,6 +335,8 @@ export class RoutingService {
       return null;
     };
 
+    const allGeocodedPoints: [number, number][] = [];
+
     for (const row of parsedData) {
       const inBusRaw = row['등원차량'] || row['차량'] || row['호차'] || row['등원_차량'];
       const inBusName = inBusRaw ? inBusRaw.toString().trim() : null;
@@ -265,30 +347,101 @@ export class RoutingService {
       const outLocation = row['하원지'] || row['하차지'] || row['하차지(주소)'] || row['주소'] || row['도로명주소'];
 
       const inTarget = inBusName ? findTargetVehicle(inBusName) : null;
-      if (inTarget && inLocation) {
+      if (inLocation) {
         const coords = await geocodeWithCache(inLocation.toString());
         if (coords) {
-          const exists = inTarget.points.some((p: any) => p[0] === coords.lat && p[1] === coords.lng);
-          if (!exists) inTarget.points.push([coords.lat, coords.lng]);
+          allGeocodedPoints.push([coords.lat, coords.lng]);
+          if (inTarget) {
+            const exists = inTarget.points.some((p: any) => p[0] === coords.lat && p[1] === coords.lng);
+            if (!exists) inTarget.points.push([coords.lat, coords.lng]);
+          }
         }
       }
 
       const outTarget = outBusName ? findTargetVehicle(outBusName) : null;
-      if (outTarget && outLocation) {
+      if (outLocation && outLocation !== inLocation) {
         const coords = await geocodeWithCache(outLocation.toString());
         if (coords) {
-          const exists = outTarget.points.some((p: any) => p[0] === coords.lat && p[1] === coords.lng);
-          if (!exists) outTarget.points.push([coords.lat, coords.lng]);
+          allGeocodedPoints.push([coords.lat, coords.lng]);
+          if (outTarget) {
+            const exists = outTarget.points.some((p: any) => p[0] === coords.lat && p[1] === coords.lng);
+            if (!exists) outTarget.points.push([coords.lat, coords.lng]);
+          }
         }
       }
     }
 
-    // 4. Update DB with polygon points
-    for (const v of savedVehicles) {
+    // Academy center coordinates (or average of points)
+    let centerLat = parseFloat(academy.latitude);
+    let centerLng = parseFloat(academy.longitude);
+    if ((isNaN(centerLat) || isNaN(centerLng)) && allGeocodedPoints.length > 0) {
+      centerLat = allGeocodedPoints.reduce((sum, p) => sum + p[0], 0) / allGeocodedPoints.length;
+      centerLng = allGeocodedPoints.reduce((sum, p) => sum + p[1], 0) / allGeocodedPoints.length;
+    }
+    if (isNaN(centerLat) || isNaN(centerLng)) {
+      centerLat = 37.5665;
+      centerLng = 126.9780;
+    }
+
+    const nVehicles = savedVehicles.length;
+
+    // Check if points were explicitly assigned via vehicle columns
+    const totalPointsAssigned = savedVehicles.reduce((sum, v) => sum + v.points.length, 0);
+
+    // If no vehicle columns were present in Excel, partition allGeocodedPoints among the vehicles
+    if (totalPointsAssigned === 0 && allGeocodedPoints.length > 0 && nVehicles > 0) {
+      // Calculate angle from center for each unique point
+      const pointMap = new Map<string, [number, number]>();
+      for (const pt of allGeocodedPoints) {
+        pointMap.set(`${pt[0].toFixed(5)},${pt[1].toFixed(5)}`, pt);
+      }
+      const uniquePoints = Array.from(pointMap.values()).map(pt => {
+        const dLat = pt[0] - centerLat;
+        const dLng = pt[1] - centerLng;
+        const angle = (Math.atan2(dLat, dLng) * 180 / Math.PI + 360) % 360;
+        return { pt, angle };
+      });
+
+      uniquePoints.sort((a, b) => a.angle - b.angle);
+
+      for (let i = 0; i < nVehicles; i++) {
+        const start = Math.floor((i * uniquePoints.length) / nVehicles);
+        const end = Math.floor(((i + 1) * uniquePoints.length) / nVehicles);
+        const slice = uniquePoints.slice(start, end);
+        for (const item of slice) {
+          savedVehicles[i].points.push(item.pt);
+        }
+      }
+    }
+
+    // 4. Ensure each vehicle has a solid, closed convex polygon zone
+    for (let i = 0; i < nVehicles; i++) {
+      const v = savedVehicles[i];
+      const ptsToHull: [number, number][] = [...v.points];
+
+      // Add center point to anchor the zone
+      ptsToHull.push([centerLat, centerLng]);
+
+      // If points are fewer than 3 or need clear sector boundaries, add directional sector arc
+      const startDeg = (i * 360) / nVehicles;
+      const endDeg = ((i + 1) * 360) / nVehicles;
+      const R_LAT = 0.025;
+      const R_LNG = 0.030;
+      for (let s = 0; s <= 4; s++) {
+        const deg = startDeg + ((endDeg - startDeg) * s) / 4;
+        const rad = (deg * Math.PI) / 180;
+        ptsToHull.push([centerLat + R_LAT * Math.sin(rad), centerLng + R_LNG * Math.cos(rad)]);
+      }
+
+      const hull = this.computeConvexHull(ptsToHull);
+      v.points = hull && hull.length >= 3 ? hull : ptsToHull;
+      v.polygon = v.points;
+
+      // Update DB with polygon points
       const vehicleToUpdate = await this.vehicleRepository.findOne({ where: { id: v.id } });
       if (vehicleToUpdate) {
         vehicleToUpdate.colorHex = v.color;
-        vehicleToUpdate.polygonCoordinates = v.points;
+        vehicleToUpdate.polygonCoordinates = JSON.stringify(v.points);
         await this.vehicleRepository.save(vehicleToUpdate);
       }
     }
@@ -356,6 +509,8 @@ export class RoutingService {
         color: st.assignedVehicle ? (st.assignedVehicle.colorHex || '#64748b') : '#64748b',
         allergies: st.allergies || parsedRaw['알레르기'] || parsedRaw['알러지'] || '',
         raw: parsedRaw,
+        parentPhone: st.parentUser?.phone || parsedRaw['부모연락처'] || parsedRaw['연락처'] || parsedRaw['보호자연락처'] || parsedRaw['보호자 연락처'] || parsedRaw['전화번호'] || parsedRaw['학부모전화번호'] || '',
+        parentName: st.parentUser?.name || parsedRaw['보호자 성함'] || parsedRaw['학부모 성함'] || parsedRaw['학부모명'] || '',
         schedules: st.schedules,
         isRegistered: !!st.studentUser || !!st.parentUser,
         studentUserId: st.studentUser?.id || null,
@@ -701,18 +856,15 @@ export class RoutingService {
 
     const newStudents = students.map(st => {
       const vehicle = st.assignedBusId ? vehicleMap.get(st.assignedBusId) : null;
-      let adminDisplayName = st.name;
-      
-      if (multipleNames.has(st.name)) {
-        if (!currentNameIndex[st.name]) currentNameIndex[st.name] = 0;
-        const index = currentNameIndex[st.name];
-        currentNameIndex[st.name]++;
-        adminDisplayName = `${st.name} ${String.fromCharCode(65 + index)}`; // A, B, C...
-      }
-
       let rawObj = st.raw;
       if (typeof rawObj === 'string') {
         try { rawObj = JSON.parse(rawObj); } catch(e) { rawObj = {}; }
+      }
+
+      let adminDisplayName = st.name;
+      const pPhone = (rawObj && (rawObj['부모연락처'] || rawObj['보호자연락처'] || rawObj['보호자 연락처'] || rawObj['연락처'] || rawObj['전화번호'])) || (st as any).parentPhone || '';
+      if (multipleNames.has(st.name)) {
+        adminDisplayName = pPhone ? `${st.name}(${String(pPhone).trim()})` : st.name;
       }
       if (rawObj && typeof rawObj === 'object') {
         const kName = rawObj['유치원명'] || rawObj['소속원명'] || rawObj['학교명'] || academy.name || '';
@@ -947,13 +1099,23 @@ export class RoutingService {
       '비고': studentData.note || ''
     };
 
-    // Duplicate name disambiguation (e.g. 홍길동 A, 홍길동 B)
+    // Duplicate name disambiguation (동명이인: 김민수(부모님 전화번호))
     const existingSameName = await this.studentRepository.find({
       where: { name: studentData.name, academy: { id: academy.id } }
     });
     let adminDisplayName = studentData.name;
+    const currentPhone = studentData.parentPhone || studentData.phone || raw['부모연락처'] || raw['보호자연락처'] || '';
     if (existingSameName.length > 0) {
-      adminDisplayName = `${studentData.name} ${String.fromCharCode(65 + existingSameName.length)}`;
+      adminDisplayName = currentPhone ? `${studentData.name}(${String(currentPhone).trim()})` : studentData.name;
+      for (const exist of existingSameName) {
+        if (!exist.adminDisplayName || !exist.adminDisplayName.includes('(')) {
+          const existPhone = (exist as any).parentPhone || (exist.raw && (exist.raw['부모연락처'] || exist.raw['보호자연락처'] || exist.raw['연락처'] || exist.raw['전화번호']));
+          if (existPhone) {
+            exist.adminDisplayName = `${exist.name}(${String(existPhone).trim()})`;
+            await this.studentRepository.save(exist).catch(() => {});
+          }
+        }
+      }
     }
 
     if (studentData.allergies) {
@@ -1389,7 +1551,9 @@ export class RoutingService {
       .addOrderBy('comment.createdAt', 'ASC');
 
     if (academy) {
-      qb.where('(post.academyId = :academyId OR post.academyId IS NULL)', { academyId: academy.id });
+      qb.where('post.academyId = :academyId', { academyId: academy.id });
+    } else {
+      qb.where('1 = 0');
     }
 
     if (visibility && visibility !== 'ALL_INCL') {
@@ -1625,21 +1789,108 @@ export class RoutingService {
     if (!academy) return [];
 
     const teachers = await this.userRepository.find({
-      where: {
-        role: UserRole.TEACHER,
-        academy: { id: academy.id }
-      },
+      where: [
+        { role: UserRole.TEACHER, academy: { id: academy.id } },
+        { role: UserRole.HOMEROOM_TEACHER, academy: { id: academy.id } }
+      ],
       order: { createdAt: 'DESC' }
     });
 
     return teachers.map(t => ({
       id: t.id,
-      email: t.email,
-      name: t.name,
+      email: t.email && t.email.includes('@pending.takeme') ? '' : (t.email || ''),
+      name: t.name || '미등록 교사',
+      phone: t.phone || '',
       assignedClass: t.assignedClass || '',
+      approvalStatus: t.approvalStatus || 'APPROVED',
       isLocked: !!t.isLocked,
       createdAt: t.createdAt
     }));
+  }
+
+  async preRegisterTeachers(teachersList: Array<{ name: string; assignedClass?: string; phone?: string }>, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
+    if (!Array.isArray(teachersList) || teachersList.length === 0) return { count: 0, teachers: [] };
+
+    const results = [];
+    for (const item of teachersList) {
+      const name = item.name ? String(item.name).trim() : '';
+      if (!name) continue;
+      const assignedClass = item.assignedClass ? String(item.assignedClass).trim() : '';
+      const phone = item.phone ? String(item.phone).trim() : null;
+
+      // 동명이인 교사 지원: 성함 및 담당 반명(또는 전화번호)으로 개별 교사 식별
+      let teacher = await this.userRepository.findOne({
+        where: {
+          name,
+          assignedClass: assignedClass || undefined,
+          academy: { id: academy.id }
+        }
+      });
+
+      if (teacher) {
+        if (assignedClass && (!teacher.assignedClass || teacher.assignedClass === '미배정')) {
+          teacher.assignedClass = assignedClass;
+          if (phone && !teacher.phone) teacher.phone = phone;
+          await this.userRepository.save(teacher);
+        }
+      } else {
+        const tempEmail = `teacher_pending_${academy.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@pending.takeme`;
+        teacher = this.userRepository.create({
+          name,
+          email: tempEmail,
+          passwordHash: 'PRE_REGISTERED_TEMP',
+          role: UserRole.TEACHER,
+          assignedClass,
+          academy,
+          academyId: academy.id,
+          approvalStatus: 'UNREGISTERED',
+          phone: phone || null
+        });
+        await this.userRepository.save(teacher);
+      }
+      results.push({
+        id: teacher.id,
+        name: teacher.name,
+        assignedClass: teacher.assignedClass,
+        phone: teacher.phone,
+        approvalStatus: teacher.approvalStatus
+      });
+    }
+
+    return { count: results.length, teachers: results };
+  }
+
+  async approveTeacher(teacherId: number, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(academyId, userId);
+    const teacher = await this.userRepository.findOne({
+      where: { id: teacherId, academy: academy ? { id: academy.id } : undefined }
+    });
+    if (!teacher) throw new BadRequestException('해당 교사를 찾을 수 없습니다.');
+
+    teacher.approvalStatus = 'APPROVED';
+    await this.userRepository.save(teacher);
+
+    await this.logAudit({
+      action: 'TEACHER_APPROVE',
+      targetType: 'TEACHER',
+      targetId: String(teacher.id),
+      details: `교사(${teacher.name || teacher.email}) 가입 승인 완료`
+    });
+
+    return { success: true, teacherId: teacher.id, approvalStatus: 'APPROVED' };
+  }
+
+  async updateAcademyFromExcel(data: { name?: string; academyId?: number }, academyId?: number, userId?: number) {
+    const academy = await this.getAcademy(data.academyId || academyId, userId);
+    if (!academy) throw new BadRequestException('유치원 정보를 찾을 수 없습니다.');
+
+    if (data.name && String(data.name).trim()) {
+      academy.name = String(data.name).trim();
+      await this.academyRepository.save(academy);
+    }
+    return { success: true, academyName: academy.name };
   }
 
   async unlockUser(userId?: number, email?: string) {

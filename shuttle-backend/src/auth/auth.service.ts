@@ -192,9 +192,6 @@ export class AuthService {
     });
 
     const classes = Array.from(classSet);
-    if (classes.length === 0) {
-      classes.push('햇살반', '열매반', '풀잎반', '새싹반');
-    }
 
     return {
       success: true,
@@ -233,6 +230,14 @@ export class AuthService {
 
     if (!user) {
       throw new BadRequestException('이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
+
+    // 0. 가입 승인 상태 확인 (교사 계정)
+    if (user.approvalStatus === 'UNREGISTERED') {
+      throw new BadRequestException('엑셀에서 사전 등록된 교사입니다. 회원가입 화면에서 동일한 성함과 원 인증코드로 회원가입을 완료해 주세요.');
+    }
+    if ((user.role === UserRole.TEACHER || user.role === UserRole.HOMEROOM_TEACHER || user.role === UserRole.SHUTTLE_TEACHER) && user.approvalStatus === 'PENDING') {
+      throw new BadRequestException('원장님의 가입 승인 대기 중입니다. 원장님께서 승인하신 후 로그인하실 수 있습니다.');
     }
 
     // 1. 계정 잠김 확인
@@ -335,25 +340,17 @@ export class AuthService {
     } else if (user.role === UserRole.ACADEMY_ADMIN) {
       let academy = await this.academyRepository.findOne({ where: { owner: { id: user.id } } });
       if (!academy) {
-        // Find if there is an academy without owner or create a fresh one
-        const unowned = await this.academyRepository.findOne({ where: { owner: undefined } });
-        if (unowned && !unowned.owner) {
-          unowned.owner = user;
-          await this.academyRepository.save(unowned);
-          academy = unowned;
-        } else {
-          let authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-          while (await this.academyRepository.findOne({ where: { authCode } })) {
-            authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-          }
-          academy = this.academyRepository.create({
-            name: user.name ? `${user.name} 유치원` : '신규 유치원',
-            owner: user,
-            authCode,
-            vehicleCount: 0
-          });
-          await this.academyRepository.save(academy);
+        let authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        while (await this.academyRepository.findOne({ where: { authCode } })) {
+          authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         }
+        academy = this.academyRepository.create({
+          name: user.name ? `${user.name} 유치원` : '신규 유치원',
+          owner: user,
+          authCode,
+          vehicleCount: 0
+        });
+        await this.academyRepository.save(academy);
       }
       academyId = academy.id;
       academyName = academy.name;
@@ -519,10 +516,15 @@ export class AuthService {
   }
 
   async register(data: any) {
-    const { email, password, name, authCode, role, targetName, phone } = data;
+    const { email, password, passwordConfirm, name, authCode, role, targetName, phone } = data;
     const searchName = targetName || name;
 
-    // 0. 비밀번호 복잡도 검증 (영문, 숫자 포함 최소 8자리 이상, 공백 제외 모든 특수문자 허용)
+    // 0. 비밀번호 일치 확인 (2번 입력 검증)
+    if (passwordConfirm !== undefined && password !== passwordConfirm) {
+      throw new BadRequestException('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+    }
+
+    // 0-1. 비밀번호 복잡도 검증 (영문, 숫자 포함 최소 8자리 이상, 공백 제외 모든 특수문자 허용)
     const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)\S{8,}$/;
     if (!password || !passwordRegex.test(password)) {
       throw new BadRequestException('비밀번호는 영문자와 숫자를 포함하여 최소 8자리 이상이어야 합니다.');
@@ -573,15 +575,52 @@ export class AuthService {
         await this.academyRepository.save(academy);
       } else if (userRole === UserRole.STUDENT || userRole === UserRole.PARENT) {
         if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
-        const student = await this.studentRepository.createQueryBuilder('student')
+        const matchingStudents = await this.studentRepository.createQueryBuilder('student')
           .leftJoinAndSelect('student.studentUser', 'studentUser')
           .leftJoinAndSelect('student.parentUser', 'parentUser')
           .where('TRIM(student.name) = :name', { name: searchName.trim() })
           .andWhere('student.academyId = :academyId', { academyId: targetAcademy.id })
-          .getOne();
+          .getMany();
           
-        if (!student) {
+        if (!matchingStudents || matchingStudents.length === 0) {
           throw new BadRequestException('해당 유치원에서 일치하는 이름의 원아 정보를 찾을 수 없습니다.');
+        }
+
+        let student = matchingStudents[0];
+        // 백엔드: 동일 이름(동명이인)일 시 부모님 전화번호 등을 일치시켜서 확인하기
+        if (matchingStudents.length > 1) {
+          const inputPhoneNorm = normalizePhone(data.phone || data.parentPhone || '');
+          if (!inputPhoneNorm) {
+            throw new BadRequestException(
+              `해당 유치원에 '${searchName}' 동명이인 원아가 ${matchingStudents.length}명 등록되어 있습니다. 정확한 본인 확인을 위해 원아 등록 시 기재된 보호자 전화번호를 입력해주세요.`
+            );
+          }
+
+          const matchedByPhone = matchingStudents.find(s => {
+            const rawPhone = (s as any).parentPhone ||
+              (s as any).phone ||
+              (s.raw && (
+                s.raw['부모연락처'] ||
+                s.raw['연락처'] ||
+                s.raw['보호자연락처'] ||
+                s.raw['보호자 연락처'] ||
+                s.raw['전화번호'] ||
+                s.raw['학부모전화번호'] ||
+                s.raw['휴대폰번호']
+              ));
+            return rawPhone && normalizePhone(String(rawPhone)) === inputPhoneNorm;
+          });
+
+          if (!matchedByPhone) {
+            throw new BadRequestException(
+              `동명이인 원아('${searchName}') 중 입력하신 보호자 전화번호(${data.phone || data.parentPhone})와 일치하는 원아 정보를 찾을 수 없습니다. 등록된 전화번호를 다시 확인해주세요.`
+            );
+          }
+
+          student = matchedByPhone;
+        } else if (matchingStudents.length === 1) {
+          // 단일 원아의 경우라도 전화번호가 기재되어 있다면 대조하여 불일치 시 주의 검증 가능 (유연 허용)
+          student = matchingStudents[0];
         }
         
         if (userRole === UserRole.STUDENT) {
@@ -608,10 +647,80 @@ export class AuthService {
         
       } else if (userRole === UserRole.HOMEROOM_TEACHER || userRole === UserRole.SHUTTLE_TEACHER || userRole === UserRole.TEACHER) {
         if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
+        const preRegisteredTeachers = await this.usersRepository.find({
+          where: {
+            name: (name || '').trim(),
+            academyId: targetAcademy.id,
+            approvalStatus: 'UNREGISTERED'
+          }
+        });
+
+        let preRegistered: User | null = null;
+        // 백엔드: 동일 이름(동명이인) 교사일 시 전화번호 및 담당 학급 일치시켜서 확인하기
+        if (preRegisteredTeachers.length > 1) {
+          const inputTeacherPhone = normalizePhone(data.phone || '');
+          const matchedByPhone = inputTeacherPhone
+            ? preRegisteredTeachers.find(t => t.phone && normalizePhone(t.phone) === inputTeacherPhone)
+            : null;
+          const matchedByClass = data.assignedClass
+            ? preRegisteredTeachers.find(t => t.assignedClass && t.assignedClass.trim() === String(data.assignedClass).trim())
+            : null;
+
+          if (!matchedByPhone && !matchedByClass) {
+            throw new BadRequestException(
+              `해당 유치원에 '${name}' 성함의 동명이인 교사가 ${preRegisteredTeachers.length}명 등록되어 있습니다. 정확한 확인을 위해 등록된 본인 전화번호 또는 담당 학급을 일치하게 입력해주세요.`
+            );
+          }
+          preRegistered = matchedByPhone || matchedByClass || null;
+        } else if (preRegisteredTeachers.length === 1) {
+          preRegistered = preRegisteredTeachers[0];
+        }
+
+        if (preRegistered) {
+          savedUser.assignedClass = preRegistered.assignedClass || data.assignedClass || '';
+          await this.usersRepository.remove(preRegistered);
+        } else {
+          savedUser.assignedClass = data.assignedClass || '';
+        }
         savedUser.academy = targetAcademy;
         savedUser.academyId = targetAcademy.id;
-        savedUser.assignedClass = data.assignedClass || '';
+        savedUser.approvalStatus = 'PENDING';
         await this.usersRepository.save(savedUser);
+
+        // 지도교사(SHUTTLE_TEACHER)이거나 담당 학급이 없는 경우 통학차량 지도교사(teacherName) 연동 확인
+        if (userRole === UserRole.SHUTTLE_TEACHER || !savedUser.assignedClass || data.assignedVehicleId) {
+          const matchingVehicles = await this.vehicleRepository.createQueryBuilder('vehicle')
+            .leftJoinAndSelect('vehicle.teacherUser', 'teacherUser')
+            .where('TRIM(vehicle.teacherName) = :name', { name: searchName.trim() })
+            .andWhere('vehicle.academyId = :academyId', { academyId: targetAcademy.id })
+            .getMany();
+
+          if (matchingVehicles.length > 0) {
+            let sVehicle = matchingVehicles[0];
+            if (matchingVehicles.length > 1) {
+              const inputPhoneNorm = normalizePhone(data.phone || '');
+              const matchedByPhone = inputPhoneNorm
+                ? matchingVehicles.find(v => v.teacherPhone && normalizePhone(v.teacherPhone) === inputPhoneNorm)
+                : null;
+              const matchedById = data.assignedVehicleId
+                ? matchingVehicles.find(v => v.id === Number(data.assignedVehicleId))
+                : null;
+
+              if (!matchedByPhone && !matchedById) {
+                throw new BadRequestException(
+                  `해당 유치원에 '${searchName}' 지도교사님의 동명이인 차량이 ${matchingVehicles.length}대 존재합니다. 정확한 연동을 위해 본인 전화번호 또는 담당 호차를 일치하게 입력해주세요.`
+                );
+              }
+              sVehicle = matchedByPhone || matchedById || matchingVehicles[0];
+            }
+
+            if (!sVehicle.teacherUser) {
+              sVehicle.teacherUser = savedUser;
+              sVehicle.teacherApprovalStatus = 'PENDING';
+              await this.vehicleRepository.save(sVehicle);
+            }
+          }
+        }
 
         const isHomeroom = userRole === UserRole.HOMEROOM_TEACHER || (userRole === UserRole.TEACHER && savedUser.assignedClass);
         return {
@@ -626,14 +735,33 @@ export class AuthService {
         };
       } else if (userRole === UserRole.DRIVER) {
         if (!targetAcademy) throw new BadRequestException('소속 유치원 정보를 찾을 수 없습니다.');
-        const vehicle = await this.vehicleRepository.createQueryBuilder('vehicle')
+        const matchingVehicles = await this.vehicleRepository.createQueryBuilder('vehicle')
           .leftJoinAndSelect('vehicle.driverUser', 'driverUser')
           .where('TRIM(vehicle.driverName) = :name', { name: searchName.trim() })
           .andWhere('vehicle.academyId = :academyId', { academyId: targetAcademy.id })
-          .getOne();
+          .getMany();
           
-        if (!vehicle) {
+        if (!matchingVehicles || matchingVehicles.length === 0) {
           throw new BadRequestException('해당 유치원에 등록된 통학차량 정보를 찾을 수 없습니다.');
+        }
+
+        let vehicle = matchingVehicles[0];
+        // 백엔드: 동명이인 기사 존재 시 전화번호 및 담당 호차를 일치시켜서 확인하기
+        if (matchingVehicles.length > 1) {
+          const inputPhoneNorm = normalizePhone(data.phone || '');
+          const matchedByPhone = inputPhoneNorm
+            ? matchingVehicles.find(v => v.driverPhone && normalizePhone(v.driverPhone) === inputPhoneNorm)
+            : null;
+          const matchedById = data.assignedVehicleId
+            ? matchingVehicles.find(v => v.id === Number(data.assignedVehicleId))
+            : null;
+
+          if (!matchedByPhone && !matchedById) {
+            throw new BadRequestException(
+              `해당 유치원에 '${searchName}' 기사님의 동명이인 차량이 ${matchingVehicles.length}대 존재합니다. 정확한 연동을 위해 등록된 기사님 전화번호 또는 담당 호차를 일치하게 입력해주세요.`
+            );
+          }
+          vehicle = matchedByPhone || matchedById || matchingVehicles[0];
         }
 
         if (vehicle.driverUser) throw new BadRequestException('해당 차량은 이미 기사님 계정과 연동되어 있습니다.');

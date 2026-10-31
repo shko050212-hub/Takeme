@@ -204,6 +204,7 @@ class ApiService {
   Future<Map<String, dynamic>> register({
     required String email,
     required String password,
+    String? passwordConfirm,
     required String name,
     required String targetName,
     required String authCode,
@@ -215,6 +216,7 @@ class ApiService {
     final body = <String, dynamic>{
       'email': email.trim(),
       'password': password,
+      'passwordConfirm': passwordConfirm ?? password,
       'name': name.trim(),
       'targetName': targetName.trim(),
       'authCode': authCode.trim(),

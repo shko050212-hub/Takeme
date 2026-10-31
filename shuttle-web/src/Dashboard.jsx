@@ -14,6 +14,7 @@ import { getOverallExpirySummary } from './documents/documentStorage';
 import BoardViewer from './board/BoardViewer';
 import BoardSidebar from './board/BoardSidebar';
 import { API_BASE_URL } from './config';
+import { getStudentDisambiguation, getTeacherDisambiguation, getDriverDisambiguation, getShuttleTeacherDisambiguation, DisambiguatedNameTag } from './utils/nameHelper';
 import TeacherDashboard from './TeacherDashboard';
 import ClassManager from './classes/ClassManager';
 import AuthViewer from './auth/AuthViewer';
@@ -140,11 +141,18 @@ export default function Dashboard() {
   const [customClasses, setCustomClasses] = useState(() => {
     try {
       const saved = localStorage.getItem(`takeme_custom_classes_${selectedAcademyId || 'default'}`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length === 3 && parsed.includes('햇살반') && parsed.includes('열매반') && parsed.includes('새싹반')) {
+          localStorage.removeItem(`takeme_custom_classes_${selectedAcademyId || 'default'}`);
+          return [];
+        }
+        return parsed;
+      }
     } catch (e) {
       console.error(e);
     }
-    return ['햇살반', '열매반', '새싹반'];
+    return [];
   });
 
   // Dynamic Kindergarten Classes Extractor
@@ -167,7 +175,6 @@ export default function Dashboard() {
         classSet.add(String(t.assignedClass).trim());
       }
     });
-    if (classSet.size === 0) return ['햇살반', '열매반', '새싹반'];
     return Array.from(classSet).sort();
   }, [students, teachers, customClasses]);
 
@@ -329,6 +336,7 @@ export default function Dashboard() {
   const [academy, setAcademy] = useState(null);
   const [showAcademyModal, setShowAcademyModal] = useState(false);
   const [setupStep, setSetupStep] = useState(1);
+  const [setupVehicleCount, setSetupVehicleCount] = useState(8);
   const [isInitializing, setIsInitializing] = useState(true);
   const [academyForm, setAcademyForm] = useState({ name: '', address: '' });
   const [isResettingZones, setIsResettingZones] = useState(false);
@@ -841,6 +849,27 @@ export default function Dashboard() {
     }
   };
 
+  const handleApproveTeacher = async (teacherId) => {
+    const targetAcademyId = selectedAcademyId || currentUser.academyId;
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing/teacher/${teacherId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ academyId: targetAcademyId })
+      });
+      if (res.ok) {
+        alert('교사 가입 승인이 완료되었습니다.');
+        fetchTeachers();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || '교사 승인 처리에 실패했습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('교사 승인 처리 중 오류가 발생했습니다.');
+    }
+  };
+
   const refreshAllData = async () => {
     try {
       if (typeof loadInitialState === 'function') await loadInitialState();
@@ -1319,25 +1348,46 @@ export default function Dashboard() {
 
   // Custom icon for Academy
   const academyIcon = L.divIcon({
-    html: '<div style="font-size: 36px; line-height: 1; text-align: center; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));">🏫</div>',
+    html: '<div style="background-color: #2563eb; color: white; padding: 4px 8px; border-radius: 8px; font-weight: bold; font-size: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;">유치원</div>',
     className: 'bg-transparent',
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -36]
+    iconSize: [60, 26],
+    iconAnchor: [30, 13],
+    popupAnchor: [0, -13]
   });
 
   const computePolygons = (busArray) => {
-    return busArray.map(bus => {
-      if (!bus.points || bus.points.length < 3) return { ...bus, polygon: [] };
+    return (busArray || []).map(bus => {
+      let rawPoints = bus.polygon || bus.points || [];
+      if (typeof rawPoints === 'string') {
+        try { rawPoints = JSON.parse(rawPoints); } catch(e) { rawPoints = []; }
+      }
+      if (!Array.isArray(rawPoints) || rawPoints.length < 3) {
+        return { ...bus, points: Array.isArray(rawPoints) ? rawPoints : [], polygon: Array.isArray(rawPoints) ? rawPoints : [], turfPolygon: null };
+      }
       
-      const turfPoints = turf.featureCollection(
-        bus.points.map(p => turf.point([p[1], p[0]]))
-      );
-      const hull = turf.convex(turfPoints);
-      if (!hull) return { ...bus, polygon: [] };
+      try {
+        const turfPoints = turf.featureCollection(
+          rawPoints.map(p => turf.point([p[1], p[0]]))
+        );
+        const hull = turf.convex(turfPoints);
+        if (hull && hull.geometry && hull.geometry.coordinates && hull.geometry.coordinates[0]) {
+          const leafletCoords = hull.geometry.coordinates[0].map(coord => [coord[1], coord[0]]);
+          return { ...bus, points: rawPoints, polygon: leafletCoords, turfPolygon: hull };
+        }
+      } catch (e) {
+        console.warn('turf.convex calculation error for bus', bus.id, e);
+      }
       
-      const leafletCoords = hull.geometry.coordinates[0].map(coord => [coord[1], coord[0]]);
-      return { ...bus, polygon: leafletCoords, turfPolygon: hull };
+      try {
+        const coords = rawPoints.map(p => [p[1], p[0]]);
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+          coords.push(coords[0]);
+        }
+        const turfPoly = turf.polygon([coords]);
+        return { ...bus, points: rawPoints, polygon: rawPoints, turfPolygon: turfPoly };
+      } catch (e) {
+        return { ...bus, points: rawPoints, polygon: rawPoints, turfPolygon: null };
+      }
     });
   };
 
@@ -1411,9 +1461,46 @@ export default function Dashboard() {
     loadInitialState();
   }, [location.state]);
 
+  const handleDirectVehicleInit = async () => {
+    setIsProcessing(true);
+    try {
+      const targetAcademyId = selectedAcademyId || currentUser.academyId;
+      const count = setupVehicleCount || 8;
+      const vehicles = Array.from({ length: count }).map((_, i) => ({
+        id: i + 1,
+        busNumber: `${i + 1}호차`,
+        plateNumber: '',
+        driverName: '미정',
+        driverPhone: '',
+        teacherName: '미정',
+        teacherPhone: '',
+        capacity: 25
+      }));
+
+      const res = await fetch(`${API_BASE_URL}/routing/init-zones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vehicles, parsedData: [], academyId: targetAcademyId })
+      });
+      if (res.ok) {
+        const geocodedBuses = await res.json();
+        const processedBuses = computePolygons(geocodedBuses);
+        setBuses(processedBuses);
+        localStorage.setItem('takeme_buses', JSON.stringify(geocodedBuses));
+      }
+      setStudents([]);
+      setSetupStep(2);
+    } catch (err) {
+      console.error(err);
+      alert('차량 초기 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleAcademySubmit = async (e) => {
     e.preventDefault();
-    if (!academyForm.name || !academyForm.address) return alert('유치원명과 주소를 입력해주세요.');
+    if (!academyForm.address) return alert('유치원 도로명 주소를 입력해주세요.');
 
     setIsProcessing(true);
     try {
@@ -1425,8 +1512,9 @@ export default function Dashboard() {
       const geocoded = await res.json();
       
       if (geocoded.length > 0 && geocoded[0].coords && !isNaN(geocoded[0].coords.lat) && !isNaN(geocoded[0].coords.lng)) {
+        const finalAcademyName = academy?.name || academyForm.name || '우리 유치원';
         const newAcademy = {
-          name: academyForm.name,
+          name: finalAcademyName,
           address: academyForm.address,
           lat: geocoded[0].coords.lat,
           lng: geocoded[0].coords.lng
@@ -1505,28 +1593,50 @@ export default function Dashboard() {
     }
   };
 
-// Kindergarten Excel 2-Row Header Parser
+// Kindergarten Excel Header Parser (Smart multi-row detection & flexible aliases)
 const parseKindergartenExcelSheet = (sheet) => {
   if (!sheet) return [];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
   if (!rows || rows.length === 0) return [];
 
-  const row0 = rows[0] || [];
-  const row1 = rows[1] || [];
+  // Anchor keywords to detect the real header row within first 6 rows
+  const anchorKeywords = ['주소', '도로명', '등원지', '탑승지', '이름', '원아', '학생', '반명', '반', '유치원', '담임'];
+  let bestHeaderRowIndex = 0;
+  let maxMatches = -1;
 
-  // Check if row 1 contains sub-headers like '정규하원', '방과후하원', '종일반하원'
-  const isTwoRowHeader = row1.some(cell => 
+  for (let r = 0; r < Math.min(rows.length, 6); r++) {
+    const row = rows[r];
+    if (!Array.isArray(row)) continue;
+    let matches = 0;
+    for (const cell of row) {
+      if (!cell) continue;
+      const str = String(cell).replace(/\s+/g, '');
+      if (anchorKeywords.some(kw => str.includes(kw))) {
+        matches++;
+      }
+    }
+    if (matches > maxMatches) {
+      maxMatches = matches;
+      bestHeaderRowIndex = r;
+    }
+  }
+
+  const row0 = rows[bestHeaderRowIndex] || [];
+  const nextRow = rows[bestHeaderRowIndex + 1] || [];
+
+  // Check if next row contains sub-headers like '정규하원', '방과후하원', '종일반하원'
+  const isTwoRowHeader = nextRow.some(cell => 
     cell && typeof cell === 'string' && (cell.includes('하원') || cell.includes('정규') || cell.includes('종일'))
   );
 
-  let headerRowIndex = 0;
+  let headerRowIndex = bestHeaderRowIndex;
   let headers = [];
 
   if (isTwoRowHeader) {
-    headerRowIndex = 2; // Data rows start at index 2
-    for (let c = 0; c < Math.max(row0.length, row1.length); c++) {
+    headerRowIndex = bestHeaderRowIndex + 2; // Data rows start after sub-header
+    for (let c = 0; c < Math.max(row0.length, nextRow.length); c++) {
       const top = row0[c] ? String(row0[c]).trim() : '';
-      const sub = row1[c] ? String(row1[c]).trim() : '';
+      const sub = nextRow[c] ? String(nextRow[c]).trim() : '';
       if (sub) {
         headers.push(sub);
       } else if (top) {
@@ -1536,7 +1646,7 @@ const parseKindergartenExcelSheet = (sheet) => {
       }
     }
   } else {
-    headerRowIndex = 1;
+    headerRowIndex = bestHeaderRowIndex + 1;
     headers = row0.map((c, idx) => c ? String(c).trim() : `COL_${idx}`);
   }
 
@@ -1551,6 +1661,29 @@ const parseKindergartenExcelSheet = (sheet) => {
       obj[h] = row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim() : '';
     });
 
+    // Flexible column resolution helper
+    const getVal = (regex) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (!v) continue;
+        const cleanK = k.replace(/\s+/g, '');
+        if (regex.test(cleanK)) return String(v).trim();
+      }
+      return '';
+    };
+
+    const className = getVal(/반명|학급|소속반|배정반|^반$/);
+    const name = getVal(/원아명|학생이름|학생명|원생명|^이름$|^성명$|원아이름/);
+    const kindergartenName = getVal(/유치원명|유치원|기관명|소속원명|학교명|^원명$/);
+    const age = getVal(/연령|나이|학년/);
+    const parentPhone = getVal(/부모연락처|보호자연락처|비상연락처|전화번호|핸드폰/);
+    const address = getVal(/^주소$|도로명주소|도로명|거주지|집주소|원아주소|탑승지|등원지|승차지|실탑승지|위치/);
+    const teacherName = getVal(/담임명|담임교사|담임선생님|^담임$|담당교사|교사명|^교사$|선생님/);
+    const allergies = getVal(/알레르기|알러지|특이사항/);
+    const inBus = getVal(/등원차량|등원_차량|등원코스|등원호차|^차량$|^호차$/);
+    const outBus = getVal(/하원차량|하원_차량|하원코스|하원호차/);
+    const inTime = getVal(/등원시간|승차시간/);
+    const outTime = getVal(/하원시간|하차시간/);
+
     // Detect departure type
     let depType = obj['하원구분'] || obj['하원정보'] || '';
     if (!depType) {
@@ -1558,26 +1691,31 @@ const parseKindergartenExcelSheet = (sheet) => {
       else if (obj['방과후하원'] && String(obj['방과후하원']).trim()) depType = '방과후하원';
       else if (obj['종일반하원'] && String(obj['종일반하원']).trim()) depType = '종일반하원';
     }
-    obj['하원구분'] = depType || '정규하원';
 
-    // Normalize field aliases
-    const name = obj['원아명'] || obj['학생이름/영문이름'] || obj['이름'] || obj['원생명'] || obj['학생명'] || obj['원생이름'] || '';
-    const kindergartenName = obj['유치원명'] || obj['소속원명'] || obj['학교명'] || '';
-    const age = obj['연령'] || obj['학년'] || '';
-    const parentPhone = obj['부모연락처'] || obj['보호자연락처'] || obj['보호자 연락처'] || '';
-    const address = obj['등원지'] || obj['탑승지'] || obj['승차지'] || obj['주소'] || obj['도로명주소'] || '';
-    const allergies = obj['알레르기'] || obj['알러지'] || obj['특이사항(알레르기)'] || '';
-    obj['알레르기'] = allergies;
-
+    obj['반명'] = className;
+    obj['반'] = className;
     obj['원아명'] = name;
     obj['이름'] = name;
+    obj['학생이름/영문이름'] = name;
     obj['유치원명'] = kindergartenName;
     obj['학교명'] = kindergartenName;
+    obj['원명'] = kindergartenName;
     obj['연령'] = age;
     obj['부모연락처'] = parentPhone;
     obj['보호자연락처'] = parentPhone;
     obj['주소'] = address;
+    obj['등원지'] = address;
+    obj['탑승지'] = address;
+    obj['담임명'] = teacherName;
+    obj['담임교사'] = teacherName;
+    obj['하원구분'] = depType || '정규하원';
+    obj['등원차량'] = inBus;
+    obj['하원차량'] = outBus;
+    obj['등원시간'] = inTime;
+    obj['하원시간'] = outTime;
+    obj['알레르기'] = allergies;
 
+    if (!name && !address && !className && !teacherName) continue;
     result.push(obj);
   }
   return result;
@@ -1599,18 +1737,9 @@ const parseKindergartenExcelSheet = (sheet) => {
           const sheet = wb.Sheets[sheetName];
           const sheetData = parseKindergartenExcelSheet(sheet);
           if (Array.isArray(sheetData) && sheetData.length > 0) {
-            const hasRelevantColumns = sheetData.some(r => 
-              r['원아명'] || r['학생이름/영문이름'] || r['이름'] || r['주소'] || r['등원지'] || r['탑승지'] || r['반명']
-            );
-            if (hasRelevantColumns) {
-              data = data.concat(sheetData);
-            }
+            data = data.concat(sheetData);
           }
         });
-
-        if (data.length === 0 && wb.SheetNames.length > 0) {
-          data = parseKindergartenExcelSheet(wb.Sheets[wb.SheetNames[0]]) || [];
-        }
 
         if (data.length === 0) {
           alert('엑셀 파일에서 유효한 원아 명단 데이터를 찾을 수 없습니다.');
@@ -1618,9 +1747,60 @@ const parseKindergartenExcelSheet = (sheet) => {
           return;
         }
 
+        const targetAcademyId = selectedAcademyId || currentUser.academyId;
+
+        // Auto-extract Recurring Kindergarten Info from current year Excel
+        // 1. Kindergarten Name
+        for (const row of data) {
+          const kName = row['유치원명'] || row['원명'] || row['기관명'] || row['학교명'];
+          if (kName && String(kName).trim()) {
+            const detected = String(kName).trim();
+            fetch(`${API_BASE_URL}/routing/academy/update-from-excel`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: detected, academyId: targetAcademyId })
+            }).catch(() => {});
+            setAcademy(prev => ({ ...prev, name: detected }));
+            break;
+          }
+        }
+
+        // 2. Class Names
+        const classSet = new Set();
+        data.forEach(row => {
+          const c = row['반명'] || row['학급'] || row['반'];
+          if (c && String(c).trim() && !['반명', '학급', '미배정'].includes(String(c).trim())) {
+            classSet.add(String(c).trim());
+          }
+        });
+        if (classSet.size > 0) {
+          const mergedClasses = Array.from(new Set([...customClasses, ...classSet]));
+          setCustomClasses(mergedClasses);
+          localStorage.setItem(`takeme_custom_classes_${targetAcademyId || 'default'}`, JSON.stringify(mergedClasses));
+        }
+
+        // 3. Teachers Pre-register
+        const teacherMap = new Map();
+        data.forEach(row => {
+          const tName = row['담임명'] || row['담임교사'] || row['담임'] || row['담당교사'] || row['교사명'] || row['교사'];
+          const cName = row['반명'] || row['학급'] || row['반'] || '';
+          if (tName && String(tName).trim() && !['담임명', '담임교사', '미정', '선생님'].includes(String(tName).trim())) {
+            teacherMap.set(String(tName).trim(), String(cName).trim());
+          }
+        });
+        if (teacherMap.size > 0) {
+          const teachersList = Array.from(teacherMap.entries()).map(([name, assignedClass]) => ({ name, assignedClass }));
+          fetch(`${API_BASE_URL}/routing/teachers/pre-register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teachers: teachersList, academyId: targetAcademyId })
+          }).then(() => fetchTeachers()).catch(() => {});
+        }
+
+        // 4. Map addresses for Geocoding
         const addressMap = data.map((row, idx) => {
-          const name = row['학생이름/영문이름'] || row['이름'] || row['원생명'] || row['학생명'] || row['원생이름'] || `원생${idx + 1}`;
-          const address = row['등원지'] || row['탑승지'] || row['승차지'] || row['승차지(주소)'] || row['주소'] || row['도로명주소'] || row['실탑승지'] || '';
+          const name = row['학생이름/영문이름'] || row['원아명'] || row['이름'] || row['원생명'] || row['학생명'] || `원생${idx + 1}`;
+          const address = row['주소'] || row['도로명주소'] || row['등원지'] || row['탑승지'] || row['승차지'] || row['거주지'] || row['집주소'] || '';
           const boardingLocation = row['등원지'] || row['탑승지'] || row['승차지'] || address;
           return {
             name: name.toString().trim(),
@@ -1628,46 +1808,65 @@ const parseKindergartenExcelSheet = (sheet) => {
             boardingLocation: boardingLocation.toString().trim(),
             raw: row
           };
-        }).filter(item => item.address);
+        }).filter(item => item.name);
 
         if (addressMap.length === 0) {
-          alert('유효한 주소(등원지, 탑승지, 주소 등)가 입력된 원아 행을 찾을 수 없습니다.');
+          alert('엑셀에 등록된 원아 데이터가 없습니다.');
           setIsProcessing(false);
           return;
         }
 
-        const res = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ addresses: addressMap.map(a => a.address) })
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || '지오코딩 처리 실패');
+        // Bulk Geocode
+        const addressesToGeocode = addressMap.map(a => a.address);
+        let geocoded = [];
+        try {
+          const res = await fetch(`${API_BASE_URL}/routing/geocode-bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ addresses: addressesToGeocode })
+          });
+          if (res.ok) {
+            geocoded = await res.json();
+          }
+        } catch(e) {
+          console.warn('Geocode bulk network error', e);
         }
-        const geocoded = await res.json();
-        
-        // Point-in-Polygon Assignment
+
+        // Academy fallback coordinates
+        const academyLat = academy?.latitude ? parseFloat(academy.latitude) : 37.5665;
+        const academyLng = academy?.longitude ? parseFloat(academy.longitude) : 126.9780;
+
+        let geocodedSuccessCount = 0;
+        let geocodedFallbackCount = 0;
+
         const newStudents = [];
-        geocoded.forEach((item, idx) => {
-          if (!item.coords) return;
-          
-          const pt = turf.point([item.coords.lng, item.coords.lat]);
+        addressMap.forEach((item, idx) => {
+          const geoItem = geocoded[idx];
+          let lat = geoItem?.coords?.lat;
+          let lng = geoItem?.coords?.lng;
+
+          if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+            geocodedSuccessCount++;
+          } else {
+            geocodedFallbackCount++;
+            const jitterLat = ((idx % 7) - 3) * 0.0015;
+            const jitterLng = (((idx * 3) % 7) - 3) * 0.0015;
+            lat = academyLat + jitterLat;
+            lng = academyLng + jitterLng;
+          }
+
+          const pt = turf.point([lng, lat]);
           let assignedBus = null;
           let minDistance = Infinity;
 
           for (const bus of buses) {
-            // 1. Check if inside polygon
             if (bus.turfPolygon && turf.booleanPointInPolygon(pt, bus.turfPolygon)) {
               assignedBus = bus;
               minDistance = 0;
               break;
             }
-            
-            // 2. Fallback: calculate distance to closest known point of this bus
             if (bus.points && bus.points.length > 0) {
               for (const bPt of bus.points) {
-                // Leaflet uses [lat, lng], Turf uses [lng, lat]
                 const busNode = turf.point([bPt[1], bPt[0]]);
                 const dist = turf.distance(pt, busNode);
                 if (dist < minDistance) {
@@ -1680,19 +1879,18 @@ const parseKindergartenExcelSheet = (sheet) => {
 
           newStudents.push({
             id: idx + 1,
-            name: addressMap[idx].name,
+            name: item.name,
             address: item.address,
-            boardingLocation: addressMap[idx].boardingLocation,
-            lat: item.coords.lat,
-            lng: item.coords.lng,
+            boardingLocation: item.boardingLocation,
+            lat,
+            lng,
             assignedBusId: assignedBus ? assignedBus.id : null,
-            color: assignedBus ? assignedBus.color : '#64748b', // Slate for unassigned
-            raw: addressMap[idx].raw
+            color: assignedBus ? assignedBus.color : '#64748b',
+            raw: item.raw
           });
         });
 
         // Save to backend
-        const targetAcademyId = selectedAcademyId || currentUser.academyId;
         const saveRes = await fetch(`${API_BASE_URL}/routing/save-students`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1703,7 +1901,7 @@ const parseKindergartenExcelSheet = (sheet) => {
           throw new Error(errData.message || '원생 데이터 저장 실패');
         }
 
-        // Refresh initial state so DB-assigned IDs and relations are fresh
+        // Refresh initial state
         const stateRes = await fetch(`${API_BASE_URL}/routing/initial-state?academyId=${targetAcademyId}`);
         if (stateRes.ok) {
           const stateData = await stateRes.json();
@@ -1718,8 +1916,8 @@ const parseKindergartenExcelSheet = (sheet) => {
         } else {
           setStudents(newStudents);
         }
-        
-        alert(`총 ${newStudents.length}명의 원생 등록 및 구역 배차가 완료되었습니다!`);
+
+        alert('업로드 완료');
       } catch (err) {
         alert(`원생 명단 처리 중 에러가 발생했습니다: ${err.message}`);
         console.error(err);
@@ -1738,94 +1936,157 @@ const parseKindergartenExcelSheet = (sheet) => {
     setIsProcessing(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      
-      // Multi-sheet support: extract data across sheets or first non-empty sheet
-      let data = [];
-      wb.SheetNames.forEach(sheetName => {
-        const sheet = wb.Sheets[sheetName];
-        const sheetData = parseKindergartenExcelSheet(sheet);
-        if (Array.isArray(sheetData) && sheetData.length > 0) {
-          const hasRelevantColumns = sheetData.some(r => 
-            r['등원차량'] || r['하원차량'] || r['차량'] || r['호차'] || r['등원지'] || r['주소'] || r['승차지'] || r['원아명'] || r['학생이름/영문이름'] || r['이름']
-          );
-          if (hasRelevantColumns) {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        
+        let data = [];
+        wb.SheetNames.forEach(sheetName => {
+          const sheet = wb.Sheets[sheetName];
+          const sheetData = parseKindergartenExcelSheet(sheet);
+          if (Array.isArray(sheetData) && sheetData.length > 0) {
             data = data.concat(sheetData);
           }
+        });
+
+        if (data.length === 0) {
+          alert('엑셀 파일에서 유효한 데이터를 찾을 수 없습니다.');
+          setIsProcessing(false);
+          return;
         }
-      });
 
-      if (data.length === 0 && wb.SheetNames.length > 0) {
-        data = parseKindergartenExcelSheet(wb.Sheets[wb.SheetNames[0]]) || [];
-      }
-
-      if (data.length === 0) {
-        alert('엑셀 파일에서 유효한 원아/배차 데이터 행을 찾을 수 없습니다. 시트에 내용이 입력되어 있는지 확인해주세요.');
-        setIsProcessing(false);
-        return;
-      }
-      
-      const busSet = new Set();
-      data.forEach(row => {
-        const b1 = row['등원차량'] || row['차량'] || row['호차'];
-        const b2 = row['하원차량'];
-        if (b1) busSet.add(b1.toString().trim());
-        if (b2) busSet.add(b2.toString().trim());
-      });
-
-      const busList = Array.from(busSet).sort((a, b) => {
-        const na = parseInt(a.replace(/[^0-9]/g, ''), 10) || 0;
-        const nb = parseInt(b.replace(/[^0-9]/g, ''), 10) || 0;
-        return na - nb;
-      });
-
-      const count = busList.length > 0 ? busList.length : 1;
-      const vehicles = Array.from({ length: count }).map((_, i) => ({
-        id: i + 1,
-        busNumber: busList[i] || `${i + 1}호차`,
-        plateNumber: '',
-        driverName: '미정',
-        driverPhone: '000-0000-0000',
-        teacherName: '미정',
-        teacherPhone: '000-0000-0000',
-        capacity: 25
-      }));
-
-      try {
         const targetAcademyId = selectedAcademyId || currentUser.academyId;
+
+        // 1. EXTRACT RECURRING KINDERGARTEN NAME (유치원명)
+        let detectedAcademyName = '';
+        for (const row of data) {
+          const kName = row['유치원명'] || row['원명'] || row['기관명'] || row['학교명'];
+          if (kName && String(kName).trim() && !detectedAcademyName) {
+            detectedAcademyName = String(kName).trim();
+            break;
+          }
+        }
+        if (detectedAcademyName) {
+          try {
+            await fetch(`${API_BASE_URL}/routing/academy/update-from-excel`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: detectedAcademyName, academyId: targetAcademyId })
+            });
+            setAcademy(prev => ({ ...prev, name: detectedAcademyName }));
+            const savedAc = JSON.parse(localStorage.getItem('takeme_academy') || '{}');
+            savedAc.name = detectedAcademyName;
+            localStorage.setItem('takeme_academy', JSON.stringify(savedAc));
+          } catch(e) {
+            console.warn('Failed to update academy name from Excel', e);
+          }
+        }
+
+        // 2. EXTRACT RECURRING CLASS NAMES (반명 목록)
+        const classSet = new Set();
+        data.forEach(row => {
+          const c = row['반명'] || row['학급'] || row['반'];
+          if (c && String(c).trim() && !['반명', '학급', '미배정'].includes(String(c).trim())) {
+            classSet.add(String(c).trim());
+          }
+        });
+        const extractedClasses = Array.from(classSet);
+        if (extractedClasses.length > 0) {
+          const mergedClasses = Array.from(new Set([...customClasses, ...extractedClasses]));
+          setCustomClasses(mergedClasses);
+          localStorage.setItem(`takeme_custom_classes_${targetAcademyId || 'default'}`, JSON.stringify(mergedClasses));
+        }
+
+        // 3. EXTRACT HOMEROOM TEACHER NAMES (담임 교사 명단)
+        const teacherMap = new Map();
+        data.forEach(row => {
+          const tName = row['담임명'] || row['담임교사'] || row['담임'] || row['담당교사'] || row['교사명'] || row['교사'];
+          const cName = row['반명'] || row['학급'] || row['반'] || '';
+          if (tName && String(tName).trim() && !['담임명', '담임교사', '미정', '선생님'].includes(String(tName).trim())) {
+            const cleanTName = String(tName).trim();
+            if (!teacherMap.has(cleanTName) || !teacherMap.get(cleanTName)) {
+              teacherMap.set(cleanTName, String(cName).trim());
+            }
+          }
+        });
+
+        const teachersToPreRegister = Array.from(teacherMap.entries()).map(([name, assignedClass]) => ({
+          name,
+          assignedClass
+        }));
+
+        if (teachersToPreRegister.length > 0) {
+          try {
+            await fetch(`${API_BASE_URL}/routing/teachers/pre-register`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ teachers: teachersToPreRegister, academyId: targetAcademyId })
+            });
+            await fetchTeachers();
+          } catch(e) {
+            console.warn('Failed to pre-register teachers from Excel', e);
+          }
+        }
+
+        // 4. VEHICLES & ZONES CALCULATION (if bus columns present)
+        const busSet = new Set();
+        data.forEach(row => {
+          const b1 = row['등원차량'] || row['차량'] || row['호차'];
+          const b2 = row['하원차량'];
+          if (b1) busSet.add(b1.toString().trim());
+          if (b2) busSet.add(b2.toString().trim());
+        });
+
+        const busList = Array.from(busSet).sort((a, b) => {
+          const na = parseInt(a.replace(/[^0-9]/g, ''), 10) || 0;
+          const nb = parseInt(b.replace(/[^0-9]/g, ''), 10) || 0;
+          return na - nb;
+        });
+
+        const targetCount = (setupVehicleCount && setupVehicleCount > 0)
+          ? setupVehicleCount
+          : (busList.length > 0 ? busList.length : (buses.length > 0 ? buses.length : 1));
+
+        const vehicles = Array.from({ length: targetCount }).map((_, i) => ({
+          id: i + 1,
+          busNumber: busList[i] || `${i + 1}호차`,
+          plateNumber: '',
+          driverName: '미정',
+          driverPhone: '',
+          teacherName: '미정',
+          teacherPhone: '',
+          capacity: 25
+        }));
+
+        // Compute zones without saving students
         const res = await fetch(`${API_BASE_URL}/routing/init-zones`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ vehicles, parsedData: data, academyId: targetAcademyId })
         });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || '서버 처리 실패');
+        if (res.ok) {
+          const geocodedBuses = await res.json();
+          const processedBuses = computePolygons(geocodedBuses);
+          setBuses(processedBuses);
+          localStorage.setItem('takeme_buses', JSON.stringify(geocodedBuses));
         }
-        const geocodedBuses = await res.json();
-        
-        // Process polygons before updating state
-        const processedBuses = computePolygons(geocodedBuses);
-        
-        // Immediately update state, map, and localStorage
-        setBuses(processedBuses);
-        localStorage.setItem('takeme_buses', JSON.stringify(geocodedBuses));
-        
-        setStudents([]); // clear old students
-        
+
+        // IMPORTANT: DO NOT IMPORT PREVIOUS YEAR STUDENTS!
+        setStudents([]); // Last year's students are not this year's students
+
+        alert('업로드 완료');
+
         if (showAcademyModal) {
-          alert('구역 세팅이 완료되었습니다!\n왼쪽 메뉴의 [버스 정보 관리] 탭에서 기사님과 교사님 정보를 등록해주세요.');
-          setSetupStep(2); // Go to Academy Info Input
+          setSetupStep(2);
         } else {
           setIsResettingZones(false);
-          alert('구역 세팅이 완료되었습니다!');
         }
       } catch (e) {
-        alert(`구역 리셋에 실패했습니다: ${e.message}`);
+        alert(`전년도 자료 처리에 실패했습니다: ${e.message}`);
         console.error(e);
       } finally {
         setIsProcessing(false);
+        if (e.target) e.target.value = '';
       }
     };
     reader.readAsBinaryString(file);
@@ -1946,17 +2207,13 @@ const parseKindergartenExcelSheet = (sheet) => {
     }
   };
 
-  const handleSearchAddress = () => {
+  const openPostcodeModal = (initialQuery, onSelect) => {
     const triggerPostcode = () => {
       new window.daum.Postcode({
+        q: (initialQuery || '').trim(),
         oncomplete: (data) => {
           const selectedAddr = data.roadAddress || data.jibunAddress || data.address;
-          setStudentForm(prev => ({
-            ...prev,
-            address: selectedAddr,
-            inLocation: prev.inLocation ? prev.inLocation : selectedAddr,
-            outLocation: prev.outLocation ? prev.outLocation : selectedAddr,
-          }));
+          onSelect(selectedAddr, data);
         }
       }).open();
     };
@@ -1965,10 +2222,41 @@ const parseKindergartenExcelSheet = (sheet) => {
       triggerPostcode();
     } else {
       const script = document.createElement('script');
-      script.src = '//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
+      script.src = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
       script.onload = triggerPostcode;
       document.head.appendChild(script);
     }
+  };
+
+  const handleSearchAddress = () => {
+    openPostcodeModal(studentForm.address, (selectedAddr) => {
+      setStudentForm(prev => ({
+        ...prev,
+        address: selectedAddr,
+        inLocation: prev.inLocation ? prev.inLocation : selectedAddr,
+        outLocation: prev.outLocation ? prev.outLocation : selectedAddr,
+      }));
+    });
+  };
+
+  const handleSearchAcademyAddress = () => {
+    openPostcodeModal(academyForm.address, (selectedAddr, data) => {
+      setAcademyForm(prev => ({
+        ...prev,
+        address: selectedAddr,
+        name: prev.name ? prev.name : (data.buildingName || prev.name || '')
+      }));
+    });
+  };
+
+  const handleSearchAcademyChangeAddress = () => {
+    openPostcodeModal(academyChangeForm.address, (selectedAddr, data) => {
+      setAcademyChangeForm(prev => ({
+        ...prev,
+        address: selectedAddr,
+        name: prev.name ? prev.name : (data.buildingName || prev.name || '')
+      }));
+    });
   };
 
   const handleAddStudentSubmit = async (e) => {
@@ -2177,63 +2465,102 @@ const parseKindergartenExcelSheet = (sheet) => {
             {setupStep === 1 && (
               <>
                 <div className="text-center mb-6">
-                  
-                  <h2 className="text-2xl font-bold text-slate-800">초기 구역 설정</h2>
-                  <p className="text-slate-500 text-sm mt-2">전년도 배차 기준 파일을 업로드하여 기본 구역을 세팅해주세요.</p>
+                  <h2 className="text-2xl font-bold text-slate-800">초기 설정 및 구역 배차</h2>
+                  <p className="text-slate-500 text-sm mt-2">전년도 배차 기준 파일을 업로드하여 기본 구역과 차량을 세팅해주세요.</p>
                 </div>
                 
-                <div className="p-3 bg-red-100/50 rounded-lg mb-4 text-left">
-                  <p className="text-xs text-red-800 font-bold">작성 안내</p>
-                  <p className="text-xs text-red-700 mt-1">
-                    아래에서 양식을 다운로드한 후, <b>하이라이트 표시된 필수 항목(등원지, 하원지, 차량)</b>만 채워주시면 됩니다.<br/>해당 장소들을 바탕으로 자동으로 픽업/드랍 구역이 나뉩니다.
+                <div className="p-3 bg-blue-50/60 rounded-xl mb-4 text-left border border-blue-100">
+                  <p className="text-xs text-blue-900 font-bold">전년도 엑셀 반영 안내</p>
+                  <p className="text-xs text-blue-800 mt-1 leading-relaxed">
+                    엑셀 양식에서 <b>유치원명, 반명, 담임 교사명, 등·하원지</b>를 자동 추출합니다.<br/>
+                    전년도 원아 명단은 올해 재원생이 아니므로 등록되지 않으며, 지속 유지되는 원 정보만 깔끔하게 저장됩니다.
                   </p>
                 </div>
 
-                <a href="/전년도_자료_입력_시트_양식.xlsx" download="전년도_자료_입력_시트_양식.xlsx" className="w-full py-3 mb-3 bg-white text-slate-700 rounded-xl text-sm font-bold border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors flex items-center justify-center">
-                  ⬇️ 전년도 양식 다운로드
+                <a href="/전년도_자료_입력_시트_양식.xlsx" download="전년도_자료_입력_시트_양식.xlsx" className="w-full py-2.5 mb-4 bg-white text-slate-700 rounded-xl text-sm font-bold border border-slate-200 shadow-xs hover:bg-slate-50 transition-colors flex items-center justify-center">
+                  전년도 양식 다운로드
                 </a>
+
+                {/* 학원에서 사용하는 차량 수 선택 */}
+                <div className="mb-5 text-left p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <label className="block text-sm font-bold text-slate-800 mb-1">
+                    학원 운행 차량 수 선택
+                  </label>
+                  <p className="text-xs text-slate-500 mb-2.5">
+                    학원에서 사용하는 차량 수를 선택하시면 해당 호차 수만큼 웹 차량 및 구역 관리 목록에 자동 생성됩니다.
+                  </p>
+                  <select
+                    value={setupVehicleCount}
+                    onChange={(e) => setSetupVehicleCount(parseInt(e.target.value, 10))}
+                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none text-sm cursor-pointer shadow-xs"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((num) => (
+                      <option key={num} value={num}>
+                        {num}대 운행 ({num}호차까지 자동 생성)
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 
                 <input type="file" accept=".xlsx, .xls" className="hidden" ref={setupFileInputRef} onChange={handleZoneResetUpload} />
-                <button 
-                  onClick={() => setupFileInputRef.current.click()}
-                  disabled={isProcessing}
-                  className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50"
-                >
-                  {isProcessing ? '구역 세팅 중...' : '⬆️ 엑셀 업로드 및 시작하기'}
-                </button>
+                <div className="space-y-2">
+                  <button 
+                    type="button"
+                    onClick={() => setupFileInputRef.current.click()}
+                    disabled={isProcessing}
+                    className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50 text-sm"
+                  >
+                    {isProcessing ? '구역 세팅 중...' : '전년도 엑셀 업로드 및 시작하기'}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleDirectVehicleInit}
+                    disabled={isProcessing}
+                    className="w-full py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50 text-xs"
+                  >
+                    엑셀 파일 없이 {setupVehicleCount}대 차량으로 바로 시작하기
+                  </button>
+                </div>
               </>
             )}
             
             {setupStep === 2 && (
               <>
                 <div className="text-center mb-6">
-                  
                   <h2 className="text-2xl font-bold text-slate-800">유치원 위치 확인</h2>
-                  <p className="text-slate-500 text-sm mt-2">지도의 중심이 될 유치원의 위치를 등록해주세요.</p>
+                  <p className="text-slate-500 text-sm mt-2">지도의 중심이 될 유치원의 도로명 주소를 등록해주세요.</p>
                 </div>
                 
                 <form onSubmit={handleAcademySubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-1">유치원명</label>
-                    <input 
-                      type="text" 
-                      value={academyForm.name} 
-                      onChange={e => setAcademyForm({...academyForm, name: e.target.value})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                      placeholder="예: 해솔 유치원"
-                      required
-                    />
+                  <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200/80 text-left">
+                    <span className="block text-xs font-bold text-blue-600 mb-1">엑셀 자동 확인 유치원명</span>
+                    <span className="text-base font-extrabold text-slate-800">
+                      {academy?.name || '유치원'}
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">유치원 명칭은 엑셀 파일에서 자동으로 감지되어 저장되었습니다.</p>
                   </div>
+
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">원 도로명 주소</label>
-                    <input 
-                      type="text" 
-                      value={academyForm.address} 
-                      onChange={e => setAcademyForm({...academyForm, address: e.target.value})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                      placeholder="예: 서울 강남구 역삼로 123"
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        readOnly
+                        value={academyForm.address} 
+                        onClick={handleSearchAcademyAddress}
+                        className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm cursor-pointer hover:border-blue-400"
+                        placeholder="클릭하여 도로명 주소 검색 (예: 마곡중앙로 33)"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSearchAcademyAddress}
+                        className="px-4 py-3 bg-slate-800 text-white text-sm font-semibold rounded-xl hover:bg-slate-700 transition shrink-0 shadow-xs"
+                      >
+                        주소 검색
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5">입력창 또는 '주소 검색' 버튼을 눌러 마곡중앙로 33 등 도로명 주소를 간편하게 찾을 수 있습니다.</p>
                   </div>
                   <button 
                     type="submit" 
@@ -2375,13 +2702,18 @@ const parseKindergartenExcelSheet = (sheet) => {
                   const isSelected = selectedBusId === bus.id;
                   const busStudents = students.filter(st => st.assignedBusId === bus.id);
 
+                  const hasPlate = Boolean(bus.plateNumber && bus.plateNumber.trim());
+                  const hasDriver = Boolean(bus.driverName && !['미정', '미등록', ''].includes(bus.driverName.trim()));
+                  const hasTeacher = Boolean(bus.teacherName && !['미정', '미등록', ''].includes(bus.teacherName.trim()));
+                  const isIncomplete = !hasPlate || !hasDriver || !hasTeacher;
+
                   return (
                     <div 
                       key={bus.id} 
-                      className={`p-4 border rounded-2xl transition-all shadow-xs ${
-                        isSelected 
-                          ? 'border-blue-500 bg-blue-50/20 ring-2 ring-blue-100' 
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      className={`p-4 rounded-2xl transition-all shadow-xs ${
+                        isIncomplete
+                          ? `border-2 border-red-500 bg-red-50/15 ${isSelected ? 'ring-2 ring-red-300 bg-red-50/30' : 'hover:border-red-600'}`
+                          : `border ${isSelected ? 'border-blue-500 bg-blue-50/20 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`
                       }`}
                     >
                       {/* Bus Card Header */}
@@ -2394,9 +2726,18 @@ const parseKindergartenExcelSheet = (sheet) => {
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-slate-900 text-base">{bus.name}</span>
-                              {bus.plateNumber && (
+                              {bus.plateNumber ? (
                                 <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded font-mono">
                                   {bus.plateNumber}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded border border-red-200 whitespace-nowrap">
+                                  차량번호 미입력
+                                </span>
+                              )}
+                              {isIncomplete && (
+                                <span className="text-[11px] font-extrabold text-red-700 bg-red-100 border border-red-300 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                  차량정보 미완성
                                 </span>
                               )}
                               {operatingBuses[bus.id] && (
@@ -2413,7 +2754,11 @@ const parseKindergartenExcelSheet = (sheet) => {
                             e.stopPropagation();
                             setEditingBus(bus);
                           }}
-                          className="text-xs bg-slate-100 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors whitespace-nowrap shrink-0 border border-slate-200/80"
+                          className={`text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 border ${
+                            isIncomplete 
+                              ? 'bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-xs' 
+                              : 'bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-600 border-slate-200/80'
+                          }`}
                         >
                           상세 설정
                         </button>
@@ -2421,18 +2766,69 @@ const parseKindergartenExcelSheet = (sheet) => {
 
                       {/* Info Summary Grid */}
                       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-                          <span className="text-slate-400 block text-xs font-medium">기사님</span>
-                          <span className="font-bold text-slate-800 truncate block mt-0.5">
-                            {bus.driverName || '미등록'}
-                          </span>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-                          <span className="text-slate-400 block text-xs font-medium">지도교사</span>
-                          <span className="font-bold text-slate-800 truncate block mt-0.5">
-                            {bus.teacherName || '미등록'}
-                          </span>
-                        </div>
+                        {(() => {
+                          const driverInfo = getDriverDisambiguation(bus, buses);
+                          const isDup = driverInfo.isDuplicate;
+                          return (
+                            <div className={`p-2 rounded-xl border transition-all ${
+                              !hasDriver ? 'bg-red-50/70 border-red-200' :
+                              isDup ? 'bg-yellow-100 border-yellow-400 ring-1 ring-yellow-300' :
+                              'bg-slate-50 border-slate-100'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <span className={`block text-xs font-medium ${
+                                  !hasDriver ? 'text-red-500 font-bold' :
+                                  isDup ? 'text-yellow-800 font-bold' :
+                                  'text-slate-400'
+                                }`}>기사님</span>
+                                {isDup && (
+                                  <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black">
+                                    동명이인
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`font-bold truncate block mt-0.5 ${
+                                !hasDriver ? 'text-red-700' :
+                                isDup ? 'text-yellow-950 font-black' :
+                                'text-slate-800'
+                              }`}>
+                                {hasDriver ? <DisambiguatedNameTag info={driverInfo} defaultColor={isDup ? "text-yellow-950" : "text-slate-800"} /> : '미등록 (설정 필요)'}
+                              </span>
+                            </div>
+                          );
+                        })()}
+
+                        {(() => {
+                          const teacherInfo = getShuttleTeacherDisambiguation(bus, buses);
+                          const isDup = teacherInfo.isDuplicate;
+                          return (
+                            <div className={`p-2 rounded-xl border transition-all ${
+                              !hasTeacher ? 'bg-red-50/70 border-red-200' :
+                              isDup ? 'bg-yellow-100 border-yellow-400 ring-1 ring-yellow-300' :
+                              'bg-slate-50 border-slate-100'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <span className={`block text-xs font-medium ${
+                                  !hasTeacher ? 'text-red-500 font-bold' :
+                                  isDup ? 'text-yellow-800 font-bold' :
+                                  'text-slate-400'
+                                }`}>지도교사</span>
+                                {isDup && (
+                                  <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black">
+                                    동명이인
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`font-bold truncate block mt-0.5 ${
+                                !hasTeacher ? 'text-red-700' :
+                                isDup ? 'text-yellow-950 font-black' :
+                                'text-slate-800'
+                              }`}>
+                                {hasTeacher ? <DisambiguatedNameTag info={teacherInfo} defaultColor={isDup ? "text-yellow-950" : "text-slate-800"} /> : '미등록 (설정 필요)'}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Zone & Students Status Bar */}
@@ -2465,7 +2861,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                             <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
                               {busStudents.map(st => (
                                 <div key={st.id} className="text-xs flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                  <span className="font-bold text-slate-700 truncate">{st.name}</span>
+                                  <DisambiguatedNameTag info={getStudentDisambiguation(st, students)} defaultColor="font-bold text-slate-700 truncate" />
                                   <span className="text-slate-400 truncate max-w-[150px] text-right" title={st.address || st.boardingLocation}>
                                     {st.boardingLocation || st.address || '위치 미등록'}
                                   </span>
@@ -2659,7 +3055,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                                     }}
                                     className="w-3.5 h-3.5 rounded text-blue-600"
                                   />
-                                  <span className="text-[13px] font-bold text-slate-800">{st.name} <span className="font-normal text-slate-500 text-xs">({st.raw?.['보호자 성함'] || '학부모'})</span></span>
+                                  <span className="text-[13px] font-bold text-slate-800"><DisambiguatedNameTag info={getStudentDisambiguation(st, students)} defaultColor="text-slate-800" /> <span className="font-normal text-slate-500 text-xs">({st.raw?.['보호자 성함'] || '학부모'})</span></span>
                                 </label>
                               ))}
                               {busStudents.length === 0 && <div className="text-center text-xs text-slate-400 py-2">배정된 원아가 없습니다.</div>}
@@ -2822,12 +3218,20 @@ const parseKindergartenExcelSheet = (sheet) => {
                     sortStudentsList(students).map(st => {
                       const isExpanded = expandedStudentDetailIds.has(st.id);
                       const bus = buses.find(b => b.id === st.assignedBusId);
+                      const stInfo = getStudentDisambiguation(st, students);
                       return (
-                        <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-xl shadow-xs hover:shadow-md transition-all group">
+                        <div key={st.id} className={`p-2.5 rounded-xl shadow-xs hover:shadow-md transition-all group ${
+                          stInfo.isDuplicate ? 'bg-yellow-50/90 border-2 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border border-slate-200'
+                        }`}>
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-1.5 flex-1 min-w-0">
                               <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color || bus?.color || '#64748b' }}></div>
-                              <span className="font-bold text-slate-800 text-sm shrink-0">{st.name}</span>
+                              <DisambiguatedNameTag info={stInfo} defaultColor="font-bold text-slate-800 text-sm shrink-0" />
+                              {stInfo.isDuplicate && (
+                                <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black shrink-0">
+                                  동명이인
+                                </span>
+                              )}
                               <div className="flex items-center gap-1 overflow-hidden truncate">
                                 {st.raw?.['반명'] && (
                                   <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-1.5 py-0.5 rounded border border-blue-100 shrink-0">
@@ -2973,12 +3377,20 @@ const parseKindergartenExcelSheet = (sheet) => {
                                 group.list.map(st => {
                                   const isExpanded = expandedStudentDetailIds.has(st.id);
                                   const bus = buses.find(b => b.id === st.assignedBusId);
+                                  const stInfo = getStudentDisambiguation(st, students);
                                   return (
-                                    <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-xl shadow-xs hover:shadow-md transition-all group">
+                                    <div key={st.id} className={`p-2.5 rounded-xl shadow-xs hover:shadow-md transition-all group ${
+                                      stInfo.isDuplicate ? 'bg-yellow-50/90 border-2 border-yellow-400 ring-1 ring-yellow-300' : 'bg-white border border-slate-200'
+                                    }`}>
                                       <div className="flex items-center justify-between mb-1">
                                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
                                           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color || bus?.color || '#64748b' }}></div>
-                                          <span className="font-bold text-slate-800 text-sm shrink-0">{st.name}</span>
+                                          <DisambiguatedNameTag info={stInfo} defaultColor="font-bold text-slate-800 text-sm shrink-0" />
+                                          {stInfo.isDuplicate && (
+                                            <span className="text-[10px] bg-yellow-300 text-yellow-900 border border-yellow-500 px-1 py-0.2 rounded font-black shrink-0">
+                                              동명이인
+                                            </span>
+                                          )}
                                           <div className="flex items-center gap-1 overflow-hidden truncate">
                                             {studentFilterMode !== 'CLASS' && st.raw?.['반명'] && (
                                               <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-1.5 py-0.5 rounded border border-blue-100 shrink-0">
@@ -3368,6 +3780,23 @@ const parseKindergartenExcelSheet = (sheet) => {
                     <a href="/전년도_자료_입력_시트_양식.xlsx" download="전년도_자료_입력_시트_양식.xlsx" className="w-full py-2.5 px-3 bg-white text-slate-700 rounded-xl text-sm border border-slate-200 shadow-xs hover:bg-slate-50 transition-colors flex items-center justify-center font-medium whitespace-nowrap">
                       전년도 양식 다운로드
                     </a>
+
+                    <div className="text-left p-3 bg-white rounded-lg border border-red-200">
+                      <label className="block text-xs font-bold text-slate-800 mb-1">
+                        운행 통학차량 수 선택
+                      </label>
+                      <select
+                        value={setupVehicleCount}
+                        onChange={(e) => setSetupVehicleCount(parseInt(e.target.value, 10))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-800 text-xs outline-none cursor-pointer"
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((num) => (
+                          <option key={num} value={num}>
+                            {num}대 운행 ({num}호차까지 구성)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     
                     <input type="file" accept=".xlsx, .xls" className="hidden" ref={resetFileInputRef} onChange={handleZoneResetUpload} />
                     <button 
@@ -3411,14 +3840,25 @@ const parseKindergartenExcelSheet = (sheet) => {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-orange-800 mb-1">새 원 주소 (도로명/지번)</label>
-                      <input 
-                        type="text" 
-                        value={academyChangeForm.address} 
-                        onChange={e => setAcademyChangeForm({...academyChangeForm, address: e.target.value})}
-                        className="w-full px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none"
-                        placeholder="주소"
-                        required
-                      />
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          readOnly
+                          value={academyChangeForm.address} 
+                          onClick={handleSearchAcademyChangeAddress}
+                          className="flex-1 px-3 py-2 bg-white border border-orange-200 rounded-xl text-sm outline-none cursor-pointer hover:border-orange-400 focus:ring-2 focus:ring-orange-300"
+                          placeholder="클릭하여 새 원 주소 검색 (예: 마곡중앙로 33)"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSearchAcademyChangeAddress}
+                          className="px-3.5 py-2 bg-orange-600 text-white text-xs font-bold rounded-xl hover:bg-orange-700 transition shrink-0 shadow-xs"
+                        >
+                          주소 검색
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-orange-600/80 mt-1">입력창 또는 '주소 검색' 버튼을 누르면 마곡중앙로 33 등 도로명 주소를 바로 검색할 수 있습니다.</p>
                     </div>
                     <button 
                       type="submit" 
@@ -3714,6 +4154,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             handleApproveStaff={handleApproveStaff}
             handleRevokeStaff={handleRevokeStaff}
             handleRevokeTeacher={handleRevokeTeacher}
+            handleApproveTeacher={handleApproveTeacher}
             fetchTeachers={fetchTeachers}
             refreshAllData={refreshAllData}
             handleGenerateAuthCode={handleGenerateAuthCode}
@@ -3894,9 +4335,9 @@ const parseKindergartenExcelSheet = (sheet) => {
             return visiblePickupPoints.map(p => {
             const ptIcon = L.divIcon({
               className: 'pickup-marker',
-              html: `<div style="font-size: 24px; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">🚏</div>`,
-              iconSize: [24, 24],
-              iconAnchor: [12, 24]
+              html: `<div style="background-color: #10b981; color: white; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">정</div>`,
+              iconSize: [22, 22],
+              iconAnchor: [11, 11]
             });
             return (
               <Marker key={`pickup-${p.id}`} position={[p.latitude, p.longitude]} icon={ptIcon}>
@@ -3916,7 +4357,7 @@ const parseKindergartenExcelSheet = (sheet) => {
                         if (boardingStudents.length > 0) {
                           return (
                             <ul className="list-disc pl-4 space-y-0.5">
-                              {boardingStudents.map(st => <li key={st.id}>{st.name}</li>)}
+                              {boardingStudents.map(st => <li key={st.id}><DisambiguatedNameTag info={getStudentDisambiguation(st, students)} /></li>)}
                             </ul>
                           );
                         } else {
@@ -4033,7 +4474,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             return (
               <Marker key={st.id} position={[displayLat, displayLng]} icon={studentIcon}>
                 <Popup className="student-popup">
-                <div className="font-bold text-lg mb-1">{st.name} <span className="text-sm font-normal text-slate-500">{st.raw?.['성별']} / {st.raw?.['연령'] || st.raw?.['학년'] || ''}</span></div>
+                <div className="font-bold text-lg mb-1"><DisambiguatedNameTag info={getStudentDisambiguation(st, students)} defaultColor="text-slate-900" /> <span className="text-sm font-normal text-slate-500">{st.raw?.['성별']} / {st.raw?.['연령'] || st.raw?.['학년'] || ''}</span></div>
                 <div className="text-sm text-slate-700 mb-2">{st.raw?.['유치원명'] || st.raw?.['학교명']} {st.raw?.['반명'] ? `(${st.raw?.['반명']})` : ''} {st.raw?.['하원구분'] ? `[${st.raw?.['하원구분']}]` : ''}</div>
                 
                 <div className="bg-slate-50 p-2 rounded border border-slate-100 text-xs mb-2">
@@ -4058,7 +4499,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             const busIcon = L.divIcon({
               className: 'custom-bus-marker',
               html: `<div style="position: relative; display: flex; align-items: center; justify-content: center;">
-                <div style="background-color: ${bus.color || '#ef4444'}; font-size: 16px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">🚌</div>
+                <div style="background-color: ${bus.color || '#ef4444'}; font-size: 11px; font-weight: 800; color: white; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">BUS</div>
                 <div style="position: absolute; top: -10px; right: -12px; background: #10b981; color: white; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 9999px; border: 1.5px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.25); white-space: nowrap;">● LIVE</div>
               </div>`,
               iconSize: [34, 34],
@@ -4086,7 +4527,7 @@ const parseKindergartenExcelSheet = (sheet) => {
             const startingIcon = L.divIcon({
               className: 'custom-bus-marker-starting',
               html: `<div style="position: relative; display: flex; align-items: center; justify-content: center;">
-                <div style="background-color: ${bus.color || '#3b82f6'}; font-size: 15px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2.5px dashed white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">🚌</div>
+                <div style="background-color: ${bus.color || '#3b82f6'}; font-size: 10px; font-weight: 800; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2.5px dashed white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">BUS</div>
                 <div style="position: absolute; top: -8px; right: -10px; background: #f59e0b; color: white; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 9999px; border: 1.5px solid white; white-space: nowrap;">운행시작</div>
               </div>`,
               iconSize: [32, 32],
@@ -4455,8 +4896,8 @@ const parseKindergartenExcelSheet = (sheet) => {
             {/* Header */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 px-6 py-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 backdrop-blur-xs flex items-center justify-center text-xl text-emerald-400">
-                  🔒
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 backdrop-blur-xs flex items-center justify-center text-xs font-bold text-emerald-400">
+                  보안
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold tracking-tight">2단계 보안 승인 (Google OTP)</h3>

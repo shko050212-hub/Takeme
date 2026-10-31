@@ -10,8 +10,7 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   String _selectedRole = 'HOMEROOM_TEACHER';
-  String _selectedClass = '햇살반';
-  final List<String> _classList = const ['햇살반', '열매반', '풀잎반', '새싹반', '심화B반'];
+  final _classController = TextEditingController();
   final _authCodeController = TextEditingController();
   final _nameController = TextEditingController();
   final _parentNameController = TextEditingController();
@@ -27,6 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
+    _classController.dispose();
     _authCodeController.dispose();
     _nameController.dispose();
     _parentNameController.dispose();
@@ -133,12 +133,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final res = await ApiService().register(
       email: _emailController.text.trim(),
       password: pw,
+      passwordConfirm: _passwordConfirmController.text,
       name: payloadName,
       targetName: _nameController.text.trim(),
       authCode: _authCodeController.text.trim(),
       role: _selectedRole,
       allergies: _selectedRole == 'PARENT' ? _allergiesController.text.trim() : null,
-      assignedClass: _selectedRole == 'HOMEROOM_TEACHER' ? _selectedClass : null,
+      assignedClass: _selectedRole == 'HOMEROOM_TEACHER' ? _classController.text.trim() : null,
     );
 
     setState(() => _isLoading = false);
@@ -265,21 +266,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                   // Homeroom class selector if HOMEROOM_TEACHER
                   if (_selectedRole == 'HOMEROOM_TEACHER') ...[
-                    const Text('담당 학급 선택', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                    const Text('담당 학급 (선택사항, 가입 후 원장 배정 가능)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedClass,
-                      decoration: InputDecoration(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      items: _classList.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                      onChanged: (val) {
-                        if (val != null) setState(() => _selectedClass = val);
-                      },
-                    ),
+                    _buildTextField(_classController, '예: 새싹1반 (미입력 시 원장님께서 배정)'),
                     const SizedBox(height: 16),
                   ],
 
@@ -394,18 +383,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   // Password
                   const Text('비밀번호', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
                   const SizedBox(height: 6),
-                  _buildTextField(_passwordController, '영문, 숫자, 특수문자 포함 8자 이상', obscureText: true),
+                  _buildTextField(
+                    _passwordController, 
+                    '영문, 숫자, 특수문자 포함 8자 이상', 
+                    obscureText: true,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  if (_passwordController.text.isNotEmpty && !_validatePassword(_passwordController.text))
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4, left: 4),
+                      child: Text('영문, 숫자, 특수문자를 모두 포함(8자 이상)해야 합니다.', style: TextStyle(color: Colors.red, fontSize: 11)),
+                    ),
                   const SizedBox(height: 16),
 
                   // Password Confirm
                   const Text('비밀번호 확인', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
                   const SizedBox(height: 6),
-                  _buildTextField(_passwordConfirmController, '비밀번호를 한 번 더 입력하세요', obscureText: true),
+                  _buildTextField(
+                    _passwordConfirmController, 
+                    '비밀번호를 한 번 더 입력하세요', 
+                    obscureText: true,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  if (_passwordConfirmController.text.isNotEmpty && _passwordController.text != _passwordConfirmController.text)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4, left: 4),
+                      child: Text('비밀번호가 일치하지 않습니다.', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ),
+                  if (_passwordConfirmController.text.isNotEmpty && _passwordController.text == _passwordConfirmController.text)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4, left: 4),
+                      child: Text('비밀번호가 일치합니다.', style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
                   const SizedBox(height: 28),
 
                   // Register Button
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _handleRegister,
+                    onPressed: (_isLoading || !_validatePassword(_passwordController.text) || _passwordConfirmController.text.isEmpty || _passwordController.text != _passwordConfirmController.text) ? null : _handleRegister,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2563EB),
                       disabledBackgroundColor: const Color(0xFF93C5FD),
@@ -463,12 +477,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     bool obscureText = false,
     bool enabled = true,
     TextInputType? keyboardType,
+    ValueChanged<String>? onChanged,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscureText,
       enabled: enabled,
       keyboardType: keyboardType,
+      onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),

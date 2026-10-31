@@ -6,6 +6,7 @@ export default function Landing() {
   const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'otp' | 'otp-setup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('ACADEMY_ADMIN'); // 'ACADEMY_ADMIN' | 'TEACHER'
   const [otpToken, setOtpToken] = useState('');
@@ -219,6 +220,8 @@ export default function Landing() {
     if (!isEmailVerified) return alert('이메일 인증을 완료해주세요.');
     if (!role) return alert('역할을 선택해주세요.');
     if (!validatePassword(password)) return alert('비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다.');
+    if (!passwordConfirm) return alert('비밀번호 확인을 입력해주세요.');
+    if (password !== passwordConfirm) return alert('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
 
     if (role === 'TEACHER') {
       if (!isAuthCodeVerified) return alert('원 인증코드를 먼저 확인해주세요.');
@@ -229,6 +232,7 @@ export default function Landing() {
         body: JSON.stringify({ 
           email, 
           password, 
+          passwordConfirm, 
           name, 
           role: 'TEACHER', 
           authCode: authCode.trim().toUpperCase()
@@ -249,7 +253,7 @@ export default function Landing() {
     const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name, role, phone: directorPhone.trim() || undefined })
+      body: JSON.stringify({ email, password, passwordConfirm, name, role, phone: directorPhone.trim() || undefined })
     });
     const data = await res.json();
     if (res.ok) {
@@ -687,10 +691,29 @@ export default function Landing() {
               )}
             </div>
 
+            {/* Password Confirm */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">비밀번호 확인</label>
+              <input 
+                type="password" 
+                placeholder="비밀번호를 한 번 더 입력하세요" 
+                value={passwordConfirm} 
+                onChange={e=>setPasswordConfirm(e.target.value)} 
+                className={`form-input ${passwordConfirm && password !== passwordConfirm ? 'border-red-400 focus:ring-red-400' : (passwordConfirm && password === passwordConfirm ? 'border-emerald-500 focus:ring-emerald-500' : '')}`} 
+                required 
+              />
+              {passwordConfirm && password !== passwordConfirm && (
+                <p className="text-xs text-red-500 mt-1 pl-1 font-medium">비밀번호가 일치하지 않습니다.</p>
+              )}
+              {passwordConfirm && password === passwordConfirm && (
+                <p className="text-xs text-emerald-600 mt-1 pl-1 font-bold">비밀번호가 일치합니다.</p>
+              )}
+            </div>
+
             <button 
               type="submit" 
               className="btn-primary w-full py-3 font-bold text-sm shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed" 
-              disabled={!isEmailVerified || !validatePassword(password) || (role === 'TEACHER' && !isAuthCodeVerified)}
+              disabled={!isEmailVerified || !validatePassword(password) || !passwordConfirm || password !== passwordConfirm || (role === 'TEACHER' && !isAuthCodeVerified)}
             >
               {role === 'ACADEMY_ADMIN' ? '원장선생님 가입 완료' : '유치원 교사 가입 완료'}
             </button>
