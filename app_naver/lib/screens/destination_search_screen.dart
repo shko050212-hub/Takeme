@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 import '../config.dart';
 import '../driver/driver_navigator.dart';
-import '../driver/geo.dart';
 import '../services/destination_service.dart';
 import '../widgets/naver_map_controller.dart';
 
 class DestinationSearchScreen extends StatefulWidget {
   final DriverNavigator nav;
   final NaverMapController map;
+  final bool isAddingWaypoint;
 
   const DestinationSearchScreen({
     super.key,
     required this.nav,
     required this.map,
+    this.isAddingWaypoint = false,
   });
 
   @override
@@ -53,16 +54,36 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
     });
   }
 
-  void _selectPlace(PlaceItem item) {
-    widget.nav.setDestination(item.name, item.point);
+  void _addPlaceAsWaypoint(PlaceItem item) {
+    widget.nav.addWaypoint(item.name, item.point, asFinal: true);
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('[목적지 설정 완료] ${item.name}'),
+        content: Text('[경유지 추가 완료] ${item.name} (총 ${widget.nav.totalDestinationsCount}개소)'),
         backgroundColor: AppColors.naverGreenDark,
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  void _setPlaceAsSingleDestination(PlaceItem item) {
+    widget.nav.setDestination(item.name, item.point);
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('[단독 목적지 설정] ${item.name}'),
+        backgroundColor: AppColors.primaryBlue,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _selectPlace(PlaceItem item) {
+    if (widget.isAddingWaypoint || widget.nav.destination != null) {
+      _addPlaceAsWaypoint(item);
+    } else {
+      _setPlaceAsSingleDestination(item);
+    }
   }
 
   void _clearDestination() {
@@ -82,7 +103,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
       const SnackBar(
         content: Text('목적지가 초기화되었습니다.'),
         backgroundColor: AppColors.slate800,
-        duration: const Duration(seconds: 2),
+        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -94,7 +115,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
       const SnackBar(
         content: Text('지도의 원하는 위치를 클릭하면 목적지로 지정됩니다.'),
         backgroundColor: AppColors.warningOrange,
-        duration: const Duration(seconds: 3),
+        duration: Duration(seconds: 3),
       ),
     );
   }
@@ -114,9 +135,9 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
           icon: const Icon(Icons.arrow_back, color: AppColors.slate800),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(
-          '목적지 설정 / 검색',
-          style: TextStyle(
+        title: Text(
+          widget.isAddingWaypoint ? '경유지 / 목적지 추가' : '목적지 설정 / 검색',
+          style: const TextStyle(
             color: AppColors.slate900,
             fontSize: 17,
             fontWeight: FontWeight.bold,
@@ -279,40 +300,51 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
 
             const Divider(height: 1, thickness: 1, color: AppColors.slate200),
 
-            // 3. 현재 목적지 안내 배너 (설정된 경우)
+            // 3. 현재 등록된 경로 안내 배너
             if (widget.nav.destination != null)
               Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: AppColors.dangerRedBg,
+                  color: AppColors.naverGreenLight,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.dangerRed.withValues(alpha: 0.3)),
+                  border: Border.all(color: AppColors.naverGreen.withValues(alpha: 0.3)),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.flag, size: 18, color: AppColors.dangerRed),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '현재 목적지: ${widget.nav.destinationName}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.dangerRed,
+                    Row(
+                      children: [
+                        const Icon(Icons.alt_route, size: 16, color: AppColors.naverGreenDark),
+                        const SizedBox(width: 6),
+                        Text(
+                          '현재 설정된 경로 (총 ${widget.nav.totalDestinationsCount}개소)',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.naverGreenDark),
                         ),
-                      ),
+                        const Spacer(),
+                        OutlinedButton(
+                          onPressed: _clearDestination,
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.dangerRed),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          ),
+                          child: const Text('전체 초기화', style: TextStyle(color: AppColors.dangerRed, fontSize: 11)),
+                        ),
+                      ],
                     ),
-                    OutlinedButton(
-                      onPressed: _clearDestination,
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.dangerRed),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.nav.stopsSummaryText,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.slate900,
                       ),
-                      child: const Text('초기화', style: TextStyle(color: AppColors.dangerRed, fontSize: 11)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -364,7 +396,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
                   : ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       itemCount: _results.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.slate100),
+                      separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.slate100),
                       itemBuilder: (_, idx) {
                         final item = _results[idx];
                         final isCurDest = widget.nav.destinationName == item.name;
@@ -432,26 +464,57 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: () => _selectPlace(item),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: isCurDest ? AppColors.dangerRed : AppColors.naverGreenLight,
-                                      foregroundColor: isCurDest ? Colors.white : AppColors.naverGreenDark,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                    ),
-                                    child: Text(
-                                      isCurDest ? '선택됨' : '선택',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: isCurDest ? Colors.white : AppColors.naverGreenDark,
+                                  if (widget.nav.destination == null)
+                                    ElevatedButton(
+                                      onPressed: () => _setPlaceAsSingleDestination(item),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.naverGreen,
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        minimumSize: const Size(0, 36),
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      child: const Text(
+                                        '선택',
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                      ),
+                                    )
+                                  else ...[
+                                    ElevatedButton.icon(
+                                      onPressed: () => _addPlaceAsWaypoint(item),
+                                      icon: const Icon(Icons.add, size: 13, color: Colors.white),
+                                      label: const Text(
+                                        '경유지 추가',
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.naverGreen,
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                        minimumSize: const Size(0, 36),
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 4),
+                                    OutlinedButton(
+                                      onPressed: () => _setPlaceAsSingleDestination(item),
+                                      style: OutlinedButton.styleFrom(
+                                        side: const BorderSide(color: AppColors.primaryBlue),
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                        minimumSize: const Size(0, 36),
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      child: const Text(
+                                        '변경',
+                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

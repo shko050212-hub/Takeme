@@ -5,7 +5,6 @@ import '../config.dart';
 import '../driver/driver_navigator.dart';
 import '../driver/geo.dart';
 import '../services/api_service.dart';
-import '../services/destination_service.dart';
 import '../widgets/naver_map_view.dart';
 import 'destination_search_screen.dart';
 import 'driver_login_screen.dart';
@@ -76,83 +75,224 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
-  void _showStopListSheet() async {
+  void _showRouteManagementSheet() async {
     _map.setVisible(false);
     try {
       await showModalBottomSheet(
         context: context,
+        isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (ctx) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: AppColors.slate300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              final allStops = _nav.allDestinationsInOrder;
+              return Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.85,
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('전체 정류장 목록', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    Text('${_nav.passedCount} / ${_nav.activeStops.length} 통과',
-                        style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.naverGreenDark)),
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: AppColors.slate300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '경로 및 목적지 관리',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.slate900),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              '순서대로 경유하며, 도착 시 다음 목적지로 자동 안내합니다.',
+                              style: TextStyle(fontSize: 12, color: AppColors.slate500),
+                            ),
+                          ],
+                        ),
+                        if (_nav.totalDestinationsCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.naverGreenLight,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '총 ${_nav.totalDestinationsCount}개소',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.naverGreenDark),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Divider(height: 1),
+
+                    // 출발지 (내 위치)
+                    const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        radius: 14,
+                        backgroundColor: AppColors.primaryBlue,
+                        child: Icon(Icons.my_location, size: 14, color: Colors.white),
+                      ),
+                      title: Text('출발: 현재 위치 (내 GPS)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.slate800)),
+                      trailing: Text('[출발지]', style: TextStyle(color: AppColors.primaryBlue, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                    const Divider(height: 1),
+
+                    // 등록된 목적지/경유지 목록
+                    if (allStops.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 30),
+                        child: Center(
+                          child: Text(
+                            '설정된 목적지가 없습니다.\n아래 [+ 새 목적지/경유지 추가] 버튼을 눌러 추가하세요.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.slate500, fontSize: 13, height: 1.5),
+                          ),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: allStops.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (_, idx) {
+                            final stop = allStops[idx];
+                            final isFinal = (idx == allStops.length - 1);
+                            final isPassed = idx < _nav.activeStops.length && _nav.activeStops[idx].passed;
+
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: isPassed
+                                    ? AppColors.slate300
+                                    : (isFinal ? AppColors.dangerRed : AppColors.naverGreen),
+                                child: isFinal
+                                    ? const Icon(Icons.flag, size: 13, color: Colors.white)
+                                    : Text('${idx + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                              title: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    margin: const EdgeInsets.only(right: 6),
+                                    decoration: BoxDecoration(
+                                      color: isFinal ? AppColors.dangerRedBg : AppColors.naverGreenLight,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      isFinal ? '최종 목적지' : '${idx + 1}차 경유지',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: isFinal ? AppColors.dangerRed : AppColors.naverGreenDark,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      stop.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        decoration: isPassed ? TextDecoration.lineThrough : null,
+                                        color: isPassed ? AppColors.slate400 : AppColors.slate900,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              trailing: !_nav.driving
+                                  ? IconButton(
+                                      icon: const Icon(Icons.close, size: 18, color: AppColors.slate400),
+                                      tooltip: '삭제',
+                                      onPressed: () async {
+                                        await _nav.removeDestinationAt(idx);
+                                        setSheetState(() {});
+                                        if (mounted) setState(() {});
+                                      },
+                                    )
+                                  : (isPassed
+                                      ? const Text('[통과]', style: TextStyle(color: AppColors.slate400, fontSize: 11))
+                                      : const Text('[예정]', style: TextStyle(color: AppColors.naverGreenDark, fontSize: 11, fontWeight: FontWeight.bold))),
+                            );
+                          },
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _openDestinationSearch(context, isAddingWaypoint: true);
+                            },
+                            icon: const Icon(Icons.add_location_alt, size: 16, color: Colors.white),
+                            label: const Text(
+                              '+ 목적지/경유지 추가',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.naverGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                        if (_nav.totalDestinationsCount > 0 && !_nav.driving) ...[
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: () {
+                              _nav.clearDestination();
+                              setSheetState(() {});
+                              if (mounted) setState(() {});
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.dangerRed,
+                              side: const BorderSide(color: AppColors.dangerRed),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('전체 초기화', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _nav.activeStops.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1),
-                    itemBuilder: (_, idx) {
-                      final stop = _nav.activeStops[idx];
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: CircleAvatar(
-                          radius: 14,
-                          backgroundColor: stop.passed ? AppColors.slate300 : AppColors.naverGreen,
-                          child: Text(
-                            '${idx + 1}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        title: Text(
-                          stop.name,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            decoration: stop.passed ? TextDecoration.lineThrough : null,
-                            color: stop.passed ? AppColors.slate500 : AppColors.slate800,
-                          ),
-                        ),
-                        trailing: stop.passed
-                            ? const Text('[통과]', style: TextStyle(color: AppColors.slate500, fontSize: 12))
-                            : const Text('[예정]', style: TextStyle(color: AppColors.naverGreenDark, fontSize: 12, fontWeight: FontWeight.bold)),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           );
         },
       );
     } finally {
       _map.setVisible(true);
+      if (mounted) setState(() {});
     }
   }
 
@@ -168,7 +308,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
     }
   }
 
-  void _openDestinationSearch(BuildContext context) async {
+  void _openDestinationSearch(BuildContext context, {bool isAddingWaypoint = false}) async {
     _map.setVisible(false);
     try {
       await Navigator.of(context).push(
@@ -176,6 +316,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           builder: (_) => DestinationSearchScreen(
             nav: _nav,
             map: _map,
+            isAddingWaypoint: isAddingWaypoint,
           ),
         ),
       );
@@ -306,9 +447,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.list_alt, size: 22),
-          tooltip: '정류장 목록',
-          onPressed: _showStopListSheet,
+          icon: const Icon(Icons.alt_route, size: 22),
+          tooltip: '경로 및 목적지 관리',
+          onPressed: _showRouteManagementSheet,
         ),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 22),
@@ -462,13 +603,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   color: _nav.destination != null ? AppColors.dangerRed : AppColors.slate500,
                 ),
                 const SizedBox(width: 6),
-                const Text(
-                  '목적지: ',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.slate600),
+                Text(
+                  _nav.totalDestinationsCount > 1
+                      ? '경로(총 ${_nav.totalDestinationsCount}곳): '
+                      : '목적지: ',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.slate600),
                 ),
                 Expanded(
                   child: Text(
-                    _nav.destinationName.isNotEmpty ? _nav.destinationName : '미설정 (목적지를 설정해주세요)',
+                    _nav.totalDestinationsCount > 1
+                        ? _nav.stopsSummaryText
+                        : (_nav.destinationName.isNotEmpty ? _nav.destinationName : '미설정 (목적지를 설정해주세요)'),
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
@@ -479,6 +624,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                 ),
                 if (!_nav.driving) ...[
                   const SizedBox(width: 4),
+                  if (_nav.destination != null) ...[
+                    OutlinedButton(
+                      onPressed: _showRouteManagementSheet,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: AppColors.naverGreenLight,
+                        side: const BorderSide(color: AppColors.naverGreen),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: const Text(
+                        '경로 관리',
+                        style: TextStyle(color: AppColors.naverGreenDark, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    ElevatedButton.icon(
+                      onPressed: () => _openDestinationSearch(context, isAddingWaypoint: true),
+                      icon: const Icon(Icons.add_location_alt, size: 12, color: Colors.white),
+                      label: const Text(
+                        '+ 경유지',
+                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.naverGreen,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   OutlinedButton.icon(
                     onPressed: () {
                       if (_nav.destination == null) {
@@ -492,7 +673,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                         _nav.clearDestination();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('목적지가 초기화되었습니다.'),
+                            content: Text('목적지 및 경유지가 초기화되었습니다.'),
                             backgroundColor: AppColors.slate800,
                             duration: Duration(seconds: 1),
                           ),
@@ -519,30 +700,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                             ? AppColors.dangerRed.withValues(alpha: 0.4)
                             : AppColors.slate300,
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       minimumSize: const Size(0, 36),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  ElevatedButton.icon(
-                    onPressed: () => _openDestinationSearch(context),
-                    icon: const Icon(Icons.search, size: 14, color: Colors.white),
-                    label: Text(
-                      _nav.destination != null ? '변경' : '목적지 설정',
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  if (_nav.destination == null) ...[
+                    const SizedBox(width: 6),
+                    ElevatedButton.icon(
+                      onPressed: () => _openDestinationSearch(context),
+                      icon: const Icon(Icons.search, size: 14, color: Colors.white),
+                      label: const Text(
+                        '목적지 설정',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.naverGreen,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _nav.destination != null ? AppColors.primaryBlue : AppColors.naverGreen,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      minimumSize: const Size(0, 36),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    ),
-                  ),
+                  ],
                 ],
               ],
             ),
@@ -611,6 +794,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
           ),
           const SizedBox(width: 8),
           if (!_nav.driving) ...[
+            if (_nav.destination != null) ...[
+              _buildToolBtn(
+                icon: Icons.add_location_alt,
+                label: '+ 경유지 추가',
+                onTap: () => _openDestinationSearch(context, isAddingWaypoint: true),
+                color: AppColors.naverGreenDark,
+                bgColor: AppColors.naverGreenLight,
+              ),
+              const SizedBox(width: 8),
+              _buildToolBtn(
+                icon: Icons.alt_route,
+                label: '경로 관리 (${_nav.totalDestinationsCount})',
+                onTap: _showRouteManagementSheet,
+                color: AppColors.primaryBlue,
+                bgColor: AppColors.primaryBlueBg,
+              ),
+              const SizedBox(width: 8),
+            ],
             _buildToolBtn(
               icon: Icons.flag_outlined,
               label: _nav.destination != null ? '목적지 변경' : '목적지 설정',
@@ -634,7 +835,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
                   _nav.clearDestination();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('목적지가 초기화되었습니다.'),
+                      content: Text('목적지 및 경유지가 초기화되었습니다.'),
                       backgroundColor: AppColors.slate800,
                       duration: Duration(seconds: 1),
                     ),

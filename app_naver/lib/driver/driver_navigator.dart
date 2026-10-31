@@ -137,6 +137,23 @@ class DriverNavigator extends ChangeNotifier {
   List<NavStop> get activeStops => testMode ? _testStops : stops;
   bool get socketConnected => SocketService().isConnected;
 
+  int get totalDestinationsCount => activeStops.length + (destination != null ? 1 : 0);
+
+  List<NavStop> get allDestinationsInOrder {
+    final list = <NavStop>[...activeStops];
+    if (destination != null) {
+      list.add(NavStop(destinationName, destination!));
+    }
+    return list;
+  }
+
+  String get stopsSummaryText {
+    if (destination == null && activeStops.isEmpty) return '미설정';
+    final names = activeStops.map((s) => s.name).toList();
+    if (destinationName.isNotEmpty) names.add(destinationName);
+    return names.join(' → ');
+  }
+
   NavStop? get nextStop {
     for (final s in activeStops) {
       if (!s.passed) return s;
@@ -228,7 +245,11 @@ class DriverNavigator extends ChangeNotifier {
       // 지도 클릭 시 목적지 설정 콜백 연결
       map.onMapClick = (p) {
         if (pickOnMapMode) {
-          setDestination('지도에서 지정한 위치', p);
+          if (destination != null) {
+            addWaypoint('지정한 위치 (${totalDestinationsCount + 1}차)', p);
+          } else {
+            setDestination('지도에서 지정한 위치', p);
+          }
           pickOnMapMode = false;
         }
       };
@@ -245,11 +266,12 @@ class DriverNavigator extends ChangeNotifier {
     }
   }
 
-  /// 목적지 새로 설정하기 (검색 결과, 프리셋, 또는 지도 클릭)
+  /// 목적지 새로 설정하기 (단독 설정)
   Future<void> setDestination(String name, GeoPoint point) async {
     destinationName = name;
     destination = point;
     academy = point;
+    stops.clear();
     notifyListeners();
 
     _speak('$name(으)로 목적지를 설정했습니다.');
@@ -259,11 +281,82 @@ class DriverNavigator extends ChangeNotifier {
     }
   }
 
-  /// 목적지 초기화 (미설정 상태로 되돌리기)
+  /// 경유지 / 추가 목적지 경로에 추가하기 (다중 목적지 지원)
+  Future<void> addWaypoint(String name, GeoPoint point, {bool asFinal = true}) async {
+    if (destination == null) {
+      await setDestination(name, point);
+      return;
+    }
+
+    if (asFinal) {
+      // 기존 최종 목적지를 경유지 목록으로 이전하고 새 위치를 최종 목적지로 지정
+      stops.add(NavStop(destinationName, destination!));
+      destinationName = name;
+      destination = point;
+      academy = point;
+    } else {
+      // 기존 최종 목적지 앞의 경유지로 삽입
+      stops.add(NavStop(name, point));
+    }
+
+    notifyListeners();
+    _speak('$name(이)가 경로에 추가되었습니다. 총 $totalDestinationsCount개 목적지입니다.');
+    await previewRoutes();
+    if (position != null) {
+      map.centerOn(position!, zoom: 15);
+    }
+  }
+
+  /// 특정 순서의 목적지/경유지 삭제
+  Future<void> removeDestinationAt(int index) async {
+    if (index < 0 || index >= totalDestinationsCount) return;
+
+    if (index < stops.length) {
+      // 경유지 목록에서 삭제
+      stops.removeAt(index);
+    } else {
+      // 최종 목적지 삭제 -> stops의 마지막 항목이 새로운 최종 목적지가 됨
+      if (stops.isNotEmpty) {
+        final newLast = stops.removeLast();
+        destinationName = newLast.name;
+        destination = newLast.point;
+        academy = newLast.point;
+      } else {
+        clearDestination();
+        return;
+      }
+    }
+
+    notifyListeners();
+    _speak('목적지가 삭제되었습니다.');
+    await previewRoutes();
+  }
+
+  /// 목적지 순서 변경
+  Future<void> reorderDestinations(int oldIndex, int newIndex) async {
+    final all = allDestinationsInOrder;
+    if (oldIndex < 0 || oldIndex >= all.length || newIndex < 0 || newIndex > all.length) return;
+    if (oldIndex < newIndex) newIndex -= 1;
+    final item = all.removeAt(oldIndex);
+    all.insert(newIndex, item);
+
+    final newFinal = all.removeLast();
+    destinationName = newFinal.name;
+    destination = newFinal.point;
+    academy = newFinal.point;
+    stops.clear();
+    stops.addAll(all);
+
+    notifyListeners();
+    await previewRoutes();
+  }
+
+  /// 목적지 전체 초기화 (경유지 포함)
   void clearDestination() {
     destinationName = '';
     destination = null;
     academy = null;
+    stops.clear();
     for (final s in slots.values) {
       s.status = PlanStatus.idle;
       s.plan = null;
@@ -272,7 +365,7 @@ class DriverNavigator extends ChangeNotifier {
     map.clearRoutes();
     _drawPreview();
     notifyListeners();
-    _speak('목적지가 초기화되었습니다.');
+    _speak('모든 목적지가 초기화되었습니다.');
   }
 
   /// 지도에서 직접 목적지 핀 찍기 모드 토글
@@ -430,13 +523,21 @@ class DriverNavigator extends ChangeNotifier {
   }
 
   Future<RoutePlan> _fetchPlan(RouteMode m, GeoPoint origin) async {
-    final dest = destination ?? academy ?? (stops.isNotEmpty ? stops.last.point : null);
-    if (dest == null) {
+    final GeoPoint dest;
+    final List<Map<String, dynamic>> waypoints;
+    if (destination != null) {
+      dest = destination!;
+      waypoints = stops.take(30).map((s) => s.point.toJson()).toList();
+    } else if (academy != null) {
+      dest = academy!;
+      waypoints = stops.take(30).map((s) => s.point.toJson()).toList();
+    } else if (stops.isNotEmpty) {
+      dest = stops.last.point;
+      waypoints = stops.take(stops.length - 1).map((s) => s.point.toJson()).toList();
+    } else {
       throw NavException('목적지가 설정되지 않았습니다.');
     }
     try {
-      final waypoints = stops.take(30).map((s) => s.point.toJson()).toList();
-
       final res = await ApiService().getDirections(
         origin: origin.toJson(),
         destination: dest.toJson(),
@@ -521,8 +622,13 @@ class DriverNavigator extends ChangeNotifier {
 
     final guides = <NavGuide>[];
     for (var i = 0; i < stops.length; i++) {
-      final g = NavGuide(stops[i].point, '${stops[i].name} 도착 예정');
+      final g = NavGuide(stops[i].point, '${i + 1}차 경유지: ${stops[i].name} 도착 예정');
       g.pathIndex = nearestIndex(finePath, stops[i].point);
+      guides.add(g);
+    }
+    if (dest != null) {
+      final g = NavGuide(dest, '최종 목적지: $destinationName 도착 예정');
+      g.pathIndex = finePath.length - 1;
       guides.add(g);
     }
 
@@ -742,8 +848,22 @@ class DriverNavigator extends ChangeNotifier {
       if (d <= 35) {
         s.passed = true;
         map.markStopPassed(i);
-        _speak('${s.name}에 도착했습니다.');
+        final next = nextStop;
+        if (next != null) {
+          _speak('${s.name}에 도착했습니다. 다음 목적지 ${next.name}(으)로 이동합니다.');
+        } else if (destinationName.isNotEmpty) {
+          _speak('${s.name}에 도착했습니다. 최종 목적지 $destinationName(으)로 이동합니다.');
+        } else {
+          _speak('${s.name}에 도착했습니다.');
+        }
         break;
+      }
+    }
+
+    if (destination != null && activeStops.every((s) => s.passed)) {
+      final destDist = distanceM(p, destination!);
+      if (destDist <= 40) {
+        _speak('최종 목적지 $destinationName에 도착했습니다. 모든 운행을 완료했습니다.');
       }
     }
   }
