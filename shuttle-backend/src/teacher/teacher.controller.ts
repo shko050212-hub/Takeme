@@ -7,7 +7,7 @@ import { TeacherService } from './teacher.service';
 @ApiTags('teacher')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Roles('DRIVER', 'TEACHER')
+@Roles('DRIVER', 'TEACHER', 'SHUTTLE_TEACHER')
 @Controller('teacher')
 export class TeacherController {
   constructor(private readonly teacherService: TeacherService) {}
@@ -42,17 +42,61 @@ export class TeacherController {
     return this.teacherService.getOperationLogs(email, month);
   }
 
+  // 1. 탑승 처리 (수동)
   @Post('board')
   @Post('board-student')
   async boardStudent(@AuthEmail() email: string, @Body() body: { studentId: number; reason?: string }) {
-    return this.teacherService.boardStudent(email, body.studentId, body.reason);
+    if (!body?.studentId) throw new BadRequestException('원아 ID가 필요합니다.');
+    return this.teacherService.boardStudent(email, Number(body.studentId), body.reason);
   }
 
+  // 2. 하차 및 보호자 인계 완료
+  @Post('dropoff')
+  @Post('dropoff-student')
+  async dropoffStudent(@AuthEmail() email: string, @Body() body: { studentId: number }) {
+    if (!body?.studentId) throw new BadRequestException('원아 ID가 필요합니다.');
+    return this.teacherService.dropoffStudent(email, Number(body.studentId));
+  }
+
+  // 3. 보호자 미인계 (재탑승)
+  @Post('handover-failed')
+  async handoverFailed(@AuthEmail() email: string, @Body() body: { studentId: number; reason?: string }) {
+    if (!body?.studentId) throw new BadRequestException('원아 ID가 필요합니다.');
+    return this.teacherService.handoverFailed(email, Number(body.studentId), body.reason);
+  }
+
+  // 4. 결석 / 건너뛰기
   @Post('skip-student')
   async skipStudent(@AuthEmail() email: string, @Body() body: { studentId: number }) {
-    return this.teacherService.skipStudent(email, body.studentId);
+    if (!body?.studentId) throw new BadRequestException('원아 ID가 필요합니다.');
+    return this.teacherService.skipStudent(email, Number(body.studentId));
   }
 
+  // 5. 정류장 인원 확인 완료 후 기사에게 출발 신호
+  @Post('ready-to-depart')
+  async readyToDepart(@AuthEmail() email: string, @Body() body: { stopName?: string }) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.readyToDepart(email, body?.stopName);
+  }
+
+  // 6. 동승 시작
+  @Post('start-escort')
+  async startEscort(@AuthEmail() email: string) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.startEscort(email);
+  }
+
+  // 7. 동승 종료 (잔류 아동 검사 + 맨 뒷좌석 확인 필수)
+  @Post('end-escort')
+  async endEscort(
+    @AuthEmail() email: string, 
+    @Body() body: { checkedBackSeats: boolean; notes?: string }
+  ) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.endEscort(email, !!body?.checkedBackSeats, body?.notes);
+  }
+
+  // Legacy operation hooks for compatibility
   @Post('start-operation')
   async startOperation(@AuthEmail() email: string) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
@@ -68,13 +112,12 @@ export class TeacherController {
   @Post('student/:id/memo')
   async updateMemo(
     @Param('id') studentId: number, 
-    @AuthEmail() email: string, @Body() body: { memo: string }
+    @AuthEmail() email: string, 
+    @Body() body: { memo: string }
   ) {
-    return this.teacherService.updateMemo(email, studentId, body.memo);
+    return this.teacherService.updateMemo(email, Number(studentId), body.memo);
   }
 
-  // 학생 앱이 지도교사 화면의 QR을 스캔해서 호출하는 API.
-  // 호출하는 사람이 학생·학부모이므로, 학생은 토큰으로 확인하고 교사 이메일은 QR 값(body)을 사용한다.
   @Post('student-board')
   @Roles('STUDENT', 'PARENT')
   async studentBoardByQR(
@@ -109,7 +152,7 @@ export class TeacherController {
     @Body('action') action: 'WAIT' | 'GO_AHEAD'
   ) {
     if (!email || !messageId || !action) throw new BadRequestException('필수 정보 누락');
-    return this.teacherService.replyMessage(email, messageId, action);
+    return this.teacherService.replyMessage(email, Number(messageId), action);
   }
 
   @Post('read-message')
@@ -118,12 +161,13 @@ export class TeacherController {
     @Body('messageId') messageId: number
   ) {
     if (!email || !messageId) throw new BadRequestException('필수 정보 누락');
-    return this.teacherService.readMessage(email, messageId);
+    return this.teacherService.readMessage(email, Number(messageId));
   }
 
   @Post('emergency')
-  async triggerEmergency(@AuthEmail() email: string) {
+  async triggerEmergency(@AuthEmail() email: string, @Body() body?: { studentId?: number }) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
-    return this.teacherService.triggerEmergency(email);
+    const studentId = body?.studentId ? Number(body.studentId) : undefined;
+    return this.teacherService.triggerEmergency(email, studentId);
   }
 }

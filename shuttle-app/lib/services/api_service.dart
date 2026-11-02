@@ -376,6 +376,48 @@ class ApiService {
     return null;
   }
 
+  Future<Map<String, dynamic>> dropoffStudent(int studentId) async {
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/dropoff-student');
+    final res = await postWithAuth(url, jsonEncode({'studentId': studentId}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> handoverFailed(int studentId, {String? reason}) async {
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/handover-failed');
+    final res = await postWithAuth(url, jsonEncode({'studentId': studentId, 'reason': reason}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> readyToDepart({String? stopName}) async {
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/ready-to-depart');
+    final res = await postWithAuth(url, jsonEncode({'stopName': stopName}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> startEscort() async {
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/start-escort');
+    final res = await postWithAuth(url, jsonEncode({}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> endEscort({required bool checkedBackSeats, String? notes}) async {
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/end-escort');
+    final res = await postWithAuth(url, jsonEncode({'checkedBackSeats': checkedBackSeats, 'notes': notes}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>> triggerEmergency({int? studentId}) async {
+    final url = Uri.parse('${AppConfig.apiHost}/teacher/emergency');
+    final res = await postWithAuth(url, jsonEncode(studentId != null ? {'studentId': studentId} : {}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
   Future<Map<String, dynamic>> manualBoardStudent(String email, int studentId, String reason) async {
     final url = Uri.parse('${AppConfig.apiHost}/teacher/board');
     final res = await postWithAuth(url, jsonEncode({

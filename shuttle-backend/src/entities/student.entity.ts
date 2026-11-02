@@ -55,10 +55,13 @@ export class Student {
   approvalStatus: string; // 'UNREGISTERED' | 'PENDING' | 'APPROVED'
 
   @Column({ default: 'WAITING' })
-  boardStatus: string; // 'WAITING' | 'BOARDED' | 'ABSENT'
+  boardStatus: string; // 'WAITING' | 'BOARDED' | 'ABSENT' | 'DROPPED_OFF' | 'HANDOVER_FAILED'
 
   @Column({ type: 'timestamp', nullable: true })
   actualBoardTime: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  actualDropTime: Date;
 
   @Column({ type: 'text', nullable: true })
   teacherMemo: string;
