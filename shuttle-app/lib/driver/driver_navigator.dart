@@ -890,7 +890,7 @@ class DriverNavigator extends ChangeNotifier {
     );
     _updateProgress();
     if (driving && position != null) {
-      map.moveMe(position!, heading: heading, follow: follow, navigating: true);
+      map.moveMe(position!, heading: heading, follow: follow, navigating: true, speedKmh: speedKmh.toDouble());
     }
   }
 
@@ -995,7 +995,7 @@ class DriverNavigator extends ChangeNotifier {
       if (driving) {
         headingUp = true;
         map.setHeadingUp(true);
-        map.moveMe(position!, heading: heading, follow: true, navigating: true);
+        map.moveMe(position!, heading: heading, follow: true, navigating: true, speedKmh: speedKmh.toDouble());
       } else {
         map.centerOn(position!, zoom: 15);
       }
@@ -1113,14 +1113,14 @@ class DriverNavigator extends ChangeNotifier {
     _evaluateSafety(p, speedMps: speedMps, simulated: simulated);
 
     if (!driving) {
-      map.moveMe(p, heading: heading);
+      map.moveMe(p, heading: heading, speedKmh: speedKmh.toDouble());
       notifyListeners();
       return;
     }
 
     _checkStopArrival(p);
     _updateProgress(hasGpsHeading: gpsHeading != null && gpsHeading >= 0);
-    map.moveMe(p, heading: heading, follow: follow, navigating: true);
+    map.moveMe(p, heading: heading, follow: follow, navigating: true, speedKmh: speedKmh.toDouble());
 
     // 실제 도로 기준 남은 시간(ETA)과 위치를 서버로 자동 전송 (오프라인 시 큐에 저장 후 자동 재전송)
     final mayLeaveDevice = serverLive && !testMode && (!simulated || simSendToServer);
