@@ -32,9 +32,9 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     this.routingService.registerRouteUpdateNotifier((academyId, message) => {
       if (message) {
-        this.broadcastTeacherPush(message, academyId);
+        this.broadcastTeacherPushByAcademy(message, academyId);
       }
-      this.broadcastRouteUpdated(academyId);
+      this.broadcastRouteUpdatedByAcademy(academyId);
     });
   }
 
@@ -65,7 +65,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     console.log(`Client disconnected: ${client.id}`);
   }
 
-  /** Broadcast operation status to room and all dashboards */
+  /** Broadcast operation status to vehicle room */
   broadcastOperationStatus(vehicleId: number, isOperating: boolean, busNumber?: string) {
     this.operatingVehicles.set(vehicleId, isOperating);
     const room = `vehicle_${vehicleId}`;
@@ -73,36 +73,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       vehicleId,
       busNumber,
       isOperating,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     };
     if (this.server) {
       this.server.to(room).emit('vehicleOperatingStatus', payload);
-      this.server.emit('vehicleOperatingStatus', payload);
     }
   }
 
-  /** Broadcast route/pickup-point/academy update */
-  broadcastRouteUpdated(academyId?: number) {
-    if (this.server) {
-      this.server.emit('routeUpdated', {
-        academyId: academyId ?? null,
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }
-
-  /** 원장 웹에서 탑승지 추가/삭제 시 지도교사에게 푸시 알림 전송 */
-  broadcastTeacherPush(message: string, academyId?: number) {
-    if (this.server) {
-      this.server.emit('teacherPush', {
-        message,
-        academyId: academyId ?? null,
-        timestamp: new Date().toISOString(),
-      });
-    }
-  }
-
-  /** 지도교사가 탑승 완료 후 기사 앱에 "출발하셔도 됩니다" 신호 전송 */
+  /** 지도교사가 탑승 완료 후 기사 앱에 "출발하셔도 됩니다" 신호 전송 (해당 차량 방에만 발송) */
   broadcastDepartSignal(vehicleId: number, stopName?: string) {
     const room = `vehicle_${vehicleId}`;
     const payload = {
@@ -113,7 +91,71 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     };
     if (this.server) {
       this.server.to(room).emit('driverDepartSignal', payload);
-      this.server.emit('driverDepartSignal', payload);
+    }
+  }
+
+  /** 원아 탑승/하차/인계 상태 변경 시 해당 차량 방에 실시간 전송 */
+  broadcastStudentStatusUpdated(vehicleId: number, payload: { studentId: number; boardStatus: string; studentName?: string; time?: string }) {
+    const room = `vehicle_${vehicleId}`;
+    if (this.server) {
+      this.server.to(room).emit('studentStatusUpdated', {
+        ...payload,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** 노선 또는 일정 변경 시 해당 차량 방 또는 유치원 방에 알림 */
+  broadcastRouteUpdated(vehicleId?: number) {
+    if (!this.server) return;
+    if (vehicleId) {
+      this.server.to(`vehicle_${vehicleId}`).emit('routeUpdated', {
+        vehicleId,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      this.server.emit('routeUpdated', { timestamp: new Date().toISOString() });
+    }
+  }
+
+  /** 유치원 단위 노선 변경 알림 */
+  broadcastRouteUpdatedByAcademy(academyId?: number) {
+    if (!this.server) return;
+    if (academyId) {
+      this.server.to(`academy_${academyId}`).emit('routeUpdated', {
+        academyId,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      this.server.emit('routeUpdated', { timestamp: new Date().toISOString() });
+    }
+  }
+
+  /** 학부모 결석/변경 등으로 교사에게 푸시 전송 (차량 방에만 전송) */
+  broadcastTeacherPush(vehicleId: number, message: string) {
+    if (this.server) {
+      this.server.to(`vehicle_${vehicleId}`).emit('teacherPush', {
+        message,
+        vehicleId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** 유치원 단위 교사 푸시 전송 */
+  broadcastTeacherPushByAcademy(message: string, academyId?: number) {
+    if (!this.server) return;
+    if (academyId) {
+      this.server.to(`academy_${academyId}`).emit('teacherPush', {
+        message,
+        academyId,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      this.server.emit('teacherPush', {
+        message,
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 
@@ -164,7 +206,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.broadcastDepartSignal(vehicleId, data?.stopName);
   }
 
-  // 기사 앱이 위치 + 실제 도로 기준 남은 시간(ETA)을 보내면 차량 방 및 대시보드·학부모에게 실시간 전송
+  // 기사 앱이 위치 + 실제 도로 기준 남은 시간(ETA)을 보내면 차량 방에 실시간 전송
   @SubscribeMessage('driverLocationUpdate')
   async handleDriverLocationUpdate(
     @MessageBody()
@@ -201,12 +243,11 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       timestamp: new Date().toISOString(),
     };
 
-    // Emit to vehicle room AND broadcast to all dashboards
+    // Emit to vehicle room only
     this.server.to(room).emit('locationUpdated', payload);
-    this.server.emit('locationUpdated', payload);
 
-    // Also emit operation status as true
-    this.server.emit('vehicleOperatingStatus', {
+    // Also emit operation status to vehicle room
+    this.server.to(room).emit('vehicleOperatingStatus', {
       vehicleId,
       isOperating: true,
       timestamp: new Date().toISOString(),
@@ -217,7 +258,6 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
       const notificationsToEmit = await this.routingService.checkArrivalAndNotify(vehicleId, lat, lng);
       for (const noti of notificationsToEmit) {
         this.server.to(room).emit('busArriving', noti);
-        this.server.emit('busArriving', noti);
       }
     } catch (e) {
       console.error('Error during checkArrivalAndNotify:', e);

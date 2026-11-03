@@ -85,11 +85,11 @@ class SocketService {
       'vehicleId': vehicleId,
       'lat': lat,
       'lng': lng,
-      if (remainingSeconds != null) 'remainingSeconds': remainingSeconds,
-      if (remainingMeters != null) 'remainingMeters': remainingMeters,
-      if (nextStopName != null) 'nextStopName': nextStopName,
-      if (nextStopEtaSeconds != null) 'nextStopEtaSeconds': nextStopEtaSeconds,
-      if (speedKmh != null) 'speedKmh': speedKmh,
+      'remainingSeconds': ?remainingSeconds,
+      'remainingMeters': ?remainingMeters,
+      'nextStopName': ?nextStopName,
+      'nextStopEtaSeconds': ?nextStopEtaSeconds,
+      'speedKmh': ?speedKmh,
       'clientTimestamp': DateTime.now().toIso8601String(),
     };
 
@@ -104,19 +104,20 @@ class SocketService {
     }
   }
 
+  /// 지도교사가 정류장에서 원아 탑승 완료 후 기사에게 "출발하셔도 됩니다" 신호 발송
+  void sendReadyToDepart({required int vehicleId, String? stopName}) {
+    final payload = <String, dynamic>{
+      'vehicleId': vehicleId,
+      if (stopName != null && stopName.isNotEmpty) 'stopName': stopName,
+    };
+    _socket?.emit('teacherReadyToDepart', payload);
+  }
+
   /// 운행 시작·종료를 서버에 알림 → 관리자 웹·학부모 앱에 '운행 중' 표시
   void sendOperationStatus({required int vehicleId, required bool isOperating}) {
     _socket?.emit('driverOperationStatus', {
       'vehicleId': vehicleId,
       'isOperating': isOperating,
-    });
-  }
-
-  /// 지도교사가 정류장에서 원아 탑승 완료 후 기사에게 "출발하셔도 됩니다" 신호 발송
-  void sendReadyToDepart({required int vehicleId, String? stopName}) {
-    _socket?.emit('teacherReadyToDepart', {
-      'vehicleId': vehicleId,
-      if (stopName != null) 'stopName': stopName,
     });
   }
 
@@ -131,7 +132,19 @@ class SocketService {
     });
   }
 
-  /// 원장 웹에서 탑승지 추가/삭제 시 지도교사 앱으로 푸시 알림 수신
+  /// 지도교사 원아 상태(탑승/하차/인계/인계실패) 변경 이벤트 수신
+  void onStudentStatusUpdated(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('studentStatusUpdated');
+    _socket?.on('studentStatusUpdated', (data) {
+      if (data is Map<String, dynamic>) {
+        callback(data);
+      } else if (data is Map) {
+        callback(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  /// 원장 웹/학부모 결석·변경 시 푸시 알림 수신
   void onTeacherPush(Function(Map<String, dynamic> data) callback) {
     _socket?.off('teacherPush');
     _socket?.on('teacherPush', (data) {
