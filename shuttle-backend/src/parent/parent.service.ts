@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { ScheduleOverride, OverrideType } from '../entities/schedule-override.entity';
 import { Notification } from '../entities/notification.entity';
 import { Student } from '../entities/student.entity';
@@ -163,7 +164,7 @@ export class ParentService {
   }
 
   async getRoute(email: string) {
-    const student = await this.studentRepository.createQueryBuilder('student')
+    let student = await this.studentRepository.createQueryBuilder('student')
       .leftJoinAndSelect('student.parentUser', 'parentUser')
       .leftJoinAndSelect('student.studentUser', 'studentUser')
       .leftJoinAndSelect('student.assignedVehicle', 'vehicle')
@@ -171,48 +172,99 @@ export class ParentService {
       .where('parentUser.email = :email OR studentUser.email = :email', { email })
       .getOne();
 
-    if (!student || !student.assignedVehicle) {
-      return { routePoints: [], stops: [], academy: null };
+    if (!student) {
+      student = await this.studentRepository.findOne({
+        where: { raw: { email } },
+        relations: { assignedVehicle: true, academy: true }
+      });
     }
 
-    // Get all students assigned to this vehicle
+    if (!student || !student.assignedVehicle) {
+      return { routePoints: [], stops: [], academy: null, myChildStop: null };
+    }
+
+    // Get all students assigned to this vehicle (소속 유치원 일치 보장)
     const allStudents = await this.studentRepository.find({
-      where: { assignedVehicle: { id: student.assignedVehicle.id } },
+      where: {
+        assignedVehicle: { id: student.assignedVehicle.id },
+        ...(student.academy ? { academy: { id: student.academy.id } } : {})
+      },
       relations: { academy: true }
     });
 
+    // 오늘 결석한 원아 체크 (override 또는 boardStatus)
+    const today = new Date();
+    const tzOffset = today.getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(today.getTime() - tzOffset)).toISOString().slice(0, 10);
+    const overrides = await this.overrideRepository.find({
+      where: {
+        startDate: localISOTime,
+        overrideType: OverrideType.ABSENCE
+      },
+      relations: { student: true }
+    });
+    const absentStudentIds = new Set(overrides.map(o => o.student?.id).filter(Boolean));
+
     // Extract valid locations
     const stops = allStudents
-      .filter(s => s.latitude && s.longitude)
-      .map(s => ({
-        id: s.id,
-        name: s.name,
-        address: s.address,
-        latitude: s.latitude,
-        longitude: s.longitude
-      }));
+      .filter(s => s.latitude && s.longitude && s.boardStatus !== 'ABSENT' && !absentStudentIds.has(s.id))
+      .map(s => {
+        const isMyChild = s.id === student!.id;
+        const displayName = isMyChild 
+          ? `${s.adminDisplayName || s.name} (우리 아이 탑승지)` 
+          : (s.adminDisplayName || s.name);
+        return {
+          id: s.id,
+          name: displayName,
+          rawName: s.name,
+          isMyChild,
+          address: s.boardingLocation || s.address,
+          latitude: parseFloat(s.latitude as any),
+          longitude: parseFloat(s.longitude as any),
+          expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30'
+        };
+      });
 
     const academy = student.academy;
     const routePoints = [];
     if (academy && academy.latitude && academy.longitude) {
-      routePoints.push({ latitude: academy.latitude, longitude: academy.longitude, title: '유치원' });
+      routePoints.push({
+        latitude: parseFloat(academy.latitude as any),
+        longitude: parseFloat(academy.longitude as any),
+        title: academy.name || '유치원'
+      });
     }
 
     stops.forEach(s => {
       routePoints.push({ latitude: s.latitude, longitude: s.longitude, title: s.name });
     });
-    
+
+    if (academy && academy.latitude && academy.longitude && stops.length > 0) {
+      routePoints.push({
+        latitude: parseFloat(academy.latitude as any),
+        longitude: parseFloat(academy.longitude as any),
+        title: academy.name || '유치원'
+      });
+    }
+
     let academyPickupPoints: any[] = [];
     if (academy) {
       academyPickupPoints = await this.pickupPointRepository.find({ where: { academy: { id: academy.id } } });
     }
 
+    const myChildStop = stops.find(s => s.isMyChild) || null;
+
     return {
       vehicleId: student.assignedVehicle.id,
-      academy: academy ? { latitude: academy.latitude, longitude: academy.longitude, name: academy.name } : null,
+      academy: academy ? {
+        latitude: parseFloat(academy.latitude as any),
+        longitude: parseFloat(academy.longitude as any),
+        name: academy.name
+      } : null,
       stops,
       routePoints,
-      academyPickupPoints
+      academyPickupPoints,
+      myChildStop
     };
   }
 
@@ -439,5 +491,74 @@ export class ParentService {
       studentId: student.id,
       allergies: student.allergies
     };
+  }
+
+  async getProfile(email: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+
+    let child = await this.getMyChild(email);
+
+    return {
+      email: user.email,
+      name: user.name || (child ? child.name : ''),
+      phone: user.phone || '',
+      role: user.role,
+      childName: child?.name || null,
+      academyName: child?.academyName || null
+    };
+  }
+
+  async updatePhone(email: string, phone: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+    const cleanedPhone = (phone || '').trim();
+    if (!cleanedPhone) throw new BadRequestException('전화번호를 입력해주세요.');
+
+    user.phone = cleanedPhone;
+    await this.userRepository.save(user);
+
+    // 자녀 정보에도 보호자 연락처 동기화
+    const student = await this.studentRepository.createQueryBuilder('student')
+      .leftJoinAndSelect('student.parentUser', 'parentUser')
+      .where('parentUser.email = :email', { email })
+      .getOne();
+
+    if (student) {
+      let rawObj: any = student.raw;
+      if (typeof rawObj === 'string') {
+        try { rawObj = JSON.parse(rawObj); } catch (e) { rawObj = {}; }
+      }
+      if (!rawObj || typeof rawObj !== 'object') rawObj = {};
+      rawObj['부모연락처'] = cleanedPhone;
+      rawObj['보호자연락처'] = cleanedPhone;
+      student.raw = rawObj;
+      await this.studentRepository.save(student);
+    }
+
+    return { success: true, phone: cleanedPhone, message: '전화번호가 성공적으로 변경되었습니다.' };
+  }
+
+  async changePassword(email: string, currentPass: string, newPass: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+
+    if (!currentPass || !newPass) {
+      throw new BadRequestException('현재 비밀번호와 새 비밀번호를 모두 입력해주세요.');
+    }
+
+    const isMatch = await bcrypt.compare(currentPass, user.passwordHash);
+    if (!isMatch) {
+      throw new BadRequestException('현재 비밀번호가 일치하지 않습니다.');
+    }
+
+    if (newPass.length < 6) {
+      throw new BadRequestException('새 비밀번호는 최소 6자 이상이어야 합니다.');
+    }
+
+    user.passwordHash = await bcrypt.hash(newPass, 10);
+    await this.userRepository.save(user);
+
+    return { success: true, message: '비밀번호가 성공적으로 변경되었습니다.' };
   }
 }

@@ -98,4 +98,37 @@ export class ParentController {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
     return this.parentService.updateChildAllergies(email, allergies);
   }
+
+  @Get('profile')
+  async getProfile(
+    @AuthEmail() authEmail: string,
+    @Query('email') queryEmail?: string
+  ) {
+    const email = authEmail || queryEmail;
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.parentService.getProfile(email);
+  }
+
+  @Post('update-phone')
+  async updatePhone(
+    @AuthEmail() authEmail: string,
+    @Body('email') bodyEmail: string,
+    @Body('phone') phone: string
+  ) {
+    const email = authEmail || bodyEmail;
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.parentService.updatePhone(email, phone);
+  }
+
+  @Post('change-password')
+  async changePassword(
+    @AuthEmail() authEmail: string,
+    @Body('email') bodyEmail: string,
+    @Body('currentPassword') currentPassword: string,
+    @Body('newPassword') newPassword: string
+  ) {
+    const email = authEmail || bodyEmail;
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.parentService.changePassword(email, currentPassword, newPassword);
+  }
 }

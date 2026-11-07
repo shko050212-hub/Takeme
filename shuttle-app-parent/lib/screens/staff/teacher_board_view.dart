@@ -99,7 +99,7 @@ class _TeacherBoardViewState extends State<TeacherBoardView> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        '클라우드 게시글 작성',
+                        '알림장 / 게시글 작성',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -189,7 +189,7 @@ class _TeacherBoardViewState extends State<TeacherBoardView> {
 
                   // Image Picker Section
                   const Text(
-                    '클라우드 사진 첨부',
+                    '원아 활동 사진 첨부',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
                   ),
                   const SizedBox(height: 8),
@@ -344,7 +344,7 @@ class _TeacherBoardViewState extends State<TeacherBoardView> {
                             if (res['success'] == true) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('클라우드 게시글이 등록되었습니다. 관리자 웹과 실시간 동기화됩니다.'),
+                                  content: Text('알림장 및 게시글이 등록되었습니다. 학부모 및 관리자 웹과 실시간 공유됩니다.'),
                                   backgroundColor: Color(0xFF10B981),
                                 ),
                               );
@@ -369,7 +369,7 @@ class _TeacherBoardViewState extends State<TeacherBoardView> {
                             children: [
                               SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
                               SizedBox(width: 10),
-                              Text('클라우드 업로드 중...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              Text('게시글 업로드 중...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ],
                           )
                         : const Text(

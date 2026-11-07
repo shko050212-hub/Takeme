@@ -31,7 +31,7 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
             Row(
               children: [
                 Text(
-                  _selectedTabIndex == 0 ? '클라우드 게시판' : '학급 메시지 소통',
+                  _selectedTabIndex == 0 ? '학급 알림장' : '학급 메시지 소통',
                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                 ),
                 const SizedBox(width: 8),
@@ -94,7 +94,7 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.photo_library_outlined),
             activeIcon: Icon(Icons.photo_library),
-            label: '클라우드 게시판',
+            label: '학급 알림장',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.mail_outline),

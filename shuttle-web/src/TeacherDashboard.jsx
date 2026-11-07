@@ -12,8 +12,8 @@ function getDistanceKm(lat1, lon1, lat2, lon2) {
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
@@ -33,10 +33,10 @@ const busIcon = L.divIcon({
   iconAnchor: [17, 17]
 });
 
-export default function TeacherDashboard({ 
-  currentUser = {}, 
-  academy = {}, 
-  buses = [], 
+export default function TeacherDashboard({
+  currentUser = {},
+  academy = {},
+  buses = [],
   students = [],
   availableClasses = ['햇살반', '열매반', '풀잎반', '새싹반'],
   selectedAcademyId,
@@ -152,14 +152,14 @@ export default function TeacherDashboard({
   };
 
   const handleDeleteCloudPhoto = (photoId) => {
-    if (window.confirm('이 사진을 임시 클라우드에서 삭제하시겠습니까?')) {
+    if (window.confirm('이 사진을 임시 보관함에서 삭제하시겠습니까?')) {
       setCloudPhotos(prev => prev.filter(p => p.id !== photoId));
     }
   };
 
   const handleClearAllCloudPhotos = () => {
     if (cloudPhotos.length === 0) return;
-    if (window.confirm('임시 클라우드에 보관된 모든 사진을 삭제하시겠습니까?')) {
+    if (window.confirm('임시 보관함에 보관된 모든 사진을 삭제하시겠습니까?')) {
       setCloudPhotos([]);
     }
   };
@@ -609,7 +609,7 @@ export default function TeacherDashboard({
     }
 
     setIsSendingClassNotice(true);
-    const fullNoticeText = classNoticeTitle.trim() 
+    const fullNoticeText = classNoticeTitle.trim()
       ? `[${classNoticeTitle.trim()}] ${classNoticeContent.trim()}`
       : classNoticeContent.trim();
 
@@ -793,11 +793,10 @@ export default function TeacherDashboard({
         {/* Tab 1: 교실 홈 */}
         <button
           onClick={() => setActiveNavTab('home')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'home'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'home'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
+            }`}
           title="우리 반 교실 홈"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -808,11 +807,10 @@ export default function TeacherDashboard({
         {/* Tab 2: 유치원 게시판 */}
         <button
           onClick={() => setActiveNavTab('board')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'board'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'board'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
+            }`}
           title="원아 앨범 & 게시판"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -820,15 +818,14 @@ export default function TeacherDashboard({
           </svg>
         </button>
 
-        {/* Tab 3: 임시 사진 클라우드 */}
+        {/* Tab 3: 임시 사진 보관함 */}
         <button
           onClick={() => setActiveNavTab('cloud')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'cloud'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'cloud'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
-          title="임시 사진 클라우드"
+            }`}
+          title="임시 사진 보관함"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -838,11 +835,10 @@ export default function TeacherDashboard({
         {/* Tab 4: 실시간 메시지 & 결제 승인 */}
         <button
           onClick={() => setActiveNavTab('messages')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'messages'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'messages'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
+            }`}
           title="실시간 메시지 & 결제 승인"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -901,7 +897,7 @@ export default function TeacherDashboard({
             <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-xl font-black text-slate-800 tracking-tight">임시 사진 클라우드</h1>
+                  <h1 className="text-xl font-black text-slate-800 tracking-tight">임시 사진 보관함</h1>
                   <span className="text-xs bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200">
                     총 {cloudPhotos.length}장 보관 중
                   </span>
@@ -953,11 +949,10 @@ export default function TeacherDashboard({
                   processCloudFiles(e.dataTransfer.files);
                 }}
                 onClick={() => cloudFileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
-                  isDraggingOverCloud
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${isDraggingOverCloud
                     ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
                     : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/20 shadow-xs'
-                }`}
+                  }`}
               >
                 <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-2 shadow-xs">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1067,7 +1062,7 @@ export default function TeacherDashboard({
                       담당 반 배정 대기 중입니다
                     </h2>
                     <p className="text-xs text-slate-500 leading-relaxed">
-                      <strong>{localTeacherUser?.name || '선생님'}</strong>님, 환영합니다.<br/>
+                      <strong>{localTeacherUser?.name || '선생님'}</strong>님, 환영합니다.<br />
                       현재 <strong>{academy?.name || '소속 유치원'}</strong>에 정상 등록되었으며,
                       <strong>관리자님께서 담당 반을 배정</strong>하시면 교실 수업 일정 및 원아 명단이 자동으로 활성화됩니다.
                     </p>
@@ -1164,15 +1159,13 @@ export default function TeacherDashboard({
                         return (
                           <div
                             key={idx}
-                            className={`flex items-start gap-3 p-3 rounded-xl transition-all border ${
-                              isCurrent
+                            className={`flex items-start gap-3 p-3 rounded-xl transition-all border ${isCurrent
                                 ? 'bg-blue-50/80 border-blue-300 shadow-sm'
                                 : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                              isCurrent ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
-                            }`}>
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${isCurrent ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
+                              }`}>
                               {idx + 1}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1180,9 +1173,8 @@ export default function TeacherDashboard({
                                 <h4 className={`text-sm font-bold ${isCurrent ? 'text-blue-900' : 'text-slate-800'}`}>
                                   {item.title}
                                 </h4>
-                                <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold shrink-0 ${
-                                  isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
-                                }`}>
+                                <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold shrink-0 ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
+                                  }`}>
                                   {item.time}
                                 </span>
                               </div>
@@ -1302,33 +1294,29 @@ export default function TeacherDashboard({
                       <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
                         <button
                           onClick={() => setFilterMode('ALL')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           전체 ({myStudents.length})
                         </button>
                         <button
                           onClick={() => setFilterMode('SHUTTLE')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'SHUTTLE' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'SHUTTLE' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           셔틀 ({summary.shuttle})
                         </button>
                         <button
                           onClick={() => setFilterMode('PICKUP')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'PICKUP' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'PICKUP' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           픽업 ({summary.pickup})
                         </button>
                         <button
                           onClick={() => setFilterMode('ABSENT')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'ABSENT' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'ABSENT' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           결석 ({summary.absent})
                         </button>
@@ -1438,43 +1426,40 @@ export default function TeacherDashboard({
                         return (
                           <div
                             key={student.id}
-                            className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
-                              isRideApproved
+                            className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${isRideApproved
                                 ? 'bg-emerald-50/80 border-2 border-emerald-500 ring-2 ring-emerald-100 shadow-md'
                                 : isRideReRequested
-                                ? 'bg-purple-50/90 border-2 border-purple-400 ring-2 ring-purple-100 shadow-md animate-pulse-subtle'
-                                : isRidePending
-                                ? 'bg-amber-50/90 border-2 border-amber-400 ring-2 ring-amber-100 shadow-md'
-                                : isAbsent
-                                ? 'bg-slate-100/70 border-slate-300 opacity-75'
-                                : isPickup
-                                ? 'bg-amber-50/30 border border-amber-200'
-                                : 'bg-white border-slate-200 shadow-xs hover:border-blue-300'
-                            }`}
+                                  ? 'bg-purple-50/90 border-2 border-purple-400 ring-2 ring-purple-100 shadow-md animate-pulse-subtle'
+                                  : isRidePending
+                                    ? 'bg-amber-50/90 border-2 border-amber-400 ring-2 ring-amber-100 shadow-md'
+                                    : isAbsent
+                                      ? 'bg-slate-100/70 border-slate-300 opacity-75'
+                                      : isPickup
+                                        ? 'bg-amber-50/30 border border-amber-200'
+                                        : 'bg-white border-slate-200 shadow-xs hover:border-blue-300'
+                              }`}
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2.5">
-                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-xs ${
-                                    isRideApproved
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-xs ${isRideApproved
                                       ? 'bg-emerald-600 text-white ring-2 ring-emerald-200'
                                       : isRidePending
-                                      ? 'bg-amber-500 text-white ring-2 ring-amber-200 animate-pulse'
-                                      : isAbsent
-                                      ? 'bg-slate-300 text-slate-600'
-                                      : isPickup
-                                      ? 'bg-amber-100 text-amber-800'
-                                      : 'bg-blue-100 text-blue-800'
-                                  }`}>
+                                        ? 'bg-amber-500 text-white ring-2 ring-amber-200 animate-pulse'
+                                        : isAbsent
+                                          ? 'bg-slate-300 text-slate-600'
+                                          : isPickup
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-blue-100 text-blue-800'
+                                    }`}>
                                     {student.name.substring(0, 1)}
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-1.5">
                                       <h4 className="font-extrabold text-slate-900 text-base">{student.name}</h4>
                                       {gender && (
-                                        <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded ${
-                                          gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
-                                        }`}>
+                                        <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded ${gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                                          }`}>
                                           {gender}
                                         </span>
                                       )}
@@ -1509,13 +1494,12 @@ export default function TeacherDashboard({
                                     승인 대기 중
                                   </span>
                                 ) : (
-                                  <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0 border ${
-                                    isAbsent
+                                  <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0 border ${isAbsent
                                       ? 'bg-rose-100 text-rose-700 border-rose-200'
                                       : isPickup
-                                      ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                      : 'bg-blue-100 text-blue-800 border-blue-200'
-                                  }`}>
+                                        ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                        : 'bg-blue-100 text-blue-800 border-blue-200'
+                                    }`}>
                                     {isAbsent ? '결석' : isPickup ? '직접 픽업' : '셔틀 하원'}
                                   </span>
                                 )}
@@ -1689,15 +1673,14 @@ export default function TeacherDashboard({
                                     }
                                     handleUpdateBoardStatus(student.id, 'WAITING');
                                   }}
-                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${
-                                    isRideApproved
+                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${isRideApproved
                                       ? 'bg-emerald-600 text-white shadow-xs font-black'
                                       : isRidePending
-                                      ? 'bg-amber-500 text-white shadow-xs font-black'
-                                      : isShuttle && !isNonShuttle
-                                      ? 'bg-white text-blue-700 shadow-xs'
-                                      : 'text-slate-500 hover:text-slate-800'
-                                  }`}
+                                        ? 'bg-amber-500 text-white shadow-xs font-black'
+                                        : isShuttle && !isNonShuttle
+                                          ? 'bg-white text-blue-700 shadow-xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                   셔틀 {isNonShuttle && !isRideApproved && !isRidePending ? '(신청)' : ''}
                                 </button>
@@ -1705,9 +1688,8 @@ export default function TeacherDashboard({
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateBoardStatus(student.id, 'SELF_PICKUP')}
-                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${
-                                    isPickup ? 'bg-white text-emerald-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
-                                  }`}
+                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${isPickup ? 'bg-white text-emerald-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                   픽업 {isNonShuttle ? '(기본)' : ''}
                                 </button>
@@ -1715,9 +1697,8 @@ export default function TeacherDashboard({
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateBoardStatus(student.id, 'ABSENT')}
-                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${
-                                    isAbsent ? 'bg-white text-rose-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
-                                  }`}
+                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${isAbsent ? 'bg-white text-rose-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                   결석
                                 </button>
