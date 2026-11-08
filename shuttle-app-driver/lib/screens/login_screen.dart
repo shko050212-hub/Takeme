@@ -297,7 +297,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             final res = await ApiService().verifySelfUnlockCode(email, code);
                             setDlgState(() => isBusy = false);
                             if (res['success'] == true) {
-                              Navigator.pop(ctx);
+                              if (ctx.mounted) Navigator.pop(ctx);
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('계정 잠금이 해제되었습니다. 다시 로그인해주세요.')),

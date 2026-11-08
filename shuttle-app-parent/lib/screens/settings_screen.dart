@@ -15,6 +15,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _allergyController = TextEditingController();
   bool _isSavingAllergy = false;
   bool _isDeletingAccount = false;
+  String _userPhone = '';
 
   @override
   void initState() {
@@ -32,15 +33,228 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final user = ApiService().currentUser;
     if (user != null && (user.role == 'PARENT' || user.role == 'STUDENT')) {
       final child = await ApiService().getMyChild(user.email);
+      final profile = await ApiService().getParentProfile();
       if (mounted) {
         setState(() {
           _childInfo = child;
           if (child != null) {
             _allergyController.text = child.allergies;
           }
+          if (profile != null && profile['phone'] != null) {
+            _userPhone = profile['phone'].toString();
+          }
         });
       }
     }
+  }
+
+  void _showPhoneEditDialog() {
+    final phoneCtrl = TextEditingController(text: _userPhone);
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('전화번호 변경', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '비상 연락 및 알림 수신을 위한 휴대폰 번호를 입력해주세요.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    hintText: '010-0000-0000',
+                    labelText: '휴대폰 번호',
+                    prefixIcon: const Icon(Icons.phone_android, size: 20, color: Color(0xFF2563EB)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('취소', style: TextStyle(color: Color(0xFF64748B))),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final val = phoneCtrl.text.trim();
+                        if (val.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('전화번호를 입력해주세요.'), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+                        setDialogState(() => isSaving = true);
+                        final res = await ApiService().updateParentPhone(val);
+                        setDialogState(() => isSaving = false);
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        if (res['success'] == true) {
+                          setState(() => _userPhone = val);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('전화번호가 성공적으로 변경되었습니다.'), backgroundColor: Color(0xFF10B981)),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(res['message'] ?? '변경에 실패했습니다.'), backgroundColor: Colors.red),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: isSaving
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('저장하기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showPasswordChangeDialog() {
+    final curCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    bool obscureCur = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('비밀번호 변경', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '안전한 로그인을 위해 새 비밀번호를 설정해주세요. (최소 6자 이상)',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: curCtrl,
+                    obscureText: obscureCur,
+                    decoration: InputDecoration(
+                      labelText: '현재 비밀번호',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureCur ? Icons.visibility_off : Icons.visibility, size: 18),
+                        onPressed: () => setDialogState(() => obscureCur = !obscureCur),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newCtrl,
+                    obscureText: obscureNew,
+                    decoration: InputDecoration(
+                      labelText: '새 비밀번호 (6자 이상)',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureNew ? Icons.visibility_off : Icons.visibility, size: 18),
+                        onPressed: () => setDialogState(() => obscureNew = !obscureNew),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmCtrl,
+                    obscureText: obscureConfirm,
+                    decoration: InputDecoration(
+                      labelText: '새 비밀번호 확인',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility, size: 18),
+                        onPressed: () => setDialogState(() => obscureConfirm = !obscureConfirm),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('취소', style: TextStyle(color: Color(0xFF64748B))),
+              ),
+              ElevatedButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        final cur = curCtrl.text.trim();
+                        final newP = newCtrl.text.trim();
+                        final conf = confirmCtrl.text.trim();
+                        if (cur.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('현재 비밀번호를 입력해주세요.'), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+                        if (newP.length < 6) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('새 비밀번호는 6자 이상이어야 합니다.'), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+                        if (newP != conf) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('새 비밀번호가 일치하지 않습니다.'), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+                        setDialogState(() => isSubmitting = true);
+                        final res = await ApiService().changeParentPassword(cur, newP);
+                        setDialogState(() => isSubmitting = false);
+                        if (!ctx.mounted) return;
+                        if (res['success'] == true) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('비밀번호가 성공적으로 변경되었습니다.'), backgroundColor: Color(0xFF10B981)),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(res['message'] ?? '비밀번호 변경에 실패했습니다.'), backgroundColor: Colors.red),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: isSubmitting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('변경하기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _handleSaveAllergy() async {
@@ -230,6 +444,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               : (user?.role == 'TEACHER'
                                   ? '지도교사'
                                   : (user?.role == 'PARENT' ? '학부모' : '학생')),
+                        ),
+                        const Divider(height: 20, color: Color(0xFFF1F5F9)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('연락처 (전화번호)', style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _userPhone.isNotEmpty ? _userPhone : '등록된 전화번호 없음',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: _userPhone.isNotEmpty ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            OutlinedButton(
+                              onPressed: _showPhoneEditDialog,
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                                side: const BorderSide(color: Color(0xFFBFDBFE)),
+                                backgroundColor: const Color(0xFFEFF6FF),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: const Text('수정', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 20, color: Color(0xFFF1F5F9)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('로그인 비밀번호', style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                SizedBox(height: 2),
+                                Text('••••••••', style: TextStyle(fontSize: 13, color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            OutlinedButton(
+                              onPressed: _showPasswordChangeDialog,
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                backgroundColor: const Color(0xFFF8FAFC),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: const Text('비번 변경', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                            ),
+                          ],
                         ),
                       ],
                     ),

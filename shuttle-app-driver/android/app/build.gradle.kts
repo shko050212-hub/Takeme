@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.takeme.shuttle_app"
+    namespace = "com.takeme.driver"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

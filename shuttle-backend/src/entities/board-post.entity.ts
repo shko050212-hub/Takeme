@@ -31,6 +31,9 @@ export class BoardPost {
   @Column({ type: 'varchar', length: 100, nullable: true })
   targetClass: string; // e.g. '햇살반'
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  className: string; // e.g. '햇살반'
+
   @Column({ type: 'int', default: 0 })
   likeCount: number;
 

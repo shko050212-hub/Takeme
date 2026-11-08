@@ -69,3 +69,11 @@ String formatDistance(double m) {
   if (m < 1000) return '${(m / 10).round() * 10}m';
   return '${(m / 1000).toStringAsFixed(1)}km';
 }
+
+/// a → b 진행 방향 (북쪽 0도, 시계 방향)
+double bearingDeg(GeoPoint a, GeoPoint b) {
+  final lat1 = _rad(a.lat), lat2 = _rad(b.lat), dLng = _rad(b.lng - a.lng);
+  final y = math.sin(dLng) * math.cos(lat2);
+  final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+  return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+}

@@ -46,6 +46,43 @@ class _AbsenceModalState extends State<AbsenceModal> {
     );
   }
 
+  Future<void> _selectDate() async {
+    DateTime initial = DateTime.now().add(const Duration(days: 1));
+    try {
+      if (_dateController.text.isNotEmpty) {
+        initial = DateFormat('yyyy-MM-dd').parse(_dateController.text);
+      }
+    } catch (_) {}
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 7)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: '적용 날짜 선택',
+      cancelText: '취소',
+      confirmText: '선택 완료',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF2563EB),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF0F172A),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dateController.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
+  }
+
   Future<void> _handleSubmit() async {
     final reason = _reasonController.text.trim();
     if (_overrideType == 'ABSENCE' && reason.isEmpty) {
@@ -138,15 +175,41 @@ class _AbsenceModalState extends State<AbsenceModal> {
               const SizedBox(height: 18),
 
               if (_overrideType != 'MESSAGE') ...[
-                const Text('적용 날짜', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('적용 날짜', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                    TextButton.icon(
+                      onPressed: _selectDate,
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.calendar_month, size: 16, color: Color(0xFF2563EB)),
+                      label: const Text('달력에서 선택', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 6),
-                TextField(
-                  controller: _dateController,
-                  decoration: InputDecoration(
-                    hintText: 'YYYY-MM-DD',
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    suffixIcon: const Icon(Icons.calendar_today, size: 18, color: Color(0xFF94A3B8)),
+                InkWell(
+                  onTap: _selectDate,
+                  borderRadius: BorderRadius.circular(12),
+                  child: IgnorePointer(
+                    child: TextField(
+                      controller: _dateController,
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        hintText: 'YYYY-MM-DD',
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.calendar_today, size: 20, color: Color(0xFF2563EB)),
+                          onPressed: _selectDate,
+                          tooltip: '달력 열기',
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),

@@ -67,6 +67,9 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   refreshToken: string | null;
 
+  @Column({ type: 'simple-array', nullable: true })
+  readNotificationKeys: string[];
+
   @CreateDateColumn()
   createdAt: Date;
 

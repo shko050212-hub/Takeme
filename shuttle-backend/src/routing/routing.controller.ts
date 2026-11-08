@@ -375,4 +375,16 @@ export class RoutingController {
     const take = Math.min(parseInt(limit || '50', 10), 100);
     return this.routingService.getAuditLogs(take);
   }
+
+  @Get('attendance')
+  async getAcademyAttendance(
+    @Headers('x-academy-id') academyIdHeader?: string,
+    @Headers('x-user-id') userIdHeader?: string,
+    @Query('academyId') academyIdQuery?: string,
+    @Query('userId') userIdQuery?: string,
+    @Query('date') dateQuery?: string,
+  ) {
+    const { academyId, userId } = this.resolveAcademyContext(academyIdHeader, academyIdQuery, userIdHeader, userIdQuery);
+    return this.routingService.getAcademyAttendance(academyId, userId, dateQuery);
+  }
 }

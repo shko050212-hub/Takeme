@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import BoardViewer from './board/BoardViewer';
@@ -12,8 +12,8 @@ function getDistanceKm(lat1, lon1, lat2, lon2) {
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
@@ -33,10 +33,10 @@ const busIcon = L.divIcon({
   iconAnchor: [17, 17]
 });
 
-export default function TeacherDashboard({ 
-  currentUser = {}, 
-  academy = {}, 
-  buses = [], 
+export default function TeacherDashboard({
+  currentUser = {},
+  academy = {},
+  buses = [],
   students = [],
   availableClasses = ['햇살반', '열매반', '풀잎반', '새싹반'],
   selectedAcademyId,
@@ -46,8 +46,147 @@ export default function TeacherDashboard({
   boardPosts = [],
   setBoardPosts,
 }) {
-  // Navigation State on Left Rail: 'home' | 'board' | 'cloud'
+  // Navigation State on Left Rail: 'home' | 'shuttle' | 'board' | 'cloud'
   const [activeNavTab, setActiveNavTab] = useState('home');
+
+  // Homeroom shuttle status state
+  const [homeroomStatus, setHomeroomStatus] = useState(null);
+  const [isHomeroomLoading, setIsHomeroomLoading] = useState(false);
+
+  const fetchHomeroomStatus = useCallback(async () => {
+    try {
+      let token = localStorage.getItem('takeme_token');
+      if (!token) {
+        try {
+          const u = JSON.parse(localStorage.getItem('takeme_user') || '{}');
+          token = u?.accessToken;
+        } catch (_) {}
+      }
+      const res = await fetch(`${API_BASE_URL}/teacher/homeroom/shuttle-status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHomeroomStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch homeroom shuttle status:', e);
+    } finally {
+      setIsHomeroomLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeNavTab === 'shuttle') {
+      setIsHomeroomLoading(true);
+      fetchHomeroomStatus();
+      const interval = setInterval(fetchHomeroomStatus, 30000); // 30초마다 자동 갱신
+      return () => clearInterval(interval);
+    }
+  }, [activeNavTab, fetchHomeroomStatus]);
+
+  // Attendance Management State
+  const [attendanceDate, setAttendanceDate] = useState(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [attendanceData, setAttendanceData] = useState(null);
+  const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
+  const [isSubmittingAttendance, setIsSubmittingAttendance] = useState(false);
+
+  const fetchAttendance = useCallback(async (date) => {
+    const targetDate = date || attendanceDate;
+    try {
+      setIsAttendanceLoading(true);
+      let token = localStorage.getItem('takeme_token');
+      if (!token) {
+        try {
+          const userStr = localStorage.getItem('takeme_user');
+          if (userStr) token = JSON.parse(userStr).token;
+        } catch (_) {}
+      }
+      const res = await fetch(`${API_BASE_URL}/teacher/homeroom/attendance?date=${targetDate}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttendanceData(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch attendance:', e);
+    } finally {
+      setIsAttendanceLoading(false);
+    }
+  }, [attendanceDate]);
+
+  useEffect(() => {
+    if (activeNavTab === 'attendance') {
+      fetchAttendance();
+    }
+  }, [activeNavTab, attendanceDate, fetchAttendance]);
+
+  const handleAttendanceStatusChange = (studentId, status) => {
+    if (!attendanceData?.students) return;
+    setAttendanceData(prev => ({
+      ...prev,
+      students: prev.students.map(s => s.studentId === studentId ? { ...s, status } : s)
+    }));
+  };
+
+  const handleAllPresent = () => {
+    if (!attendanceData?.students) return;
+    setAttendanceData(prev => ({
+      ...prev,
+      students: prev.students.map(s => ({ ...s, status: 'PRESENT' }))
+    }));
+  };
+
+  const handleSubmitAttendance = async () => {
+    if (!attendanceData?.students || attendanceData.students.length === 0) {
+      alert('출석을 체크할 원아가 없습니다.');
+      return;
+    }
+    try {
+      setIsSubmittingAttendance(true);
+      let token = localStorage.getItem('takeme_token');
+      if (!token) {
+        try {
+          const userStr = localStorage.getItem('takeme_user');
+          if (userStr) token = JSON.parse(userStr).token;
+        } catch (_) {}
+      }
+      const payload = {
+        date: attendanceDate,
+        attendances: attendanceData.students.map(s => ({
+          studentId: s.studentId,
+          status: s.status,
+          memo: s.memo,
+        })),
+      };
+      const res = await fetch(`${API_BASE_URL}/teacher/homeroom/attendance`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(data.message || '출석부가 성공적으로 제출되었습니다!');
+        fetchAttendance(attendanceDate);
+      } else {
+        alert(data.message || '출석부 제출에 실패했습니다.');
+      }
+    } catch (e) {
+      alert('출석부 제출 중 오류가 발생했습니다.');
+    } finally {
+      setIsSubmittingAttendance(false);
+    }
+  };
 
   // Temporary Cloud Storage State
   const cloudStorageKey = `takeme_teacher_cloud_${currentUser?.id || 'default'}`;
@@ -152,14 +291,14 @@ export default function TeacherDashboard({
   };
 
   const handleDeleteCloudPhoto = (photoId) => {
-    if (window.confirm('이 사진을 임시 클라우드에서 삭제하시겠습니까?')) {
+    if (window.confirm('이 사진을 임시 보관함에서 삭제하시겠습니까?')) {
       setCloudPhotos(prev => prev.filter(p => p.id !== photoId));
     }
   };
 
   const handleClearAllCloudPhotos = () => {
     if (cloudPhotos.length === 0) return;
-    if (window.confirm('임시 클라우드에 보관된 모든 사진을 삭제하시겠습니까?')) {
+    if (window.confirm('임시 보관함에 보관된 모든 사진을 삭제하시겠습니까?')) {
       setCloudPhotos([]);
     }
   };
@@ -609,7 +748,7 @@ export default function TeacherDashboard({
     }
 
     setIsSendingClassNotice(true);
-    const fullNoticeText = classNoticeTitle.trim() 
+    const fullNoticeText = classNoticeTitle.trim()
       ? `[${classNoticeTitle.trim()}] ${classNoticeContent.trim()}`
       : classNoticeContent.trim();
 
@@ -793,11 +932,10 @@ export default function TeacherDashboard({
         {/* Tab 1: 교실 홈 */}
         <button
           onClick={() => setActiveNavTab('home')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'home'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'home'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
+            }`}
           title="우리 반 교실 홈"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -805,30 +943,56 @@ export default function TeacherDashboard({
           </svg>
         </button>
 
-        {/* Tab 2: 유치원 게시판 */}
+        {/* Tab 2: 오늘 셔틀 현황 */}
         <button
-          onClick={() => setActiveNavTab('board')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'board'
+          onClick={() => setActiveNavTab('shuttle')}
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'shuttle'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
-          title="원아 앨범 & 게시판"
+            }`}
+          title="오늘 셔틀 현황"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 4h8m-9 8h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v11a2 2 0 002 2zm1-2a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
+          </svg>
+        </button>
+
+        {/* Tab: 출석부 관리 */}
+        <button
+          onClick={() => setActiveNavTab('attendance')}
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'attendance'
+              ? 'bg-white text-blue-700 shadow-lg scale-110'
+              : 'text-blue-200 hover:bg-blue-600'
+            }`}
+          title="출석부 관리"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        </button>
+
+        {/* Tab 3: 알림장 & 게시판 */}
+        <button
+          onClick={() => setActiveNavTab('board')}
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'board'
+              ? 'bg-white text-blue-700 shadow-lg scale-110'
+              : 'text-blue-200 hover:bg-blue-600'
+            }`}
+          title="알림장 & 앨범"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </button>
 
-        {/* Tab 3: 임시 사진 클라우드 */}
+        {/* Tab 4: 사진 보관함 */}
         <button
           onClick={() => setActiveNavTab('cloud')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'cloud'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'cloud'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
-          title="임시 사진 클라우드"
+            }`}
+          title="사진 보관함"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -838,11 +1002,10 @@ export default function TeacherDashboard({
         {/* Tab 4: 실시간 메시지 & 결제 승인 */}
         <button
           onClick={() => setActiveNavTab('messages')}
-          className={`p-4 rounded-2xl transition-all ${
-            activeNavTab === 'messages'
+          className={`p-4 rounded-2xl transition-all ${activeNavTab === 'messages'
               ? 'bg-white text-blue-700 shadow-lg scale-110'
               : 'text-blue-200 hover:bg-blue-600'
-          }`}
+            }`}
           title="실시간 메시지 & 결제 승인"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -866,8 +1029,332 @@ export default function TeacherDashboard({
       {/* 2. Main Area (To the right of the Left Rail) */}
       {/* ======================================================== */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* VIEW A: Board Mode (Only assigned class, no side buttons) */}
-        {activeNavTab === 'board' ? (
+        {/* VIEW: Homeroom Shuttle Status Mode */}
+        {activeNavTab === 'shuttle' ? (
+          <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
+            {/* Header */}
+            <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 4h8m-9 8h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v11a2 2 0 002 2zm1-2a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-black text-slate-800 tracking-tight">
+                      {homeroomStatus?.assignedClass || teacherClass || '담임 반'} 오늘 셔틀 현황
+                    </h1>
+                    <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">
+                      30초 자동 갱신
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    우리 반 원아들의 오늘 셔틀 호차 및 실시간 탑승 현황을 확인합니다.
+                  </p>
+                </div>
+              </div>
+
+              {/* Stats and Refresh */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 text-xs font-bold">
+                  <span className="px-2.5 py-1 rounded-lg bg-white text-slate-700 shadow-xs">
+                    전체 {homeroomStatus?.summary?.total || 0}명
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    탑승 {homeroomStatus?.summary?.boarded || 0}명
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                    대기 {homeroomStatus?.summary?.waiting || 0}명
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                    결석 {homeroomStatus?.summary?.absent || 0}명
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchHomeroomStatus}
+                  disabled={isHomeroomLoading}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                  title="새로고침"
+                >
+                  <svg className={`w-4 h-4 ${isHomeroomLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>새로고침</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Student Cards Grid */}
+            <div className="flex-1 overflow-y-auto p-8">
+              {homeroomStatus?.students && homeroomStatus.students.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {homeroomStatus.students.map(st => {
+                    const isBoarded = st.status === 'BOARDED';
+                    const isAbsent = st.status === 'ABSENT';
+
+                    return (
+                      <div
+                        key={st.id}
+                        className={`bg-white rounded-2xl p-5 border shadow-xs transition-all flex flex-col justify-between ${
+                          isBoarded
+                            ? 'border-emerald-300 bg-emerald-50/20'
+                            : isAbsent
+                            ? 'border-red-300 bg-red-50/20'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-base font-extrabold text-slate-800">{st.name}</span>
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-extrabold ${
+                                isBoarded
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : isAbsent
+                                  ? 'bg-red-100 text-red-800 border border-red-200'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              {isBoarded ? '✓ 탑승 완료' : isAbsent ? '✕ 결석 (미탑승)' : '⏳ 탑승 대기'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-100 mb-3">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 4h8m-9 8h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v11a2 2 0 002 2zm1-2a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                            </svg>
+                            <span>배정: {st.vehicle}</span>
+                          </div>
+
+                          <div className="space-y-1.5 text-xs text-slate-600">
+                            <div className="truncate text-slate-500" title={st.address}>
+                              📍 {st.address || '주소 미입력'}
+                            </div>
+                            {st.parentPhone && (
+                              <div className="flex items-center gap-1 text-slate-700 font-semibold">
+                                <span>📞 {st.parentPhone}</span>
+                              </div>
+                            )}
+                            {st.allergies && (
+                              <div className="text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded text-[11px] border border-red-100 inline-block">
+                                ⚠️ 알레르기: {st.allergies}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Footer Status Time */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                          <span>상태 확인</span>
+                          <span className="font-bold text-slate-600">
+                            {isBoarded && st.boardedAt
+                              ? `${new Date(st.boardedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 탑승`
+                              : st.statusText}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <h4 className="font-bold text-slate-700 text-sm mb-1">
+                    {homeroomStatus?.assignedClass ? `${homeroomStatus.assignedClass}에 등록된 원아가 없습니다` : '담당 반 정보가 설정되지 않았습니다'}
+                  </h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    담임교사 계정 설정에서 담당 반이 지정되어 있는지 확인해 주세요.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeNavTab === 'attendance' ? (
+          <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
+            {/* Attendance Header */}
+            <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-black text-slate-800 tracking-tight">
+                      {attendanceData?.assignedClass || teacherClass || '우리 반'} 일일 출석부
+                    </h1>
+                    {attendanceData?.isSubmitted ? (
+                      <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">
+                        제출 완료
+                      </span>
+                    ) : (
+                      <span className="text-xs bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-full font-bold border border-amber-200">
+                        미제출 (체크 후 제출)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    원아별 출석 상태를 확인하고 출석부를 제출합니다. 관리자 웹으로 실시간 전송됩니다.
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions & Date */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                  <span className="text-xs font-bold text-slate-500">날짜:</span>
+                  <input
+                    type="date"
+                    value={attendanceDate}
+                    onChange={(e) => {
+                      setAttendanceDate(e.target.value);
+                      fetchAttendance(e.target.value);
+                    }}
+                    className="bg-transparent text-xs font-bold text-slate-700 border-none outline-hidden cursor-pointer"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAllPresent}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                >
+                  전원 출석
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitAttendance}
+                  disabled={isSubmittingAttendance}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSubmittingAttendance ? '제출 중...' : attendanceData?.isSubmitted ? '출석부 수정 제출' : '출석부 제출'}
+                </button>
+              </div>
+            </div>
+
+            {/* Attendance Summary Bar */}
+            <div className="bg-white border-b border-slate-200 px-8 py-3 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-bold text-slate-600">출석 요약:</span>
+                <span className="px-2 py-0.5 bg-slate-100 rounded-md font-bold text-slate-700">전체 {attendanceData?.summary?.total || 0}명</span>
+                <span className="px-2 py-0.5 bg-emerald-100 rounded-md font-bold text-emerald-800">출석 {attendanceData?.summary?.present || 0}명</span>
+                <span className="px-2 py-0.5 bg-red-100 rounded-md font-bold text-red-800">결석 {attendanceData?.summary?.absent || 0}명</span>
+                <span className="px-2 py-0.5 bg-amber-100 rounded-md font-bold text-amber-800">지각 {attendanceData?.summary?.late || 0}명</span>
+                <span className="px-2 py-0.5 bg-purple-100 rounded-md font-bold text-purple-800">조퇴 {attendanceData?.summary?.earlyLeave || 0}명</span>
+              </div>
+              {attendanceData?.submission?.submittedAt && (
+                <span className="text-xs text-slate-400">
+                  최종 제출: {new Date(attendanceData.submission.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({attendanceData.submission.teacherName})
+                </span>
+              )}
+            </div>
+
+            {/* Students List */}
+            <div className="flex-1 overflow-y-auto p-8">
+              {isAttendanceLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : attendanceData?.students && attendanceData.students.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {attendanceData.students.map((st) => {
+                    return (
+                      <div
+                        key={st.studentId}
+                        className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between gap-3"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-black text-slate-800 text-base">{st.name}</h3>
+                              {st.boardStatus === 'BOARDED' && (
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-md">
+                                  셔틀탑승 완료
+                                </span>
+                              )}
+                              {st.boardStatus === 'ABSENT' && (
+                                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 text-[11px] font-bold rounded-md">
+                                  결석 신청
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-1">배정차량: {st.vehicleName || '미지정'}</p>
+                          </div>
+                        </div>
+
+                        {/* 4 Status Buttons: 출석 / 결석 / 지각 / 조퇴 */}
+                        <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => handleAttendanceStatusChange(st.studentId, 'PRESENT')}
+                            className={`py-2 text-xs font-bold rounded-xl transition ${
+                              st.status === 'PRESENT'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            출석
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAttendanceStatusChange(st.studentId, 'ABSENT')}
+                            className={`py-2 text-xs font-bold rounded-xl transition ${
+                              st.status === 'ABSENT'
+                                ? 'bg-red-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            결석
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAttendanceStatusChange(st.studentId, 'LATE')}
+                            className={`py-2 text-xs font-bold rounded-xl transition ${
+                              st.status === 'LATE'
+                                ? 'bg-amber-500 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            지각
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAttendanceStatusChange(st.studentId, 'EARLY_LEAVE')}
+                            className={`py-2 text-xs font-bold rounded-xl transition ${
+                              st.status === 'EARLY_LEAVE'
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            조퇴
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                  <h4 className="font-bold text-slate-700 text-sm mb-1">
+                    등록된 원아가 없습니다
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    관리자에게 담당 반 배정을 요청하거나 원아 등록 여부를 확인해 주세요.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeNavTab === 'board' ? (
           <div className="flex-1 relative z-0 overflow-hidden h-full w-full">
             <BoardViewer
               isClosing={false}
@@ -901,7 +1388,7 @@ export default function TeacherDashboard({
             <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-xl font-black text-slate-800 tracking-tight">임시 사진 클라우드</h1>
+                  <h1 className="text-xl font-black text-slate-800 tracking-tight">임시 사진 보관함</h1>
                   <span className="text-xs bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200">
                     총 {cloudPhotos.length}장 보관 중
                   </span>
@@ -953,11 +1440,10 @@ export default function TeacherDashboard({
                   processCloudFiles(e.dataTransfer.files);
                 }}
                 onClick={() => cloudFileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
-                  isDraggingOverCloud
+                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${isDraggingOverCloud
                     ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
                     : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/20 shadow-xs'
-                }`}
+                  }`}
               >
                 <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-2 shadow-xs">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1044,7 +1530,7 @@ export default function TeacherDashboard({
                   </div>
                   <h4 className="font-bold text-slate-700 text-sm mb-1">임시 보관된 사진이 없습니다</h4>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    위 영역을 클릭하거나 사진 파일을 끌어다 놓아 임시 클라우드에 사진을 저장해보세요.
+                    위 영역을 클릭하거나 사진 파일을 끌어다 놓아 사진 보관함에 사진을 저장해보세요.
                   </p>
                 </div>
               )}
@@ -1064,12 +1550,15 @@ export default function TeacherDashboard({
                   </div>
                   <div>
                     <h2 className="text-xl font-black text-slate-900 tracking-tight mb-2">
-                      담당 반 배정 대기 중입니다
+                      담당 반이 배정되지 않았습니다
                     </h2>
+                    <div className="inline-block px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-bold mb-3">
+                      관리자에게 반 배정을 요청하세요
+                    </div>
                     <p className="text-xs text-slate-500 leading-relaxed">
-                      <strong>{localTeacherUser?.name || '선생님'}</strong>님, 환영합니다.<br/>
+                      <strong>{localTeacherUser?.name || '선생님'}</strong>님, 환영합니다.<br />
                       현재 <strong>{academy?.name || '소속 유치원'}</strong>에 정상 등록되었으며,
-                      <strong>관리자님께서 담당 반을 배정</strong>하시면 교실 수업 일정 및 원아 명단이 자동으로 활성화됩니다.
+                      <strong>관리자님께서 담당 반을 배정</strong>하시면 교실 수업 일정 및 우리 반 원아 명단이 자동으로 활성화됩니다.
                     </p>
                   </div>
 
@@ -1164,15 +1653,13 @@ export default function TeacherDashboard({
                         return (
                           <div
                             key={idx}
-                            className={`flex items-start gap-3 p-3 rounded-xl transition-all border ${
-                              isCurrent
+                            className={`flex items-start gap-3 p-3 rounded-xl transition-all border ${isCurrent
                                 ? 'bg-blue-50/80 border-blue-300 shadow-sm'
                                 : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                              isCurrent ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
-                            }`}>
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${isCurrent ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
+                              }`}>
                               {idx + 1}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1180,9 +1667,8 @@ export default function TeacherDashboard({
                                 <h4 className={`text-sm font-bold ${isCurrent ? 'text-blue-900' : 'text-slate-800'}`}>
                                   {item.title}
                                 </h4>
-                                <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold shrink-0 ${
-                                  isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
-                                }`}>
+                                <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md font-semibold shrink-0 ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
+                                  }`}>
                                   {item.time}
                                 </span>
                               </div>
@@ -1302,33 +1788,29 @@ export default function TeacherDashboard({
                       <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
                         <button
                           onClick={() => setFilterMode('ALL')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           전체 ({myStudents.length})
                         </button>
                         <button
                           onClick={() => setFilterMode('SHUTTLE')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'SHUTTLE' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'SHUTTLE' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           셔틀 ({summary.shuttle})
                         </button>
                         <button
                           onClick={() => setFilterMode('PICKUP')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'PICKUP' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'PICKUP' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           픽업 ({summary.pickup})
                         </button>
                         <button
                           onClick={() => setFilterMode('ABSENT')}
-                          className={`px-2.5 py-1.5 rounded-lg transition-all ${
-                            filterMode === 'ABSENT' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-                          }`}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all ${filterMode === 'ABSENT' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                            }`}
                         >
                           결석 ({summary.absent})
                         </button>
@@ -1438,43 +1920,40 @@ export default function TeacherDashboard({
                         return (
                           <div
                             key={student.id}
-                            className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
-                              isRideApproved
+                            className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${isRideApproved
                                 ? 'bg-emerald-50/80 border-2 border-emerald-500 ring-2 ring-emerald-100 shadow-md'
                                 : isRideReRequested
-                                ? 'bg-purple-50/90 border-2 border-purple-400 ring-2 ring-purple-100 shadow-md animate-pulse-subtle'
-                                : isRidePending
-                                ? 'bg-amber-50/90 border-2 border-amber-400 ring-2 ring-amber-100 shadow-md'
-                                : isAbsent
-                                ? 'bg-slate-100/70 border-slate-300 opacity-75'
-                                : isPickup
-                                ? 'bg-amber-50/30 border border-amber-200'
-                                : 'bg-white border-slate-200 shadow-xs hover:border-blue-300'
-                            }`}
+                                  ? 'bg-purple-50/90 border-2 border-purple-400 ring-2 ring-purple-100 shadow-md animate-pulse-subtle'
+                                  : isRidePending
+                                    ? 'bg-amber-50/90 border-2 border-amber-400 ring-2 ring-amber-100 shadow-md'
+                                    : isAbsent
+                                      ? 'bg-slate-100/70 border-slate-300 opacity-75'
+                                      : isPickup
+                                        ? 'bg-amber-50/30 border border-amber-200'
+                                        : 'bg-white border-slate-200 shadow-xs hover:border-blue-300'
+                              }`}
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2.5">
-                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-xs ${
-                                    isRideApproved
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 shadow-xs ${isRideApproved
                                       ? 'bg-emerald-600 text-white ring-2 ring-emerald-200'
                                       : isRidePending
-                                      ? 'bg-amber-500 text-white ring-2 ring-amber-200 animate-pulse'
-                                      : isAbsent
-                                      ? 'bg-slate-300 text-slate-600'
-                                      : isPickup
-                                      ? 'bg-amber-100 text-amber-800'
-                                      : 'bg-blue-100 text-blue-800'
-                                  }`}>
+                                        ? 'bg-amber-500 text-white ring-2 ring-amber-200 animate-pulse'
+                                        : isAbsent
+                                          ? 'bg-slate-300 text-slate-600'
+                                          : isPickup
+                                            ? 'bg-amber-100 text-amber-800'
+                                            : 'bg-blue-100 text-blue-800'
+                                    }`}>
                                     {student.name.substring(0, 1)}
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-1.5">
                                       <h4 className="font-extrabold text-slate-900 text-base">{student.name}</h4>
                                       {gender && (
-                                        <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded ${
-                                          gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
-                                        }`}>
+                                        <span className={`text-[11px] font-bold px-1.5 py-0.2 rounded ${gender === '남' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                                          }`}>
                                           {gender}
                                         </span>
                                       )}
@@ -1509,13 +1988,12 @@ export default function TeacherDashboard({
                                     승인 대기 중
                                   </span>
                                 ) : (
-                                  <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0 border ${
-                                    isAbsent
+                                  <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full shrink-0 border ${isAbsent
                                       ? 'bg-rose-100 text-rose-700 border-rose-200'
                                       : isPickup
-                                      ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                      : 'bg-blue-100 text-blue-800 border-blue-200'
-                                  }`}>
+                                        ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                        : 'bg-blue-100 text-blue-800 border-blue-200'
+                                    }`}>
                                     {isAbsent ? '결석' : isPickup ? '직접 픽업' : '셔틀 하원'}
                                   </span>
                                 )}
@@ -1689,15 +2167,14 @@ export default function TeacherDashboard({
                                     }
                                     handleUpdateBoardStatus(student.id, 'WAITING');
                                   }}
-                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${
-                                    isRideApproved
+                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${isRideApproved
                                       ? 'bg-emerald-600 text-white shadow-xs font-black'
                                       : isRidePending
-                                      ? 'bg-amber-500 text-white shadow-xs font-black'
-                                      : isShuttle && !isNonShuttle
-                                      ? 'bg-white text-blue-700 shadow-xs'
-                                      : 'text-slate-500 hover:text-slate-800'
-                                  }`}
+                                        ? 'bg-amber-500 text-white shadow-xs font-black'
+                                        : isShuttle && !isNonShuttle
+                                          ? 'bg-white text-blue-700 shadow-xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                   셔틀 {isNonShuttle && !isRideApproved && !isRidePending ? '(신청)' : ''}
                                 </button>
@@ -1705,9 +2182,8 @@ export default function TeacherDashboard({
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateBoardStatus(student.id, 'SELF_PICKUP')}
-                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${
-                                    isPickup ? 'bg-white text-emerald-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
-                                  }`}
+                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${isPickup ? 'bg-white text-emerald-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                   픽업 {isNonShuttle ? '(기본)' : ''}
                                 </button>
@@ -1715,9 +2191,8 @@ export default function TeacherDashboard({
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateBoardStatus(student.id, 'ABSENT')}
-                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${
-                                    isAbsent ? 'bg-white text-rose-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
-                                  }`}
+                                  className={`py-1.5 rounded-lg transition-all flex items-center justify-center font-bold ${isAbsent ? 'bg-white text-rose-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-800'
+                                    }`}
                                 >
                                   결석
                                 </button>

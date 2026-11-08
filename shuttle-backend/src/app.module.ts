@@ -20,6 +20,8 @@ import { ChatMessage } from './entities/chat-message.entity';
 import { BoardPost } from './entities/board-post.entity';
 import { BoardComment } from './entities/board-comment.entity';
 import { AuditLog } from './entities/audit-log.entity';
+import { Attendance } from './entities/attendance.entity';
+import { AttendanceSubmission } from './entities/attendance-submission.entity';
 import { ParentModule } from './parent/parent.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { ChatModule } from './chat/chat.module';
@@ -59,6 +61,8 @@ import { DirectionsModule } from './directions/directions.module';
           BoardPost,
           BoardComment,
           AuditLog,
+          Attendance,
+          AttendanceSubmission,
         ],
         synchronize: true,
         ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,

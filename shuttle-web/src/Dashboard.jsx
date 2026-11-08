@@ -86,6 +86,16 @@ function PickupPointEvents({ isAddingPickupPoint, onAddPickupPoint }) {
   return null;
 }
 
+function MapFocusEffect({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target && target[0] && target[1]) {
+      map.setView(target, 16, { animate: true });
+    }
+  }, [target, map]);
+  return null;
+}
+
 export default function Dashboard({ initialEducationLevel } = {}) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -162,8 +172,16 @@ export default function Dashboard({ initialEducationLevel } = {}) {
 
   const [buses, setBuses] = useState([]);
   const [students, setStudents] = useState([]); // Array of { name, address, lat, lng, assignedBusId, color }
+  const [emergencyAlert, setEmergencyAlert] = useState(null);
+  const [escortToast, setEscortToast] = useState(null);
+  const [attendanceToast, setAttendanceToast] = useState(null);
+  const [adminAttendanceDate, setAdminAttendanceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [adminAttendanceData, setAdminAttendanceData] = useState(null);
+  const [isAdminAttendanceLoading, setIsAdminAttendanceLoading] = useState(false);
+  const [isAttendanceClosing, setIsAttendanceClosing] = useState(false);
+  const [mapFocusTarget, setMapFocusTarget] = useState(null);
   const [selectedBusId, setSelectedBusId] = useState(null);
-  const [activeTab, setActiveTab] = useState('status'); // 'status', 'buses', 'students', 'classes', 'auth', 'log', 'messages', 'documents', 'board', 'settings'
+  const [activeTab, setActiveTab] = useState('status'); // 'status', 'buses', 'students', 'classes', 'attendance', 'auth', 'log', 'messages', 'documents', 'board', 'settings'
   const [isLogClosing, setIsLogClosing] = useState(false);
   const [isMessageClosing, setIsMessageClosing] = useState(false);
   const [isDocumentsClosing, setIsDocumentsClosing] = useState(false);
@@ -382,6 +400,12 @@ export default function Dashboard({ initialEducationLevel } = {}) {
       setIsClassesClosing(true);
       setTimeout(() => {
         setIsClassesClosing(false);
+        setActiveTab(targetTab);
+      }, 300);
+    } else if (activeTab === 'attendance' && targetTab !== 'attendance') {
+      setIsAttendanceClosing(true);
+      setTimeout(() => {
+        setIsAttendanceClosing(false);
         setActiveTab(targetTab);
       }, 300);
     } else if (activeTab === 'auth' && targetTab !== 'auth') {
@@ -637,6 +661,32 @@ export default function Dashboard({ initialEducationLevel } = {}) {
 
   const socketRef = useRef(null);
 
+  const fetchAdminAttendance = useCallback(async (date) => {
+    const targetDate = date || adminAttendanceDate;
+    const targetAcademyId = selectedAcademyId || currentUser?.academyId;
+    try {
+      setIsAdminAttendanceLoading(true);
+      const url = targetAcademyId
+        ? `${API_BASE_URL}/routing/attendance?date=${targetDate}&academyId=${targetAcademyId}`
+        : `${API_BASE_URL}/routing/attendance?date=${targetDate}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setAdminAttendanceData(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch admin attendance:', e);
+    } finally {
+      setIsAdminAttendanceLoading(false);
+    }
+  }, [adminAttendanceDate, selectedAcademyId, currentUser]);
+
+  useEffect(() => {
+    if (activeTab === 'attendance') {
+      fetchAdminAttendance();
+    }
+  }, [activeTab, adminAttendanceDate, fetchAdminAttendance]);
+
   useEffect(() => {
     let token = localStorage.getItem('takeme_token');
     if (!token) {
@@ -654,11 +704,86 @@ export default function Dashboard({ initialEducationLevel } = {}) {
 
     socket.on('connect', () => {
       console.log('Manager socket connected:', socket.id);
+      if (selectedAcademyId) {
+        socket.emit('joinAcademyRoom', { academyId: Number(selectedAcademyId), token });
+      }
       if (buses && buses.length > 0) {
         buses.forEach(b => {
           socket.emit('joinVehicleRoom', { vehicleId: Number(b.id) });
         });
       }
+    });
+
+    socket.on('emergencyAlert', (data) => {
+      console.warn('🚨 Emergency alert received on manager dashboard:', data);
+      setEmergencyAlert(data);
+      if (data && data.lat && data.lng) {
+        setMapFocusTarget([parseFloat(data.lat), parseFloat(data.lng)]);
+      }
+
+      // Audio Alarm using Web Audio API
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          const playBeep = (freq, duration, delay) => {
+            setTimeout(() => {
+              try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+              } catch (_) {}
+            }, delay);
+          };
+          playBeep(880, 0.25, 0);
+          playBeep(660, 0.25, 250);
+          playBeep(880, 0.25, 500);
+          playBeep(660, 0.35, 750);
+        }
+      } catch (e) {
+        console.warn('Audio alarm playback error:', e);
+      }
+
+      // Browser Notification API
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification('🚨 긴급 사고·고장 비상 알림', {
+            body: `${data.vehicleName} (${data.driverName}) 비상 알림이 발생했습니다.`,
+          });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(p => {
+            if (p === 'granted') {
+              new Notification('🚨 긴급 사고·고장 비상 알림', {
+                body: `${data.vehicleName} (${data.driverName}) 비상 알림이 발생했습니다.`,
+              });
+            }
+          });
+        }
+      }
+    });
+
+    socket.on('escortStarted', (data) => {
+      console.log('Escort started received:', data);
+      setEscortToast(data);
+      setTimeout(() => {
+        setEscortToast(prev => (prev?.time === data?.time ? null : prev));
+      }, 5000);
+    });
+
+    socket.on('attendanceSubmitted', (data) => {
+      console.log('Attendance submitted socket received on manager web:', data);
+      setAttendanceToast(data);
+      setTimeout(() => {
+        setAttendanceToast(prev => (prev?.submittedAt === data?.submittedAt ? null : prev));
+      }, 7000);
+      fetchAdminAttendance();
     });
 
     socket.on('allVehicleOperatingStatus', (statusMap) => {
@@ -740,6 +865,19 @@ export default function Dashboard({ initialEducationLevel } = {}) {
       });
     }
   }, [buses]);
+
+  useEffect(() => {
+    if (socketRef.current && socketRef.current.connected && selectedAcademyId) {
+      const token = localStorage.getItem('takeme_token');
+      socketRef.current.emit('joinAcademyRoom', { academyId: Number(selectedAcademyId), token });
+    }
+  }, [selectedAcademyId]);
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
 
   // 60-second Stale Timeout for real-time bus GPS markers
   useEffect(() => {
@@ -2848,6 +2986,78 @@ const parseKindergartenExcelSheet = (sheet) => {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans relative">
+      {/* 긴급 사고·고장 비상 알림 (빨간 줄 알림 배너 - 사용자가 확인할 때까지 유지) */}
+      {emergencyAlert && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white px-6 py-4 shadow-2xl flex items-center justify-between border-b-4 border-red-700 animate-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-3.5">
+            <span className="text-3xl animate-pulse">🚨</span>
+            <div>
+              <div className="font-black text-lg tracking-wide flex items-center gap-2">
+                <span>[긴급 사고·고장 비상 알림]</span>
+                <span className="bg-white/20 px-2 py-0.5 rounded text-sm">{emergencyAlert.vehicleName}</span>
+                <span className="text-sm font-bold text-red-100">기사: {emergencyAlert.driverName}</span>
+              </div>
+              <div className="text-xs text-red-100 mt-1">
+                발생 시각: {emergencyAlert.time ? new Date(emergencyAlert.time).toLocaleTimeString('ko-KR') : '방금'} · 지도에서 해당 차량 위치로 포커스되었습니다.
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            {emergencyAlert.lat && emergencyAlert.lng && (
+              <button
+                type="button"
+                onClick={() => setMapFocusTarget([parseFloat(emergencyAlert.lat), parseFloat(emergencyAlert.lng)])}
+                className="px-3.5 py-1.5 bg-white/20 hover:bg-white/30 text-white font-bold text-xs rounded-lg transition"
+              >
+                위치 보기
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setEmergencyAlert(null)}
+              className="px-5 py-2 bg-white text-red-600 hover:bg-red-50 font-black text-sm rounded-lg shadow transition"
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 동승 시작 알림 배너 (파란색, 소리 없음, 몇 초 뒤 사라짐) */}
+      {escortToast && (
+        <div className="fixed top-5 right-5 z-[9999] bg-blue-600 text-white px-5 py-3 rounded-xl shadow-xl flex items-center gap-3 border border-blue-400 animate-in slide-in-from-top duration-300">
+          <span className="text-xl">🚌</span>
+          <div>
+            <div className="font-extrabold text-sm">{escortToast.vehicleName} 동승 시작</div>
+            <div className="text-xs text-blue-100">
+              지도교사: {escortToast.escortName} ({escortToast.time ? new Date(escortToast.time).toLocaleTimeString('ko-KR') : ''})
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 실시간 출석부 제출 알림 배너 (파란색 토스트) */}
+      {attendanceToast && (
+        <div className="fixed top-20 right-5 z-[9999] bg-blue-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3.5 border border-blue-400 animate-in slide-in-from-top duration-300">
+          <span className="text-2xl">📋</span>
+          <div>
+            <div className="font-extrabold text-sm">
+              [{attendanceToast.className}] {attendanceToast.teacherName} 선생님이 출석부를 제출했습니다.
+            </div>
+            <div className="text-xs text-blue-100 mt-0.5">
+              출석 {attendanceToast.presentCount} · 결석 {attendanceToast.absentCount} · 지각 {attendanceToast.lateCount} · 조퇴 {attendanceToast.earlyLeaveCount} (총 {attendanceToast.totalCount}명)
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttendanceToast(null)}
+            className="ml-3 text-blue-200 hover:text-white text-base font-bold"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Yearly Zone Mapping History Modal */}
       {showYearlyMappingModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -3147,6 +3357,12 @@ const parseKindergartenExcelSheet = (sheet) => {
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <rect x="3" y="4" width="18" height="12" rx="2" strokeWidth={2} />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h5m-3 4v4m6-4v4m-8 0h10" />
+          </svg>
+        </button>
+        <button onClick={() => handleTabChange('attendance')} className={`p-4 rounded-2xl transition-all ${activeTab === 'attendance' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="출석 현황">
+          {/* 출석 체크보드 아이콘 */}
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
           </svg>
         </button>
         <button onClick={() => handleTabChange('auth')} className={`p-4 rounded-2xl transition-all ${activeTab === 'auth' ? 'bg-white text-blue-700 shadow-lg scale-110' : 'text-blue-200 hover:bg-blue-600'}`} title="인증 관리">
@@ -4658,6 +4874,193 @@ const parseKindergartenExcelSheet = (sheet) => {
           />
         )}
 
+        {activeTab === 'attendance' && (
+          <div className="absolute inset-0 z-20 bg-slate-50 flex flex-col overflow-hidden">
+            {/* Attendance Header */}
+            <div className="bg-white border-b border-slate-200 px-8 py-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-black text-slate-800 tracking-tight">유치원 전체 출석 현황</h1>
+                    <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200">
+                      실시간 소켓 연동
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    담임선생님들이 제출한 각 반별 출석부를 실시간으로 확인합니다.
+                  </p>
+                </div>
+              </div>
+
+              {/* Date & Refresh */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                  <span className="text-xs font-bold text-slate-500">조회 일자:</span>
+                  <input
+                    type="date"
+                    value={adminAttendanceDate}
+                    onChange={(e) => {
+                      setAdminAttendanceDate(e.target.value);
+                      fetchAdminAttendance(e.target.value);
+                    }}
+                    className="bg-transparent text-xs font-bold text-slate-700 border-none outline-hidden cursor-pointer"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchAdminAttendance()}
+                  disabled={isAdminAttendanceLoading}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <svg className={`w-4 h-4 ${isAdminAttendanceLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>새로고침</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('status')}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition"
+                  title="닫기"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Metrics Bar */}
+            <div className="bg-white border-b border-slate-200 px-8 py-4 shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="text-[11px] font-bold text-slate-500">전체 원아</div>
+                <div className="text-xl font-black text-slate-800">{adminAttendanceData?.summary?.totalStudents || 0}명</div>
+              </div>
+              <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                <div className="text-[11px] font-bold text-emerald-700">출석 원아</div>
+                <div className="text-xl font-black text-emerald-700">{adminAttendanceData?.summary?.present || 0}명</div>
+              </div>
+              <div className="bg-red-50 p-3 rounded-xl border border-red-200">
+                <div className="text-[11px] font-bold text-red-700">결석 원아</div>
+                <div className="text-xl font-black text-red-700">{adminAttendanceData?.summary?.absent || 0}명</div>
+              </div>
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                <div className="text-[11px] font-bold text-amber-700">지각 원아</div>
+                <div className="text-xl font-black text-amber-700">{adminAttendanceData?.summary?.late || 0}명</div>
+              </div>
+              <div className="bg-purple-50 p-3 rounded-xl border border-purple-200">
+                <div className="text-[11px] font-bold text-purple-700">조퇴 원아</div>
+                <div className="text-xl font-black text-purple-700">{adminAttendanceData?.summary?.earlyLeave || 0}명</div>
+              </div>
+              <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                <div className="text-[11px] font-bold text-blue-700">출석부 제출율</div>
+                <div className="text-xl font-black text-blue-700">
+                  {adminAttendanceData?.summary?.submittedClasses || 0} / {adminAttendanceData?.summary?.totalClasses || 0} 반
+                </div>
+              </div>
+            </div>
+
+            {/* Class Cards */}
+            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+              {isAdminAttendanceLoading ? (
+                <div className="flex items-center justify-center py-24">
+                  <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : adminAttendanceData?.classes && adminAttendanceData.classes.length > 0 ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {adminAttendanceData.classes.map((c) => (
+                    <div key={c.className} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+                      <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-base font-black text-slate-800">{c.className}</h3>
+                          {c.teacherName && (
+                            <span className="text-xs text-slate-500 font-semibold">담임: {c.teacherName}선생님</span>
+                          )}
+                        </div>
+                        {c.isSubmitted ? (
+                          <div className="flex items-center gap-1.5 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2.5 py-1 rounded-full">
+                            <span>✓ 제출완료</span>
+                            {c.submittedAt && (
+                              <span className="text-[11px] text-emerald-600 font-normal">
+                                ({new Date(c.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 font-bold px-2.5 py-1 rounded-full">
+                            미제출
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Class counts */}
+                      <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3 text-xs bg-white">
+                        <span className="font-bold text-slate-600">총 {c.total}명</span>
+                        <span className="text-emerald-700 font-bold">출석 {c.present}</span>
+                        <span className="text-red-700 font-bold">결석 {c.absent}</span>
+                        <span className="text-amber-700 font-bold">지각 {c.late}</span>
+                        <span className="text-purple-700 font-bold">조퇴 {c.earlyLeave}</span>
+                      </div>
+
+                      {/* Students table */}
+                      <div className="p-4 flex-1 overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-slate-100">
+                              <th className="pb-2 font-bold">원아명</th>
+                              <th className="pb-2 font-bold">상태</th>
+                              <th className="pb-2 font-bold">셔틀</th>
+                              <th className="pb-2 font-bold">비고</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {c.students.map((st) => (
+                              <tr key={st.id} className="hover:bg-slate-50/60 transition">
+                                <td className="py-2.5 font-bold text-slate-800">{st.name}</td>
+                                <td className="py-2.5">
+                                  {st.status === 'PRESENT' && (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-md text-[11px]">출석</span>
+                                  )}
+                                  {st.status === 'ABSENT' && (
+                                    <span className="px-2 py-0.5 bg-red-100 text-red-800 font-bold rounded-md text-[11px]">결석</span>
+                                  )}
+                                  {st.status === 'LATE' && (
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-md text-[11px]">지각</span>
+                                  )}
+                                  {st.status === 'EARLY_LEAVE' && (
+                                    <span className="px-2 py-0.5 bg-purple-100 text-purple-800 font-bold rounded-md text-[11px]">조퇴</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 text-slate-500 text-[11px]">
+                                  {st.vehicleName}
+                                  {st.boardStatus === 'BOARDED' && ' (탑승)'}
+                                </td>
+                                <td className="py-2.5 text-slate-400 text-[11px] truncate max-w-[120px]">{st.memo || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                  <h4 className="font-bold text-slate-700 text-sm mb-1">등록된 반 출석 정보가 없습니다</h4>
+                  <p className="text-xs text-slate-400">담임선생님이 출석부를 제출하면 실시간으로 여기에 표시됩니다.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'auth' && (
           <AuthViewer 
             isClosing={isAuthClosing}
@@ -4785,6 +5188,7 @@ const parseKindergartenExcelSheet = (sheet) => {
           />
 
           <MapBoundsFit buses={buses} academy={academy} />
+          <MapFocusEffect target={mapFocusTarget} />
 
           {/* Draw Academy Marker */}
           {academy && !isNaN(academy.lat) && !isNaN(academy.lng) && (

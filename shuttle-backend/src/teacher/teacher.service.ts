@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Student } from '../entities/student.entity';
@@ -12,6 +12,9 @@ import { ScheduleOverride, OverrideType } from '../entities/schedule-override.en
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
 import { LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
 import { LocationGateway } from './location.gateway';
+import { getStudentClassName, hasAssignedClass, isSameClass, HOMEROOM_ROLE, kstDateString, isValidDateString } from '../utils/school.util';
+import { Attendance, AttendanceStatus } from '../entities/attendance.entity';
+import { AttendanceSubmission } from '../entities/attendance-submission.entity';
 
 @Injectable()
 export class TeacherService {
@@ -25,6 +28,8 @@ export class TeacherService {
     @InjectRepository(OperationLog) private operationLogRepository: Repository<OperationLog>,
     @InjectRepository(ScheduleOverride) private scheduleOverrideRepository: Repository<ScheduleOverride>,
     @InjectRepository(AcademyHoliday) private academyHolidayRepository: Repository<AcademyHoliday>,
+    @InjectRepository(Attendance) private attendanceRepository: Repository<Attendance>,
+    @InjectRepository(AttendanceSubmission) private submissionRepository: Repository<AttendanceSubmission>,
     private readonly locationGateway: LocationGateway
   ) {}
 
@@ -52,7 +57,8 @@ export class TeacherService {
 
   private async getTodayStudentsForVehicle(vehicleId: number): Promise<Student[]> {
     const defaultStudents = await this.studentRepository.find({ 
-      where: { assignedVehicle: { id: vehicleId } } 
+      where: { assignedVehicle: { id: vehicleId } },
+      relations: { parentUser: true }
     });
     const overrides = await this.getActiveOverridesForToday();
     
@@ -71,7 +77,10 @@ export class TeacherService {
       .map(o => o.student.id);
 
     const movedInStudents = movedInStudentIds.length > 0 
-      ? await this.studentRepository.createQueryBuilder('s').where('s.id IN (:...ids)', { ids: movedInStudentIds }).getMany() 
+      ? await this.studentRepository.createQueryBuilder('s')
+          .leftJoinAndSelect('s.parentUser', 'parentUser')
+          .where('s.id IN (:...ids)', { ids: movedInStudentIds })
+          .getMany() 
       : [];
 
     // Filter out moved-in students who might already be in defaultStudents just in case
@@ -139,6 +148,39 @@ export class TeacherService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
+    if ((user.role as string) === 'HOMEROOM_TEACHER' || user.role === UserRole.HOMEROOM_TEACHER) {
+      if (!hasAssignedClass(user.assignedClass)) {
+        return [];
+      }
+      const academyId = user.academyId;
+      const qb = this.studentRepository.createQueryBuilder('s')
+        .leftJoinAndSelect('s.parentUser', 'parentUser')
+        .leftJoinAndSelect('s.assignedVehicle', 'vehicle');
+      if (academyId) {
+        qb.where('s.academyId = :academyId', { academyId });
+      }
+      const all = await qb.getMany();
+      return all
+        .filter(s => isSameClass(getStudentClassName(s), user.assignedClass))
+        .map(s => {
+          const rawPhone = s.raw ? (s.raw['학부모연락처'] || s.raw['연락처'] || s.raw['전화번호'] || s.raw['비상연락처'] || '') : '';
+          const parentPhone = s.parentUser?.phone || rawPhone || '';
+          return {
+            id: s.id,
+            name: s.adminDisplayName || s.name,
+            address: s.address,
+            latitude: s.latitude,
+            longitude: s.longitude,
+            boarded: s.boardStatus === 'BOARDED',
+            absent: s.boardStatus === 'ABSENT',
+            expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30',
+            allergies: s.allergies || (s.raw ? s.raw['알레르기'] : '') || '',
+            parentPhone,
+            className: user.assignedClass,
+          };
+        });
+    }
+
     const vehicle = await this.findAssignedVehicle(user.id);
     if (!vehicle) return []; // No assigned vehicle
 
@@ -146,20 +188,25 @@ export class TeacherService {
     
     // Return boardStatus from DB, filter out absent students
     return students
-      .map(s => ({
-      id: s.id,
-      name: s.adminDisplayName || s.name,
-      address: s.address,
-      latitude: s.latitude,
-      longitude: s.longitude,
-      boarded: s.boardStatus === 'BOARDED',
-      absent: s.boardStatus === 'ABSENT',
-      expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30',
-      allergies: s.allergies || (s.raw ? s.raw['알레르기'] : '') || '',
-      teacherMemo: s.teacherMemo,
-      runNumber: s.runNumber || 1,
-      isOverride: (s as any).isOverride || false
-    }));
+      .map(s => {
+        const rawPhone = s.raw ? (s.raw['학부모연락처'] || s.raw['연락처'] || s.raw['전화번호'] || s.raw['비상연락처'] || '') : '';
+        const parentPhone = s.parentUser?.phone || rawPhone || '';
+        return {
+          id: s.id,
+          name: s.adminDisplayName || s.name,
+          address: s.address,
+          latitude: s.latitude,
+          longitude: s.longitude,
+          boarded: s.boardStatus === 'BOARDED',
+          absent: s.boardStatus === 'ABSENT',
+          expectedTime: s.raw ? s.raw['예상탑승시간'] || '15:30' : '15:30',
+          allergies: s.allergies || (s.raw ? s.raw['알레르기'] : '') || '',
+          teacherMemo: s.teacherMemo,
+          runNumber: s.runNumber || 1,
+          isOverride: (s as any).isOverride || false,
+          parentPhone,
+        };
+      });
   }
 
   async getRoute(email: string) {
@@ -354,6 +401,145 @@ export class TeacherService {
     }
 
     return { success: true, studentName: student.adminDisplayName || student.name };
+  }
+
+  async unboardStudent(email: string, studentId: number) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+
+    const vehicle = await this.findAssignedVehicle(user.id);
+    if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
+
+    const student = await this.studentRepository.findOne({ 
+      where: { id: studentId },
+      relations: { assignedVehicle: true }
+    });
+    if (!student) throw new BadRequestException('Student not found');
+
+    const todayStudents = await this.getTodayStudentsForVehicle(vehicle.id);
+    const isOurStudent = todayStudents.some(s => s.id === student.id);
+    if (!isOurStudent) {
+      throw new BadRequestException('해당 차량에 배정된 원아가 아닙니다.');
+    }
+
+    student.boardStatus = 'WAITING';
+    student.actualBoardTime = null as any;
+    await this.studentRepository.save(student);
+
+    await this.appendBoardingLog(
+      vehicle.id,
+      student.id,
+      `${student.adminDisplayName || student.name} 탑승 취소`,
+      'MANUAL'
+    );
+
+    return { success: true, studentName: student.adminDisplayName || student.name };
+  }
+
+  async checkInEscort(email: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+
+    const vehicle = await this.findAssignedVehicle(user.id, { academy: true });
+    if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
+
+    const isMemoryOperating = this.locationGateway?.operatingVehicles?.get(vehicle.id) === true;
+    const dateString = new Date().toISOString().split('T')[0];
+    const latestLog = await this.operationLogRepository.findOne({
+      where: { vehicle: { id: vehicle.id }, dateString },
+      order: { id: 'DESC' }
+    });
+    const isLogOperating = !!(latestLog && latestLog.startTime && !latestLog.endTime);
+
+    const isOperating = isMemoryOperating || isLogOperating;
+    if (!isOperating) {
+      throw new ConflictException('기사님이 운행을 시작하면 동승 확인을 누를 수 있어요.');
+    }
+
+    const escortName = user.name || user.email;
+    const confirmedAt = new Date().toISOString();
+
+    await this.appendBoardingLog(
+      vehicle.id,
+      null,
+      `동승 확인: ${escortName}`,
+      'ESCORT'
+    );
+
+    if (this.locationGateway?.server) {
+      // 차량 방에 escortConfirmed 전송 (기사 앱 배지용)
+      this.locationGateway.server.to(`vehicle_${vehicle.id}`).emit('escortConfirmed', {
+        vehicleId: vehicle.id,
+        escortName,
+        confirmedAt,
+      });
+
+      // 유치원 방에 escortStarted 전송 (관리자 웹 알림용)
+      const academyId = vehicle.academy?.id || (vehicle as any).academyId;
+      if (academyId) {
+        this.locationGateway.server.to(`academy_${academyId}`).emit('escortStarted', {
+          vehicleId: vehicle.id,
+          vehicleName: vehicle.busNumber,
+          escortName,
+          time: confirmedAt,
+        });
+      }
+    }
+
+    return { success: true, escortName, confirmedAt };
+  }
+
+  async getEscortStatus(email: string, targetVehicleId?: number) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('User not found');
+
+    let vehicle: Vehicle | null = null;
+    if (targetVehicleId) {
+      vehicle = await this.vehicleRepository.findOne({ where: { id: targetVehicleId } });
+    } else {
+      vehicle = await this.findAssignedVehicle(user.id);
+    }
+    if (!vehicle) {
+      return { operating: false };
+    }
+
+    const isMemoryOperating = this.locationGateway?.operatingVehicles?.get(vehicle.id) === true;
+    const dateString = new Date().toISOString().split('T')[0];
+    const latestLog = await this.operationLogRepository.findOne({
+      where: { vehicle: { id: vehicle.id }, dateString },
+      order: { id: 'DESC' }
+    });
+    const isLogOperating = !!(latestLog && latestLog.startTime && !latestLog.endTime);
+    const operating = isMemoryOperating || isLogOperating;
+
+    let escortName: string | undefined;
+    let confirmedAt: string | undefined;
+
+    if (latestLog?.boardingRecords) {
+      let records: any[] = [];
+      try {
+        records = typeof latestLog.boardingRecords === 'string'
+          ? JSON.parse(latestLog.boardingRecords)
+          : (latestLog.boardingRecords || []);
+      } catch (_) {}
+
+      for (let i = records.length - 1; i >= 0; i--) {
+        const rec = records[i];
+        if (rec.method === 'ESCORT') {
+          confirmedAt = rec.boardTime;
+          if (rec.studentName?.startsWith('동승 확인: ')) {
+            escortName = rec.studentName.replace('동승 확인: ', '');
+          }
+          break;
+        }
+      }
+    }
+
+    return {
+      operating,
+      escortName,
+      confirmedAt,
+    };
   }
 
   async startOperation(email: string) {
@@ -683,96 +869,398 @@ export class TeacherService {
     return { success: true };
   }
 
-  async triggerEmergency(email: string) {
+  async triggerEmergency(email: string, clientLat?: number, clientLng?: number) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
 
     const vehicle = await this.vehicleRepository.findOne({ 
       where: [{ teacherUser: { id: user.id } }, { driverUser: { id: user.id } }],
-      relations: { academy: { owner: true } }
+      relations: { academy: { owner: true }, driverUser: true, teacherUser: true }
     });
     if (!vehicle) throw new BadRequestException('Assigned vehicle not found');
 
-    // Get unboarded students for this vehicle
+    const academyId = vehicle.academy?.id || (vehicle as any).academyId;
+    if (!academyId) throw new BadRequestException('소속 유치원을 찾을 수 없습니다.');
+
+    // 같은 유치원에 소속된 다른 차량들만 조회
+    const otherVehicles = await this.vehicleRepository.find({
+      where: { academy: { id: academyId } },
+      relations: { driverUser: true, teacherUser: true }
+    }).then(list => list.filter(v => v.id !== vehicle.id));
+
     const todayStudents = await this.getTodayStudentsForVehicle(vehicle.id);
     const unboardedStudents = todayStudents.filter(s => s.boardStatus === 'WAITING' && s.latitude && s.longitude);
 
-    // Find all OTHER vehicles
-    const allVehicles = await this.vehicleRepository.find({ relations: { driverUser: true, teacherUser: true } });
-    const otherVehicles = allVehicles.filter(v => v.id !== vehicle.id);
-
-    const today = new Date().toISOString().split('T')[0];
-
-    // Auto-reassign and notify
+    // 자동 재배정은 제거하고 비상 알림만 전송
     for (const student of unboardedStudents) {
-      let closestVehicle = null;
-      if (otherVehicles.length > 0) {
-        // Simplified: assign to the first available other vehicle for now
-        // In a real scenario, this would use geocoding distance to find the optimal vehicle
-        closestVehicle = otherVehicles[0];
-      }
+      const parentUser = await this.userRepository.createQueryBuilder('user')
+        .leftJoin('user.parentStudents', 'student')
+        .where('student.id = :studentId', { studentId: student.id })
+        .getOne();
 
-      if (closestVehicle) {
-        // 1. Create ScheduleOverride
-        const override = this.scheduleOverrideRepository.create({
-          student,
-          startDate: today,
-          endDate: today,
-          overrideType: OverrideType.CHANGE_LOCATION,
-          reason: '차량 사고 긴급 대체 배차',
-          newVehicleId: closestVehicle.id,
-          latitude: student.latitude,
-          longitude: student.longitude,
-          newAddress: student.address
-        } as any);
-        await this.scheduleOverrideRepository.save(override);
-
-        // 2. Notify Parent
-        const parentUser = await this.userRepository.createQueryBuilder('user')
-           .leftJoin('user.parentStudents', 'student')
-           .where('student.id = :studentId', { studentId: student.id })
-           .getOne();
-
-        if (parentUser) {
-           const msg = this.messageRepository.create({
-             student,
-             targetRoles: ['PARENT'],
-             message: `[긴급 안내] ${vehicle.busNumber} 사고로 인해 운행이 불가능해졌습니다. 아직 탑승하지 못한 원아들은 다른 호차 차량이 픽업해 유치원까지 안전하게 이동하겠습니다.`,
-             receiverUser: parentUser
-           });
-           await this.messageRepository.save(msg);
-        }
-      }
-    }
-
-    // 3. Notify Admin (Director)
-    if (vehicle.academy && vehicle.academy.owner) {
+      if (parentUser) {
         const msg = this.messageRepository.create({
-          targetRoles: ['ACADEMY_ADMIN'],
-          message: `🚨 [긴급] ${vehicle.busNumber} 운행 불가 사태 발생. 남은 학생 ${unboardedStudents.length}명 타 차량 대체 배차 처리 완료.`,
-          receiverUser: vehicle.academy.owner
+          student,
+          targetRoles: ['PARENT'],
+          message: `[긴급 안내] ${vehicle.busNumber} 차량에 비상 상황이 발생하였습니다. 원아의 안전을 최우선으로 확인 중입니다.`,
+          receiverUser: parentUser
         });
         await this.messageRepository.save(msg);
+      }
     }
 
-    // 4. Notify other drivers/teachers
+    // 유치원 관리자(원장님) 알림
+    if (vehicle.academy && vehicle.academy.owner) {
+      const msg = this.messageRepository.create({
+        targetRoles: ['ACADEMY_ADMIN'],
+        message: `🚨 [긴급 SOS] ${vehicle.busNumber} 차량 사고/고장 비상 상황 발생. 즉시 확인해 주세요.`,
+        receiverUser: vehicle.academy.owner
+      });
+      await this.messageRepository.save(msg);
+    }
+
+    // 같은 유치원의 타 호차 직원에게 알림
     for (const v of otherVehicles) {
-       const staffUsers = [];
-       if (v.driverUser) staffUsers.push(v.driverUser);
-       if (v.teacherUser) staffUsers.push(v.teacherUser);
-       for (const staff of staffUsers) {
-          const msg = this.messageRepository.create({
-            targetRoles: [staff.role],
-            message: `🚨 [비상] ${vehicle.busNumber} 고장/사고로 인해 인근 학생이 기사님 노선으로 긴급 추가되었습니다. 명단과 지도를 새로고침해 주세요.`,
-            receiverUser: staff
-          });
-          await this.messageRepository.save(msg);
-       }
+      const staffUsers = [];
+      if (v.driverUser) staffUsers.push(v.driverUser);
+      if (v.teacherUser) staffUsers.push(v.teacherUser);
+      for (const staff of staffUsers) {
+        const msg = this.messageRepository.create({
+          targetRoles: [staff.role],
+          message: `🚨 [비상] ${vehicle.busNumber} 사고/고장 비상 상황이 발생했습니다.`,
+          receiverUser: staff
+        });
+        await this.messageRepository.save(msg);
+      }
     }
 
-    // 5. Save Operation Log
-    await this.appendBoardingLog(vehicle.id, null, '🚨 긴급 모드 발동 (타 호차 인계)', 'SYSTEM');
+    // 소켓 emergencyAlert: 오직 유치원 방에만 전송 (전체 브로드캐스트 금지)
+    let defaultLat = 37.5580;
+    let defaultLng = 126.8240;
+    if (vehicle.polygonCoordinates && Array.isArray(vehicle.polygonCoordinates) && vehicle.polygonCoordinates.length > 0) {
+      const firstPt = vehicle.polygonCoordinates[0];
+      if (Array.isArray(firstPt) && firstPt.length >= 2) {
+        defaultLat = Number(firstPt[0]) || defaultLat;
+        defaultLng = Number(firstPt[1]) || defaultLng;
+      }
+    }
+    const lat = clientLat || defaultLat;
+    const lng = clientLng || defaultLng;
+    const time = new Date().toISOString();
+    const driverName = vehicle.driverUser?.name || user.name || '기사님';
 
-    return { success: true, message: '긴급 모드가 성공적으로 발동되었습니다.' };
+    if (this.locationGateway?.server) {
+      this.locationGateway.server.to(`academy_${academyId}`).emit('emergencyAlert', {
+        vehicleId: vehicle.id,
+        vehicleName: vehicle.busNumber,
+        driverName,
+        lat,
+        lng,
+        time,
+      });
+    }
+
+    // Operation Log 저장
+    await this.appendBoardingLog(vehicle.id, null, '🚨 긴급 SOS 발동', 'SYSTEM');
+
+    return {
+      success: true,
+      message: '긴급 알림이 유치원 관리자에게 전송되었습니다.',
+      alert: { vehicleId: vehicle.id, vehicleName: vehicle.busNumber, driverName, lat, lng, time }
+    };
+  }
+
+  async getHomeroomShuttleStatus(email: string) {
+    const user = await this.userRepository.findOne({
+      where: { email },
+      relations: { academy: true }
+    });
+    if (!user) throw new BadRequestException('User not found');
+
+    const assignedClass = user.assignedClass;
+    if (!hasAssignedClass(assignedClass)) {
+      return {
+        assignedClass: null,
+        isAssigned: false,
+        message: '관리자에게 반 배정을 요청하세요',
+        students: [],
+        summary: { total: 0, boarded: 0, waiting: 0, absent: 0 }
+      };
+    }
+
+    const academyId = user.academy?.id || user.academyId;
+    const overrides = await this.getActiveOverridesForToday();
+
+    const qb = this.studentRepository.createQueryBuilder('s')
+      .leftJoinAndSelect('s.assignedVehicle', 'vehicle')
+      .leftJoinAndSelect('s.parentUser', 'parentUser');
+
+    if (academyId) {
+      qb.where('s.academyId = :academyId', { academyId });
+    }
+
+    const allStudents = await qb.getMany();
+
+    const classStudents = allStudents.filter(s => isSameClass(getStudentClassName(s), assignedClass));
+
+    const students = classStudents.map(s => {
+      const override = overrides.find(o => o.student.id === s.id);
+      let vehicleName = s.assignedVehicle?.busNumber || '미지정';
+      if (override && override.newVehicleId) {
+        vehicleName = `${override.newVehicleId}호차 (임시변경)`;
+      }
+
+      let status = 'WAITING';
+      let statusText = '탑승 대기';
+      if (s.boardStatus === 'BOARDED') {
+        status = 'BOARDED';
+        statusText = '탑승 완료';
+      } else if (s.boardStatus === 'ABSENT') {
+        status = 'ABSENT';
+        statusText = '결석 (미탑승)';
+      }
+
+      const rawPhone = s.raw ? (s.raw['학부모연락처'] || s.raw['연락처'] || s.raw['전화번호'] || '') : '';
+      const parentPhone = s.parentUser?.phone || rawPhone || '';
+
+      return {
+        id: s.id,
+        name: s.adminDisplayName || s.name,
+        vehicle: vehicleName,
+        status,
+        statusText,
+        boarded: status === 'BOARDED',
+        absent: status === 'ABSENT',
+        boardedAt: s.actualBoardTime ? new Date(s.actualBoardTime).toISOString() : null,
+        address: s.address,
+        parentPhone,
+        allergies: s.allergies || (s.raw ? s.raw['알레르기'] : '') || '',
+      };
+    });
+
+    return {
+      assignedClass,
+      students,
+      summary: {
+        total: students.length,
+        boarded: students.filter(s => s.status === 'BOARDED').length,
+        waiting: students.filter(s => s.status === 'WAITING').length,
+        absent: students.filter(s => s.status === 'ABSENT').length,
+      }
+    };
+  }
+
+  async getHomeroomAttendance(email: string, dateInput?: string) {
+    const user = await this.userRepository.findOne({
+      where: { email },
+      relations: { academy: true }
+    });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+
+    if (!hasAssignedClass(user.assignedClass)) {
+      return {
+        assignedClass: null,
+        isAssigned: false,
+        message: '관리자에게 반 배정을 요청하세요',
+        date: dateInput || kstDateString(),
+        isSubmitted: false,
+        submission: null,
+        students: [],
+      };
+    }
+
+    const assignedClass = user.assignedClass!;
+    const date = (dateInput && isValidDateString(dateInput)) ? dateInput : kstDateString();
+    const academyId = user.academy?.id || user.academyId;
+
+    const submission = await this.submissionRepository.findOne({
+      where: {
+        academy: { id: academyId },
+        className: assignedClass,
+        date,
+      },
+    });
+
+    const qb = this.studentRepository.createQueryBuilder('s')
+      .leftJoinAndSelect('s.assignedVehicle', 'vehicle')
+      .leftJoinAndSelect('s.parentUser', 'parentUser');
+
+    if (academyId) {
+      qb.where('s.academyId = :academyId', { academyId });
+    }
+
+    const allStudents = await qb.getMany();
+    const classStudents = allStudents.filter(s => isSameClass(getStudentClassName(s), assignedClass));
+
+    const studentIds = classStudents.map(s => s.id);
+    let attendances: Attendance[] = [];
+    if (studentIds.length > 0) {
+      attendances = await this.attendanceRepository.createQueryBuilder('att')
+        .leftJoinAndSelect('att.student', 'student')
+        .where('att.studentId IN (:...ids) AND att.date = :date', { ids: studentIds, date })
+        .getMany();
+    }
+
+    const attendanceMap = new Map<number, Attendance>();
+    for (const a of attendances) {
+      if (a.student?.id) attendanceMap.set(a.student.id, a);
+    }
+
+    const studentList = classStudents.map(s => {
+      const existing = attendanceMap.get(s.id);
+
+      let currentStatus: AttendanceStatus = AttendanceStatus.PRESENT;
+      if (existing) {
+        currentStatus = existing.status;
+      } else if (s.boardStatus === 'ABSENT') {
+        currentStatus = AttendanceStatus.ABSENT;
+      } else {
+        currentStatus = AttendanceStatus.PRESENT;
+      }
+
+      return {
+        studentId: s.id,
+        name: s.adminDisplayName || s.name,
+        status: currentStatus,
+        memo: existing?.memo || '',
+        boardStatus: s.boardStatus || 'WAITING',
+        actualBoardTime: s.actualBoardTime ? new Date(s.actualBoardTime).toISOString() : null,
+        vehicleName: s.assignedVehicle?.busNumber || '미지정',
+        isRecorded: !!existing,
+      };
+    });
+
+    return {
+      assignedClass,
+      isAssigned: true,
+      date,
+      isSubmitted: !!submission,
+      submission: submission || null,
+      summary: {
+        total: studentList.length,
+        present: studentList.filter(s => s.status === AttendanceStatus.PRESENT).length,
+        absent: studentList.filter(s => s.status === AttendanceStatus.ABSENT).length,
+        late: studentList.filter(s => s.status === AttendanceStatus.LATE).length,
+        earlyLeave: studentList.filter(s => s.status === AttendanceStatus.EARLY_LEAVE).length,
+      },
+      students: studentList,
+    };
+  }
+
+  async submitHomeroomAttendance(email: string, payload: {
+    date: string;
+    attendances: Array<{ studentId: number; status: AttendanceStatus; memo?: string }>;
+  }) {
+    const user = await this.userRepository.findOne({
+      where: { email },
+      relations: { academy: true }
+    });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+
+    if (!hasAssignedClass(user.assignedClass)) {
+      throw new BadRequestException('관리자에게 반 배정을 요청하세요.');
+    }
+
+    const assignedClass = user.assignedClass!;
+    const date = (payload.date && isValidDateString(payload.date)) ? payload.date : kstDateString();
+    const academyId = user.academy?.id || user.academyId;
+
+    if (!academyId) throw new BadRequestException('유치원 정보가 필요합니다.');
+
+    let presentCount = 0;
+    let absentCount = 0;
+    let lateCount = 0;
+    let earlyLeaveCount = 0;
+
+    for (const item of (payload.attendances || [])) {
+      if (!item.studentId) continue;
+      const student = await this.studentRepository.findOne({ where: { id: item.studentId } });
+      if (!student) continue;
+
+      let att = await this.attendanceRepository.findOne({
+        where: { student: { id: student.id }, date },
+      });
+
+      if (!att) {
+        att = this.attendanceRepository.create({
+          student,
+          date,
+          status: item.status || AttendanceStatus.PRESENT,
+          recordedBy: user,
+          recordedByName: user.name || '담임선생님',
+          memo: item.memo || '',
+        });
+      } else {
+        att.status = item.status || AttendanceStatus.PRESENT;
+        att.recordedBy = user;
+        att.recordedByName = user.name || '담임선생님';
+        if (item.memo !== undefined) att.memo = item.memo;
+      }
+
+      await this.attendanceRepository.save(att);
+
+      if (att.status === AttendanceStatus.PRESENT) presentCount++;
+      else if (att.status === AttendanceStatus.ABSENT) absentCount++;
+      else if (att.status === AttendanceStatus.LATE) lateCount++;
+      else if (att.status === AttendanceStatus.EARLY_LEAVE) earlyLeaveCount++;
+    }
+
+    const totalCount = payload.attendances?.length || 0;
+
+    let submission = await this.submissionRepository.findOne({
+      where: {
+        academy: { id: academyId },
+        className: assignedClass,
+        date,
+      },
+    });
+
+    if (!submission) {
+      submission = this.submissionRepository.create({
+        academy: { id: academyId } as any,
+        className: assignedClass,
+        date,
+        teacher: user,
+        teacherName: user.name || '담임선생님',
+        totalCount,
+        presentCount,
+        absentCount,
+        lateCount,
+        earlyLeaveCount,
+        submittedAt: new Date(),
+      });
+    } else {
+      submission.teacher = user;
+      submission.teacherName = user.name || '담임선생님';
+      submission.totalCount = totalCount;
+      submission.presentCount = presentCount;
+      submission.absentCount = absentCount;
+      submission.lateCount = lateCount;
+      submission.earlyLeaveCount = earlyLeaveCount;
+      submission.submittedAt = new Date();
+    }
+
+    const savedSubmission = await this.submissionRepository.save(submission);
+
+    const socketPayload = {
+      academyId,
+      className: assignedClass,
+      date,
+      teacherName: user.name || '담임선생님',
+      teacherEmail: user.email,
+      submittedAt: savedSubmission.submittedAt,
+      totalCount,
+      presentCount,
+      absentCount,
+      lateCount,
+      earlyLeaveCount,
+    };
+    this.locationGateway.broadcastAttendanceSubmitted(academyId, socketPayload);
+
+    return {
+      success: true,
+      submission: savedSubmission,
+      message: `${assignedClass} 출석부가 성공적으로 제출되었습니다.`,
+    };
   }
 }

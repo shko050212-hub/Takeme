@@ -107,11 +107,11 @@ class ApiService {
   }
 
   Future<http.Response> getWithAuth(Uri url, [Map<String, String>? extra]) async {
-    var res = await http.get(url, headers: _headers(extra));
+    var res = await http.get(url, headers: _headers(extra)).timeout(const Duration(seconds: 10));
     if (res.statusCode == 401 && _refreshToken != null) {
       final refreshed = await tryRefreshToken();
       if (refreshed) {
-        res = await http.get(url, headers: _headers(extra));
+        res = await http.get(url, headers: _headers(extra)).timeout(const Duration(seconds: 10));
       } else {
         await logout();
       }
@@ -121,11 +121,11 @@ class ApiService {
 
   Future<http.Response> postWithAuth(Uri url, dynamic body, [Map<String, String>? extra]) async {
     final encoded = body is String ? body : jsonEncode(body);
-    var res = await http.post(url, headers: _headers(extra), body: encoded);
+    var res = await http.post(url, headers: _headers(extra), body: encoded).timeout(const Duration(seconds: 10));
     if (res.statusCode == 401 && _refreshToken != null) {
       final refreshed = await tryRefreshToken();
       if (refreshed) {
-        res = await http.post(url, headers: _headers(extra), body: encoded);
+        res = await http.post(url, headers: _headers(extra), body: encoded).timeout(const Duration(seconds: 10));
       } else {
         await logout();
       }
@@ -134,11 +134,11 @@ class ApiService {
   }
 
   Future<http.Response> deleteWithAuth(Uri url, [Map<String, String>? extra]) async {
-    var res = await http.delete(url, headers: _headers(extra));
+    var res = await http.delete(url, headers: _headers(extra)).timeout(const Duration(seconds: 10));
     if (res.statusCode == 401 && _refreshToken != null) {
       final refreshed = await tryRefreshToken();
       if (refreshed) {
-        res = await http.delete(url, headers: _headers(extra));
+        res = await http.delete(url, headers: _headers(extra)).timeout(const Duration(seconds: 10));
       } else {
         await logout();
       }
@@ -160,7 +160,7 @@ class ApiService {
       body['otpToken'] = otpToken.trim();
     }
 
-    final res = await http.post(url, headers: _headers(), body: jsonEncode(body));
+    final res = await http.post(url, headers: _headers(), body: jsonEncode(body)).timeout(const Duration(seconds: 10));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
 
     if (data['isWebAccount'] == true) {
@@ -235,7 +235,7 @@ class ApiService {
       body['assignedClass'] = assignedClass.trim();
     }
 
-    final res = await http.post(url, headers: _headers(), body: jsonEncode(body));
+    final res = await http.post(url, headers: _headers(), body: jsonEncode(body)).timeout(const Duration(seconds: 10));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {
       'success': res.statusCode == 200 || res.statusCode == 201,

@@ -259,12 +259,61 @@ class ApiService {
   // PARENT & STUDENT
   // ----------------------------------------------------
   Future<List<NotificationModel>> getNotifications(String email) async {
-    final url = Uri.parse('${AppConfig.apiHost}/parent/notifications?email=${Uri.encodeComponent(email)}');
-    final res = await getWithAuth(url);
-    if (res.statusCode == 200) {
-      final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
-      return list.map((item) => NotificationModel.fromJson(item as Map<String, dynamic>)).toList();
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/parent/notifications?email=${Uri.encodeComponent(email)}');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
+        return list.map((item) => NotificationModel.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<int> getUnreadNotificationCount(String email) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/parent/notifications/unread-count?email=${Uri.encodeComponent(email)}');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        return (data['count'] as num?)?.toInt() ?? 0;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  Future<bool> readNotification({required String email, int? messageId, String? notificationKey}) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/parent/read-message');
+      final body = <String, dynamic>{'email': email};
+      if (messageId != null) body['messageId'] = messageId;
+      if (notificationKey != null) body['notificationKey'] = notificationKey;
+      final res = await postWithAuth(url, jsonEncode(body));
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (_) {
+      return false;
     }
+  }
+
+  Future<bool> markAllNotificationsRead(String email) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/parent/notifications/read-all');
+      final res = await postWithAuth(url, jsonEncode({'email': email}));
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getClassBoardPosts(String email) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/parent/class-board?email=${Uri.encodeComponent(email)}');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
+        return list.map((e) => e as Map<String, dynamic>).toList();
+      }
+    } catch (_) {}
     return [];
   }
 
@@ -299,6 +348,39 @@ class ApiService {
     );
     final data = jsonDecode(utf8.decode(res.bodyBytes));
     return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message']};
+  }
+
+  Future<Map<String, dynamic>?> getParentProfile() async {
+    final email = currentUser?.email;
+    if (email == null) return null;
+    final url = Uri.parse('${AppConfig.apiHost}/parent/profile?email=${Uri.encodeComponent(email)}');
+    final res = await getWithAuth(url);
+    if (res.statusCode == 200) {
+      return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> updateParentPhone(String phone) async {
+    final email = currentUser?.email;
+    if (email == null) return {'success': false, 'message': '로그인이 필요합니다.'};
+    final url = Uri.parse('${AppConfig.apiHost}/parent/update-phone');
+    final res = await postWithAuth(url, jsonEncode({'email': email, 'phone': phone.trim()}));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message'] ?? '전화번호가 저장되었습니다.'};
+  }
+
+  Future<Map<String, dynamic>> changeParentPassword(String currentPassword, String newPassword) async {
+    final email = currentUser?.email;
+    if (email == null) return {'success': false, 'message': '로그인이 필요합니다.'};
+    final url = Uri.parse('${AppConfig.apiHost}/parent/change-password');
+    final res = await postWithAuth(url, jsonEncode({
+      'email': email,
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    }));
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return {'success': res.statusCode == 200 || res.statusCode == 201, 'message': data['message'] ?? '비밀번호가 변경되었습니다.'};
   }
 
   Future<Map<String, dynamic>> createOverride({

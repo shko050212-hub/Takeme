@@ -246,7 +246,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     child: Text(
                       _selectedRole == 'HOMEROOM_TEACHER'
-                          ? '유치원 교실 담임교사: 클라우드 게시판 사진/공지 등록 및 학부모 알림장 소통을 담당합니다.'
+                          ? '유치원 교실 담임교사: 학급 알림장 사진/공지 등록 및 학부모 소통을 담당합니다.'
                           : (_selectedRole == 'SHUTTLE_TEACHER'
                               ? '통학차량 동승 지도교사: 셔틀버스 원아 탑승 명단 확인, 결석 처리 및 탑승 QR 체크를 담당합니다.'
                               : (_selectedRole == 'PARENT'
