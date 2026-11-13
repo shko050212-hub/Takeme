@@ -19,13 +19,15 @@ void main() async {
       await FlutterNaverMap().init(
         clientId: naverMapClientId,
         onAuthFailed: (e) {
-          debugPrint('[naver_map] 인증 실패, 이전 지도로 전환: $e');
+          debugPrint('[naver_map] 인증 실패, 대체 지도로 전환: $e');
+          naverMapFallbackReason.value = '네이버 인증 실패 (클라이언트 ID/패키지명 등록 확인): $e';
           naverMapAvailable.value = false;
         },
       );
       naverMapAvailable.value = true;
     } catch (e) {
-      debugPrint('[naver_map] 초기화 실패, 이전 지도로 전환: $e');
+      debugPrint('[naver_map] 초기화 실패, 대체 지도로 전환: $e');
+      naverMapFallbackReason.value = '네이버 SDK 초기화 실패: $e';
     }
   }
   runApp(const TakeMeDriverApp());

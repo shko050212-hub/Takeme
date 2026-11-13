@@ -16,10 +16,12 @@ const String naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID');
 /// 네이버 지도 SDK 초기화/인증 성공 여부 (main.dart 에서 초기화 후 갱신, 인증 실패 시 false 로 바뀌어 이전 지도로 복귀)
 final ValueNotifier<bool> naverMapAvailable = ValueNotifier<bool>(false);
 
-/// 지도 선택 순서: NAVER_MAP_CLIENT_ID 가 있으면 네이버 지도 → 없으면 브이월드(VWORLD_KEY) → 그것도 없으면 OpenStreetMap
-bool get _useNaver => naverMapClientId.isNotEmpty && !kIsWeb;
+/// 네이버 지도를 쓰지 못하고 OpenStreetMap 으로 대신 표시하는 이유 (디버그 화면 표시용)
+final ValueNotifier<String> naverMapFallbackReason = ValueNotifier<String>('');
 
-const String _vworldKey = String.fromEnvironment('VWORLD_KEY', defaultValue: '09C4DAB2-0E44-4794-88FA-2483B1177D28');
+/// 지도 선택: NAVER_MAP_CLIENT_ID 가 있고 SDK 인증이 성공하면 네이버 지도.
+/// 키가 없거나 인증/초기화에 실패한 경우(또는 웹)에만 OpenStreetMap 으로 대신 표시한다.
+bool get _useNaver => naverMapClientId.isNotEmpty && !kIsWeb;
 
 class NavMapView extends StatelessWidget {
   final NavMapController controller;
@@ -29,18 +31,28 @@ class NavMapView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!_useNaver) {
-      return _withLabel(FlutterMapNavView(controller: controller), _vworldKey.isNotEmpty ? 'VWORLD' : 'OSM');
+      return _withLabel(
+        FlutterMapNavView(controller: controller),
+        'OSM',
+        kIsWeb
+            ? '웹에서는 네이버 지도를 쓸 수 없음'
+            : 'NAVER_MAP_CLIENT_ID 없음 (--dart-define-from-file=secrets.json 으로 실행하세요)',
+      );
     }
     return ValueListenableBuilder<bool>(
       valueListenable: naverMapAvailable,
       builder: (context, ok, _) => ok
-          ? _withLabel(NaverNavMapView(controller: controller), 'NAVER')
-          : _withLabel(FlutterMapNavView(controller: controller), _vworldKey.isNotEmpty ? 'VWORLD' : 'OSM'),
+          ? _withLabel(NaverNavMapView(controller: controller), 'NAVER', null)
+          : _withLabel(
+              FlutterMapNavView(controller: controller),
+              'OSM',
+              naverMapFallbackReason.value.isEmpty ? '네이버 지도 초기화 대기/실패' : naverMapFallbackReason.value,
+            ),
     );
   }
 
-  /// 디버그 모드에서만 어떤 지도를 쓰는지 구석에 작게 표시
-  Widget _withLabel(Widget map, String name) {
+  /// 디버그 모드에서만 어떤 지도를 쓰는지 구석에 작게 표시 (대체 지도면 이유도 함께 표시)
+  Widget _withLabel(Widget map, String name, String? warning) {
     if (!kDebugMode) return map;
     return Stack(
       children: [
@@ -48,14 +60,22 @@ class NavMapView extends StatelessWidget {
         Positioned(
           top: 4,
           right: 4,
+          left: warning == null ? null : 4,
           child: IgnorePointer(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(4),
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: warning == null ? Colors.black54 : const Color(0xCCEA580C),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  warning == null ? '지도: $name' : '지도: $name · $warning',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
               ),
-              child: Text('지도: $name', style: const TextStyle(color: Colors.white, fontSize: 10)),
             ),
           ),
         ),
@@ -927,11 +947,9 @@ class _FlutterMapNavViewState extends State<FlutterMapNavView> with SingleTicker
             },
           ),
           children: [
-            // 브이월드 또는 OpenStreetMap 타일 레이어 (캐시 및 panBuffer 최적화)
+            // OpenStreetMap 타일 레이어 (네이버 지도를 쓸 수 없을 때만 사용) (캐시 및 panBuffer 최적화)
             TileLayer(
-              urlTemplate: _vworldKey.isNotEmpty
-                  ? 'https://api.vworld.kr/req/wmts/1.0.0/$_vworldKey/Base/{z}/{y}/{x}.png'
-                  : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.takeme.driver',
               maxZoom: 19,
               minZoom: 6,
