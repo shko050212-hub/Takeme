@@ -11,7 +11,7 @@ import 'change_request_modal.dart';
 import 'my_requests_screen.dart';
 import 'notification_list_screen.dart';
 import 'class_board_screen.dart';
-import 'parent_chat_room_list_screen.dart';
+import '../chat/chat_room_list_screen.dart';
 import '../settings_screen.dart';
 
 class ParentHomeScreen extends StatefulWidget {
@@ -743,7 +743,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                   childClassName: _childInfo?.className,
                   isEmbedded: true,
                 ),
-                const ParentChatRoomListScreen(isEmbedded: true),
+                const ChatRoomListScreen(isEmbeddedTab: true),
               ],
             ),
       bottomNavigationBar: BottomNavigationBar(

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import '../../models/user_model.dart';
 import '../../services/api_service.dart';
 
 class TeacherBoardView extends StatefulWidget {
@@ -711,22 +712,26 @@ class _TeacherBoardViewState extends State<TeacherBoardView> {
                                               Row(
                                                 children: [
                                                   Text(
-                                                    post['authorName'] ?? '원장선생님',
+                                                    post['authorName'] ?? '기관 관리자',
                                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
                                                   ),
                                                   const SizedBox(width: 6),
                                                   Container(
                                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                     decoration: BoxDecoration(
-                                                      color: post['authorRole'] == 'ADMIN' ? const Color(0xFFEFF6FF) : const Color(0xFFF0FDF4),
+                                                      color: post['authorRole'] == 'ADMIN' || post['authorRole'] == 'ACADEMY_ADMIN'
+                                                          ? const Color(0xFFEFF6FF)
+                                                          : const Color(0xFFF0FDF4),
                                                       borderRadius: BorderRadius.circular(4),
                                                     ),
                                                     child: Text(
-                                                      post['authorRole'] == 'ADMIN' ? '원장님' : '지도교사',
+                                                      UserModel.getRoleKorean(post['authorRole']),
                                                       style: TextStyle(
                                                         fontSize: 10,
                                                         fontWeight: FontWeight.bold,
-                                                        color: post['authorRole'] == 'ADMIN' ? const Color(0xFF2563EB) : const Color(0xFF16A34A),
+                                                        color: post['authorRole'] == 'ADMIN' || post['authorRole'] == 'ACADEMY_ADMIN'
+                                                            ? const Color(0xFF2563EB)
+                                                            : const Color(0xFF16A34A),
                                                       ),
                                                     ),
                                                   ),

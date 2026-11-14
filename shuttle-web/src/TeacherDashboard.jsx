@@ -373,6 +373,7 @@ export default function TeacherDashboard({
   const [boardSelectedClass, setBoardSelectedClass] = useState(teacherClass || 'ALL');
   const [boardSearchKeyword, setBoardSearchKeyword] = useState('');
   const [isCreatingBoardPost, setIsCreatingBoardPost] = useState(false);
+  const [boardInitialPostType, setBoardInitialPostType] = useState('ALL');
 
   // Shuttle Ride Request & Payment States
   const [rideRequests, setRideRequests] = useState({});
@@ -773,88 +774,10 @@ export default function TeacherDashboard({
     }
   };
 
-  // Class Notice State (반 전체 알림장)
-  const [isClassNoticeModalOpen, setIsClassNoticeModalOpen] = useState(false);
-  const [classNoticeTitle, setClassNoticeTitle] = useState('');
-  const [classNoticeContent, setClassNoticeContent] = useState('');
-  const [isSendingClassNotice, setIsSendingClassNotice] = useState(false);
-  const classNoticeStorageKey = `takeme_class_notice_${teacherClass || 'default'}`;
-  const [latestClassNotice, setLatestClassNotice] = useState(() => {
-    try {
-      const saved = localStorage.getItem(classNoticeStorageKey);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error(e);
-    }
-    return null;
-  });
-
-  const handleSendClassNotice = async () => {
-    if (!classNoticeContent.trim()) {
-      alert('알림장 내용을 입력해주세요.');
-      return;
-    }
-    if (myStudents.length === 0) {
-      alert('반에 소속된 원아가 없습니다.');
-      return;
-    }
-
-    setIsSendingClassNotice(true);
-    const fullNoticeText = classNoticeTitle.trim()
-      ? `[${classNoticeTitle.trim()}] ${classNoticeContent.trim()}`
-      : classNoticeContent.trim();
-
-    try {
-      // 1. Batch update notes for all students in my class
-      await Promise.all(
-        myStudents.map(st =>
-          fetch(`${API_BASE_URL}/routing/student/${st.id}/note`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ memo: `[반 전체 알림장] ${fullNoticeText}` })
-          }).catch(err => console.warn(`Failed note update for student ${st.id}`, err))
-        )
-      );
-
-      // 2. Broadcast message to parents
-      try {
-        await fetch(`${API_BASE_URL}/routing/admin/message`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            targetRoles: ['PARENT'],
-            vehicleId: null,
-            studentIds: myStudents.map(s => s.id),
-            message: `[${teacherClass} 반 전체 알림장] ${fullNoticeText}`
-          })
-        });
-      } catch (msgErr) {
-        console.warn('Failed admin message broadcast', msgErr);
-      }
-
-      // 3. Save latest notice for display banner
-      const noticeRecord = {
-        title: classNoticeTitle.trim() || '우리 반 공지',
-        content: classNoticeContent.trim(),
-        sentAt: new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        recipientCount: myStudents.length
-      };
-      setLatestClassNotice(noticeRecord);
-      localStorage.setItem(classNoticeStorageKey, JSON.stringify(noticeRecord));
-
-      alert(`${teacherClass} 학부모 전체(${myStudents.length}명)에게 알림장이 발송되었습니다.`);
-      setClassNoticeTitle('');
-      setClassNoticeContent('');
-      setIsClassNoticeModalOpen(false);
-
-      if (onRefreshData) onRefreshData();
-    } catch (e) {
-      console.error(e);
-      alert('알림장 발송 중 오류가 발생했습니다.');
-    } finally {
-      setIsSendingClassNotice(false);
-    }
-  };
+  // Latest NOTICE for class banner (connected to official BoardPost system)
+  const latestClassNotice = useMemo(() => {
+    return boardPosts.find(p => p.postType === 'NOTICE' && (!p.targetClass || p.targetClass === teacherClass)) || null;
+  }, [boardPosts, teacherClass]);
 
   const currentHourMinute = useMemo(() => {
     const now = new Date();
@@ -1680,6 +1603,7 @@ export default function TeacherDashboard({
               setIsCreatingPost={setIsCreatingBoardPost}
               posts={boardPosts}
               setPosts={setBoardPosts}
+              initialPostType={boardInitialPostType}
             />
           </div>
         ) : activeNavTab === 'messages' ? (
@@ -2074,8 +1998,13 @@ export default function TeacherDashboard({
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setIsClassNoticeModalOpen(true)}
-                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-blue-500/20 flex items-center justify-center gap-1.5 shrink-0"
+                        onClick={() => {
+                          setBoardSelectedClass(teacherClass || 'ALL');
+                          setBoardInitialPostType('NOTICE');
+                          setIsCreatingBoardPost(true);
+                          setActiveNavTab('board');
+                        }}
+                        className="px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-orange-500/20 flex items-center justify-center gap-1.5 shrink-0"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
@@ -2129,37 +2058,38 @@ export default function TeacherDashboard({
                     </div>
                   </div>
 
-                  {/* Class-wide Notice Banner (if any sent) */}
+                  {/* Class-wide Notice Banner (connected to official BoardPost NOTICE) */}
                   {latestClassNotice && (
-                    <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="bg-orange-50/70 border border-orange-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                        <div className="w-8 h-8 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                           </svg>
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[11px] font-extrabold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-md">
-                              우리 반 전체 알림장
+                            <span className="text-[11px] font-extrabold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-md border border-orange-200">
+                              우리 반 최신 알림장
                             </span>
-                            <span className="text-xs text-slate-400 font-medium">{latestClassNotice.sentAt}</span>
-                            <span className="text-xs text-slate-500 font-semibold">({latestClassNotice.recipientCount}명 학부모 발송 완료)</span>
+                            <span className="text-xs text-slate-400 font-medium">
+                              {latestClassNotice.createdAt ? new Date(latestClassNotice.createdAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
                           </div>
                           <h4 className="text-sm font-bold text-slate-900 mt-1">{latestClassNotice.title}</h4>
-                          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{latestClassNotice.content}</p>
+                          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed line-clamp-2">{latestClassNotice.content}</p>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => {
-                          setClassNoticeTitle(latestClassNotice.title || '');
-                          setClassNoticeContent(latestClassNotice.content || '');
-                          setIsClassNoticeModalOpen(true);
+                          setBoardSelectedClass(teacherClass || 'ALL');
+                          setBoardInitialPostType('NOTICE');
+                          setActiveNavTab('board');
                         }}
-                        className="self-end sm:self-center px-3 py-1.5 bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl transition-colors shrink-0 shadow-2xs"
+                        className="self-end sm:self-center px-3 py-1.5 bg-white hover:bg-orange-50 border border-orange-200 text-orange-700 text-xs font-bold rounded-xl transition-colors shrink-0 shadow-2xs"
                       >
-                        내용 수정 후 재발송
+                        알림장 게시판에서 보기
                       </button>
                     </div>
                   )}
@@ -2809,102 +2739,6 @@ export default function TeacherDashboard({
                 className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
               >
                 닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL 3: Class-wide Notice Modal (우리 반 전체 알림장) --- */}
-      {isClassNoticeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-scale-up">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[11px] font-extrabold rounded-md">
-                    우리 반 전체 발송
-                  </span>
-                  <h3 className="font-black text-slate-900 text-base">
-                    {teacherClass} 전체 알림장 작성
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  작성하신 알림장은 <strong>{teacherClass} 소속 모든 원아({myStudents.length}명)의 학부모님</strong> 앱으로 일괄 발송됩니다.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsClassNoticeModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">알림장 제목</label>
-              <input
-                type="text"
-                value={classNoticeTitle}
-                onChange={e => setClassNoticeTitle(e.target.value)}
-                placeholder="예: [내일 야외 활동 준비물 안내] 편한 복장 및 물통 지참"
-                className="w-full text-sm px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
-              />
-            </div>
-
-            <div>
-              <p className="text-xs font-bold text-slate-600 mb-1.5">자주 쓰는 전체 공지 문구</p>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  '내일은 숲 체험 활동이 예정되어 있으니 편한 운동화와 모자를 착용해 주세요.',
-                  '가정통신문 및 동의서가 배부되었으니 확인 후 회신 부탁드립니다.',
-                  '기온 변화가 심하니 얇은 겉옷을 가방에 챙겨 보내주시기 바랍니다.',
-                  '원아들의 개인 물품 및 식기류에 이름을 꼭 기재해 주시기 바랍니다.'
-                ].map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      setClassNoticeContent(prev => (prev ? `${prev}\n${preset}` : preset));
-                    }}
-                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg font-medium transition-colors text-left"
-                  >
-                    + {preset}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">알림장 본문</label>
-              <textarea
-                rows={5}
-                value={classNoticeContent}
-                onChange={e => setClassNoticeContent(e.target.value)}
-                placeholder="학부모님들께 전달할 알림장 내용을 입력하세요."
-                className="w-full text-sm p-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
-              />
-            </div>
-
-            <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
-              수신 대상: <strong>{teacherClass} 원아 {myStudents.length}명 전체 학부모</strong>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsClassNoticeModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleSendClassNotice}
-                disabled={isSendingClassNotice}
-                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {isSendingClassNotice ? '전체 발송 중...' : '반 전체 발송하기'}
               </button>
             </div>
           </div>

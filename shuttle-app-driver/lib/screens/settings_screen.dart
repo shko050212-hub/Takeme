@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/student_model.dart';
+import '../models/user_model.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -15,6 +16,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _allergyController = TextEditingController();
   bool _isSavingAllergy = false;
   bool _isDeletingAccount = false;
+
+  bool _notiChangeRequest = true;
+  bool _notiEscort = true;
+  bool _notiChat = true;
 
   @override
   void initState() {
@@ -41,6 +46,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
     }
+
+    try {
+      final noti = await ApiService().getMyNotificationSettings();
+      if (mounted) {
+        setState(() {
+          _notiChangeRequest = noti['change_request'] ?? true;
+          _notiEscort = noti['escort'] ?? true;
+          _notiChat = noti['chat'] ?? true;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateNotiSetting(String key, bool val) async {
+    setState(() {
+      if (key == 'change_request') _notiChangeRequest = val;
+      if (key == 'escort') _notiEscort = val;
+      if (key == 'chat') _notiChat = val;
+    });
+    await ApiService().updateMyNotificationSettings({
+      'change_request': _notiChangeRequest,
+      'escort': _notiEscort,
+      'chat': _notiChat,
+    });
   }
 
   Future<void> _handleSaveAllergy() async {
@@ -206,6 +235,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 24),
                   ],
 
+                  // Notification Settings (기사)
+                  _buildDriverNotificationSection(),
+
                   // Account Info
                   const Text(
                     '계정 정보',
@@ -225,11 +257,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const Divider(height: 20, color: Color(0xFFF1F5F9)),
                         _buildInfoRow(
                           '계정 역할',
-                          user?.role == 'DRIVER'
-                              ? '기사님'
-                              : (user?.role == 'TEACHER'
-                                  ? '지도교사'
-                                  : (user?.role == 'PARENT' ? '학부모' : '학생')),
+                          UserModel.getRoleKorean(user?.role),
                         ),
                       ],
                     ),
@@ -268,6 +296,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDriverNotificationSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          '알림 수신 설정',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                activeTrackColor: const Color(0xFF93C5FD),
+                activeThumbColor: const Color(0xFF2563EB),
+                title: const Text('통학 변동', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                subtitle: const Text('탑승 원아의 결석, 지각, 하원 변경 등 노선 변동 알림', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                value: _notiChangeRequest,
+                onChanged: (val) => _updateNotiSetting('change_request', val),
+              ),
+              const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                activeTrackColor: const Color(0xFF93C5FD),
+                activeThumbColor: const Color(0xFF2563EB),
+                title: const Text('동승 확인', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                subtitle: const Text('지도교사의 버스 동승 탑승 확인 알림', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                value: _notiEscort,
+                onChanged: (val) => _updateNotiSetting('escort', val),
+              ),
+              const Divider(height: 1, color: Color(0xFFF1F5F9)),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                activeTrackColor: const Color(0xFF93C5FD),
+                activeThumbColor: const Color(0xFF2563EB),
+                title: const Text('메시지', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                subtitle: const Text('지도교사, 원내 교직원, 기관 관리자 메시지 알림', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                value: _notiChat,
+                onChanged: (val) => _updateNotiSetting('chat', val),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 

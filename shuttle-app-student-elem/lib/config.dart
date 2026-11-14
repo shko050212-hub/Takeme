@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class AppConfig {
-  static const String defaultApiHost = 'https://52.63.245.203.sslip.io';
+  static const String defaultApiHost = String.fromEnvironment('API_HOST', defaultValue: 'https://52.63.245.203.sslip.io');
   static const String fallbackApiHost = 'http://52.63.245.203:3000';
   static String _customApiHost = '';
 

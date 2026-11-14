@@ -45,6 +45,15 @@ $ docker run --name takeme-dev-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRE
 $ cp .env.development.example .env.development
 ```
 
+### 3. 기존 게시글 사진을 사진 보관함(MediaAsset)으로 동기화 마이그레이션
+기존 알림장 및 게시판에 업로드되었던 사진들을 사진 보관함(MediaAsset)으로 동기화하려면 다음 명령어를 실행합니다:
+```bash
+# shuttle-backend 디렉터리에서 실행
+$ npm run sync:board-media
+```
+* 이 작업은 중복 삽입을 방지하며, 아직 보관함에 등록되지 않은 게시글 사진들만 `sourceType`('NOTICE' 또는 'BOARD')과 함께 안전하게 마이그레이션합니다.
+
+
 내용 예시:
 ```env
 DB_HOST=localhost
@@ -56,6 +65,18 @@ DB_SSL=false
 ```
 
 NestJS 실행 시 `.env.development` 파일이 있으면 실제 RDS 접속 정보 대신 로컬 개발 DB를 최우선으로 바라보므로 안전하게 엔티티 및 스키마 변경 작업을 진행할 수 있습니다.
+
+### 3. 개발 DB 데이터 마이그레이션 스크립트 (개발 전용)
+
+> [!CAUTION]
+> 아래 마이그레이션 스크립트는 **로컬 개발용 DB(`takeme_dev`)에서만 확인 및 실행**해야 합니다. 운영 DB(Production RDS)에는 직접 실행하지 마십시오.
+
+#### 알림장 게시글 작성자 역할(authorRole) 정정 스크립트
+과거 게시글의 `authorRole`이 '지도교사' 등으로 저장된 경우, 작성자 계정(`authorUserId`)의 실제 현재 역할(`user.role`)로 정정합니다:
+```bash
+# shuttle-backend 디렉터리에서 로컬 개발 DB 대상으로 실행
+$ npx ts-node -r dotenv/config scripts/migrate_board_author_role.ts dotenv_config_path=.env.development
+```
 
 ## Project setup
 

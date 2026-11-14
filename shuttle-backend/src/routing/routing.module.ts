@@ -20,6 +20,7 @@ import { AuditLog } from '../entities/audit-log.entity';
 import { YearlyZoneMapping } from '../entities/yearly-zone-mapping.entity';
 import { Attendance } from '../entities/attendance.entity';
 import { AttendanceSubmission } from '../entities/attendance-submission.entity';
+import { MediaAsset } from '../entities/media-asset.entity';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { AttendanceSubmission } from '../entities/attendance-submission.entity';
       OperationLog, ParentMessage, ScheduleOverride,
       AcademyHoliday, Notification, PickupPoint,
       BoardPost, BoardComment, AuditLog, YearlyZoneMapping,
-      Attendance, AttendanceSubmission
+      Attendance, AttendanceSubmission, MediaAsset
     ]),
     HttpModule
   ],

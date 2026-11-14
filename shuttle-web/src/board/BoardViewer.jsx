@@ -155,6 +155,7 @@ export default function BoardViewer({
   setIsCreatingPost,
   posts = [],
   setPosts,
+  initialPostType,
   activeEducationLevel,
 }) {
   const currentEducationLevel = activeEducationLevel || currentUser?.educationLevel || localStorage.getItem('takeme_selected_education_level') || '유치원';
@@ -163,6 +164,7 @@ export default function BoardViewer({
 
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingToCloud, setIsUploadingToCloud] = useState(false);
+  const [selectedPostType, setSelectedPostType] = useState('ALL'); // 'ALL' | 'NOTICE' | 'POST'
 
   const isAdmin = currentUser.role === 'ACADEMY_ADMIN' || currentUser.role === 'SUPER_ADMIN';
   const isTeacher = currentUser.role === 'TEACHER';
@@ -186,6 +188,7 @@ export default function BoardViewer({
   const [postForm, setPostForm] = useState({
     title: '',
     content: '',
+    postType: initialPostType || '',
     visibility: isTeacher ? 'CLASS' : 'ALL',
     targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
     imageUrl: PRESET_PHOTOS[0].url,
@@ -194,6 +197,15 @@ export default function BoardViewer({
     authorRole: isTeacher ? 'TEACHER' : 'ADMIN',
   });
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (initialPostType) {
+      setPostForm(prev => ({ ...prev, postType: initialPostType }));
+      if (initialPostType !== 'ALL') {
+        setSelectedPostType(initialPostType);
+      }
+    }
+  }, [initialPostType]);
 
   const cloudStoredPhotos = useMemo(() => {
     try {
@@ -301,6 +313,10 @@ export default function BoardViewer({
       }
     }
 
+    if (selectedPostType !== 'ALL') {
+      result = result.filter(p => (p.postType || 'POST') === selectedPostType);
+    }
+
     if (searchKeyword.trim()) {
       const kw = searchKeyword.toLowerCase().trim();
       result = result.filter(p => 
@@ -318,7 +334,7 @@ export default function BoardViewer({
     }
 
     return result;
-  }, [posts, isTeacher, teacherClass, selectedClass, searchKeyword, sortBy]);
+  }, [posts, isTeacher, teacherClass, selectedClass, searchKeyword, sortBy, selectedPostType]);
 
   // Handle Like Toggle
   const handleToggleLike = async (postId) => {
@@ -520,6 +536,10 @@ export default function BoardViewer({
 
   // Handle Save New or Edited Post
   const handleSavePost = async () => {
+    if (!postForm.postType) {
+      alert('카테고리(알림장 또는 게시물)를 선택해 주세요.');
+      return;
+    }
     if (!postForm.title.trim()) {
       alert('게시글 제목을 입력해 주세요.');
       return;
@@ -543,6 +563,7 @@ export default function BoardViewer({
           ...p,
           title: postForm.title.trim(),
           content: postForm.content.trim(),
+          postType: postForm.postType,
           visibility: postForm.visibility,
           targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
           imageUrl: primaryImageUrl,
@@ -561,6 +582,7 @@ export default function BoardViewer({
           body: JSON.stringify({
             title: postForm.title.trim(),
             content: postForm.content.trim(),
+            postType: postForm.postType,
             visibility: postForm.visibility,
             targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
             imageUrl: primaryImageUrl,
@@ -577,6 +599,7 @@ export default function BoardViewer({
         educationLevel: currentEducationLevel,
         title: postForm.title.trim(),
         content: postForm.content.trim(),
+        postType: postForm.postType,
         visibility: postForm.visibility,
         targetClass: postForm.visibility === 'CLASS' ? postForm.targetClass : null,
         imageUrl: primaryImageUrl,
@@ -592,6 +615,7 @@ export default function BoardViewer({
       const updated = [newPost, ...posts];
       savePostsLocal(updated);
       setIsCreatingPost(false);
+      setSelectedPostType(postForm.postType);
 
       try {
         const res = await fetch(`${API_BASE_URL}/routing/board/posts`, {
@@ -600,6 +624,7 @@ export default function BoardViewer({
           body: JSON.stringify({
             title: newPost.title,
             content: newPost.content,
+            postType: newPost.postType,
             visibility: newPost.visibility,
             targetClass: newPost.targetClass,
             imageUrl: newPost.imageUrl,
@@ -625,6 +650,7 @@ export default function BoardViewer({
     setPostForm({
       title: '',
       content: '',
+      postType: initialPostType || '',
       visibility: isTeacher ? 'CLASS' : 'ALL',
       targetClass: (isTeacher && teacherClass) ? teacherClass : (availableClasses[0] || '햇살반'),
       imageUrl: PRESET_PHOTOS[0].url,
@@ -675,6 +701,7 @@ export default function BoardViewer({
     setPostForm({
       title: post.title,
       content: post.content,
+      postType: post.postType === 'NOTICE' ? 'NOTICE' : 'POST',
       visibility: post.visibility || (isTeacher ? 'CLASS' : 'ALL'),
       targetClass: post.targetClass || (isTeacher ? teacherClass : availableClasses[0]) || '햇살반',
       imageUrl: post.imageUrl || postImages[0] || PRESET_PHOTOS[0].url,
@@ -707,7 +734,37 @@ export default function BoardViewer({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Category Filter Chips (전체 · 알림장 · 게시물) */}
+          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
+            <button
+              onClick={() => setSelectedPostType('ALL')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                selectedPostType === 'ALL' ? 'bg-white text-slate-900 shadow-xs font-black' : 'hover:text-slate-800'
+              }`}
+            >
+              전체
+            </button>
+            <button
+              onClick={() => setSelectedPostType('NOTICE')}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                selectedPostType === 'NOTICE' ? 'bg-orange-500 text-white shadow-xs font-black' : 'text-orange-600 hover:text-orange-700'
+              }`}
+            >
+              <span>📢</span>
+              <span>알림장</span>
+            </button>
+            <button
+              onClick={() => setSelectedPostType('POST')}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                selectedPostType === 'POST' ? 'bg-blue-600 text-white shadow-xs font-black' : 'text-blue-600 hover:text-blue-700'
+              }`}
+            >
+              <span>📝</span>
+              <span>게시물</span>
+            </button>
+          </div>
+
           {/* Quick View Category Switcher (Admin/Director Only) */}
           {!isTeacher && (
             <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
@@ -749,6 +806,7 @@ export default function BoardViewer({
               setPostForm({
                 title: '',
                 content: '',
+                postType: initialPostType || '',
                 visibility: isTeacher ? 'CLASS' : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? 'CLASS' : 'ALL'),
                 targetClass: (isTeacher && teacherClass) ? teacherClass : (selectedClass !== 'ALL' && selectedClass !== 'PUBLIC_ONLY' ? selectedClass : (availableClasses[0] || '햇살반')),
                 imageUrl: PRESET_PHOTOS[0].url,
@@ -823,16 +881,24 @@ export default function BoardViewer({
                   {/* [요구사항 반영 1] 메인 사진 위에 제목 */}
                   <div className="p-4 pb-3 bg-white border-b border-slate-100 flex flex-col gap-1.5">
                     <div className="flex items-center justify-between">
-                      {isClassSpecific ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
-                          <span>{post.targetClass} 전용</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full border ${
+                          (post.postType === 'NOTICE')
+                            ? 'bg-orange-50 text-orange-600 border-orange-200'
+                            : 'bg-blue-50 text-blue-600 border-blue-200'
+                        }`}>
+                          <span>{post.postType === 'NOTICE' ? '📢 알림장' : '📝 게시물'}</span>
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span>전체 공개</span>
-                        </span>
-                      )}
+                        {isClassSpecific ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                            <span>{post.targetClass} 전용</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span>전체 공개</span>
+                          </span>
+                        )}
+                      </div>
 
                       {/* Post Actions (Admin or Authorized Teacher) */}
                       {canEditPost(post) && (
@@ -936,8 +1002,15 @@ export default function BoardViewer({
                             {post.authorName?.[0] || '원'}
                           </div>
                           <div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-xs font-black text-slate-800">{post.authorName}</span>
+                              <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded border ${
+                                (post.postType === 'NOTICE')
+                                  ? 'bg-orange-50 text-orange-600 border-orange-200'
+                                  : 'bg-blue-50 text-blue-600 border-blue-200'
+                              }`}>
+                                {post.postType === 'NOTICE' ? '알림장' : '게시물'}
+                              </span>
                               <span className="text-[10px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
                                 {post.authorRole === 'ADMIN' ? '관리자' : post.authorRole === 'TEACHER' ? '선생님' : '학부모'}
                               </span>
@@ -1083,7 +1156,9 @@ export default function BoardViewer({
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl p-6 sm:p-8 animate-scale-up border border-slate-100">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
               <h3 className="text-xl font-black text-slate-800">
-                {editingPost ? '게시글 수정' : '새 원아 사진 및 소식 등록'}
+                {editingPost
+                  ? (postForm.postType === 'NOTICE' ? '알림장 수정' : '게시물 수정')
+                  : (postForm.postType === 'NOTICE' ? '알림장 작성' : postForm.postType === 'POST' ? '게시물 작성' : '알림장 / 게시글 작성')}
               </h3>
               <button
                 type="button"
@@ -1095,6 +1170,39 @@ export default function BoardViewer({
             </div>
 
             <div className="space-y-5">
+              {/* 카테고리 선택 (알림장 vs 게시물) */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5">
+                  카테고리 선택 <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPostForm(prev => ({ ...prev, postType: 'NOTICE' }))}
+                    className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border ${
+                      postForm.postType === 'NOTICE'
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-md ring-2 ring-orange-300'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-orange-50'
+                    }`}
+                  >
+                    <span className="text-base">📢</span>
+                    <span>알림장 (중요 공지)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPostForm(prev => ({ ...prev, postType: 'POST' }))}
+                    className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all border ${
+                      postForm.postType === 'POST'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-300'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50'
+                    }`}
+                  >
+                    <span className="text-base">📝</span>
+                    <span>게시물 (일상/활동)</span>
+                  </button>
+                </div>
+              </div>
               {/* 제목 */}
               <div>
                 <label className="block text-xs font-black text-slate-700 mb-1.5">
@@ -1360,9 +1468,15 @@ export default function BoardViewer({
               <button
                 type="button"
                 onClick={handleSavePost}
-                className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-sm shadow-lg transition-all"
+                className={`flex-1 py-3.5 text-white font-black rounded-xl text-sm shadow-lg transition-all ${
+                  postForm.postType === 'NOTICE'
+                    ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
+                }`}
               >
-                {editingPost ? '수정 완료' : '게시글 발행하기'}
+                {editingPost
+                  ? (postForm.postType === 'NOTICE' ? '알림장 수정 완료' : '게시물 수정 완료')
+                  : (postForm.postType === 'NOTICE' ? '알림장 발행하기' : '게시물 발행하기')}
               </button>
             </div>
           </div>

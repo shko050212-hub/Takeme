@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, ManyToOne, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, ManyToOne, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { ChatRoom } from './chat-room.entity';
 import { User } from './user.entity';
 
@@ -13,6 +13,12 @@ export class ChatRoomMember {
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   user: User;
 
+  @Column({ type: 'timestamp', nullable: true })
+  lastReadAt: Date;
+
   @CreateDateColumn()
   joinedAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

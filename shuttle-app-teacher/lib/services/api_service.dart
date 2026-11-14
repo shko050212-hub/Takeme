@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
@@ -540,11 +541,12 @@ class ApiService {
   }
 
   // ==================== BOARD APIs ====================
-  Future<List<Map<String, dynamic>>> getBoardPosts({int? academyId, String? search}) async {
+  Future<List<Map<String, dynamic>>> getBoardPosts({int? academyId, String? search, String? postType}) async {
     try {
       final qp = <String, String>{};
       if (academyId != null) qp['academyId'] = academyId.toString();
       if (search != null && search.isNotEmpty) qp['search'] = search;
+      if (postType != null && postType.isNotEmpty) qp['postType'] = postType;
       final uri = Uri.parse('${AppConfig.apiHost}/routing/board/posts').replace(queryParameters: qp.isEmpty ? null : qp);
       final res = await getWithAuth(uri);
       if (res.statusCode == 200) {
@@ -587,6 +589,7 @@ class ApiService {
     required String content,
     String visibility = 'ALL',
     String? targetClass,
+    String? postType,
     String? imageUrl,
     List<String>? images,
     required String authorName,
@@ -600,6 +603,7 @@ class ApiService {
         'content': content,
         'visibility': visibility,
         'targetClass': targetClass,
+        'postType': postType ?? 'POST',
         'imageUrl': imageUrl,
         'images': images ?? (imageUrl != null ? [imageUrl] : []),
         'authorName': authorName,
@@ -655,6 +659,7 @@ class ApiService {
     String? content,
     String? visibility,
     String? targetClass,
+    String? postType,
     List<String>? images,
   }) async {
     try {
@@ -664,6 +669,7 @@ class ApiService {
       if (content != null) body['content'] = content;
       if (visibility != null) body['visibility'] = visibility;
       if (targetClass != null) body['targetClass'] = targetClass;
+      if (postType != null) body['postType'] = postType;
       if (images != null) body['images'] = images;
       final res = await putWithAuth(url, body);
       final data = jsonDecode(utf8.decode(res.bodyBytes));
@@ -851,5 +857,229 @@ class ApiService {
     } catch (e) {
       return {'success': false, 'message': '네트워크 오류로 신청에 실패했습니다.'};
     }
+  }
+
+  // ==================== REALTIME CHAT APIs ====================
+  Future<Map<String, dynamic>> getChatUsers() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/users');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'drivers': (data['drivers'] as List? ?? []).cast<Map<String, dynamic>>(),
+          'teachers': (data['teachers'] as List? ?? []).cast<Map<String, dynamic>>(),
+          'parents': (data['parents'] as List? ?? []).cast<Map<String, dynamic>>(),
+          'admins': (data['admins'] as List? ?? []).cast<Map<String, dynamic>>(),
+        };
+      } else {
+        return {
+          'success': false,
+          'statusCode': res.statusCode,
+          'errorMessage': '서버 오류가 발생했습니다 (${res.statusCode}).',
+          'drivers': <Map<String, dynamic>>[],
+          'teachers': <Map<String, dynamic>>[],
+          'parents': <Map<String, dynamic>>[],
+          'admins': <Map<String, dynamic>>[],
+        };
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getChatUsers error: $e');
+      return {
+        'success': false,
+        'statusCode': 0,
+        'errorMessage': '네트워크 연결 오류가 발생했습니다.',
+        'drivers': <Map<String, dynamic>>[],
+        'teachers': <Map<String, dynamic>>[],
+        'parents': <Map<String, dynamic>>[],
+        'admins': <Map<String, dynamic>>[],
+      };
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getChatRooms() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/rooms');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        if (data is List) {
+          return data.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getChatRooms error: $e');
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> getChatMessages(int roomId) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/messages?roomId=$roomId');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        if (data is List) {
+          return data.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getChatMessages error: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createChatRoom(List<int> userIds, {String? name, String? type}) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/rooms');
+      final payload = {
+        'userIds': userIds,
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (type != null && type.isNotEmpty) 'type': type,
+      };
+      final res = await postWithAuth(url, jsonEncode(payload));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] createChatRoom error: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> sendChatMessage(int roomId, String text) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/messages');
+      final res = await postWithAuth(url, jsonEncode({'roomId': roomId, 'text': text}));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] sendChatMessage error: $e');
+    }
+    return null;
+  }
+
+  Future<bool> markChatRoomAsRead(int roomId) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/rooms/$roomId/read');
+      final res = await postWithAuth(url, '{}');
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (e) {
+      debugPrint('[ApiService] markChatRoomAsRead error: $e');
+      return false;
+    }
+  }
+
+  Future<int> getChatTotalUnreadCount() async {
+    try {
+      final rooms = await getChatRooms();
+      int sum = 0;
+      for (final r in rooms) {
+        sum += (r['unreadCount'] as int? ?? 0);
+      }
+      return sum;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getRoutePath() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/teacher/route-path');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>> getMyNotificationSettings() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/me/notification-settings');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  Future<bool> updateMyNotificationSettings(Map<String, bool> settings) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/me/notification-settings');
+      final res = await putWithAuth(url, settings);
+      return res.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
+  Future<dynamic> uploadMediaAssets({
+    required List<Map<String, dynamic>> photos,
+    int? vehicleId,
+    String? className,
+  }) async {
+    final url = Uri.parse('${AppConfig.apiHost}/routing/media');
+    final payload = {
+      'photos': photos,
+      if (vehicleId != null) 'vehicleId': vehicleId,
+      if (className != null) 'className': className,
+    };
+    final res = await postWithAuth(url, jsonEncode(payload));
+    final bodyText = utf8.decode(res.bodyBytes).trim();
+    if (bodyText.startsWith('<') || bodyText.toLowerCase().contains('<!doctype html>')) {
+      throw const FormatException('서버에 이 기능이 아직 없습니다(배포 필요)');
+    }
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      try {
+        return jsonDecode(bodyText);
+      } catch (_) {
+        throw const FormatException('서버에 이 기능이 아직 없습니다(배포 필요)');
+      }
+    }
+    throw Exception('업로드 실패 (${res.statusCode})');
+  }
+
+  Future<List<dynamic>> getMediaAssets({
+    String? from,
+    String? to,
+    int? vehicleId,
+    String? className,
+    String? sourceType,
+  }) async {
+    final queryParams = <String, String>{};
+    if (from != null) queryParams['from'] = from;
+    if (to != null) queryParams['to'] = to;
+    if (vehicleId != null) queryParams['vehicleId'] = vehicleId.toString();
+    if (className != null) queryParams['className'] = className;
+    if (sourceType != null && sourceType.isNotEmpty) queryParams['sourceType'] = sourceType;
+
+    final uri = Uri.parse('${AppConfig.apiHost}/routing/media').replace(queryParameters: queryParams.isEmpty ? null : queryParams);
+    final res = await getWithAuth(uri);
+    final bodyText = utf8.decode(res.bodyBytes).trim();
+    if (bodyText.startsWith('<') || bodyText.toLowerCase().contains('<!doctype html>')) {
+      throw const FormatException('서버에 이 기능이 아직 없습니다(배포 필요)');
+    }
+    if (res.statusCode == 200) {
+      try {
+        final decoded = jsonDecode(bodyText);
+        if (decoded is List) return decoded;
+      } catch (_) {
+        throw const FormatException('서버에 이 기능이 아직 없습니다(배포 필요)');
+      }
+    }
+    return [];
+  }
+
+  Future<bool> deleteMediaAsset(int id) async {
+    final url = Uri.parse('${AppConfig.apiHost}/routing/media/$id');
+    final res = await deleteWithAuth(url);
+    final bodyText = utf8.decode(res.bodyBytes).trim();
+    if (bodyText.startsWith('<') || bodyText.toLowerCase().contains('<!doctype html>')) {
+      throw const FormatException('서버에 이 기능이 아직 없습니다(배포 필요)');
+    }
+    return res.statusCode == 200 || res.statusCode == 204;
   }
 }

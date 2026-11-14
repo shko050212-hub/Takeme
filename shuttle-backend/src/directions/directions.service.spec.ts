@@ -59,6 +59,7 @@ describe('DirectionsService', () => {
     expect(body.priority).toBe('RECOMMEND');
     expect(body.avoid).toEqual(['uturn']);
     expect(r.mode).toBe('safe');
+    expect(r.provider).toBe('kakao');
     expect(r.criteria).toEqual({ priority: 'RECOMMEND', avoid: ['uturn'] });
   });
 
@@ -68,7 +69,34 @@ describe('DirectionsService', () => {
     const body = http.post.mock.calls[0][1];
     expect(body.priority).toBe('DISTANCE');
     expect(body).not.toHaveProperty('avoid');
+    expect(r.provider).toBe('kakao');
     expect(r.criteria).toEqual({ priority: 'DISTANCE', avoid: [] });
+  });
+
+  it('fast 모드에서 네이버가 설정되어 있으면 네이버를 우선 호출한다', async () => {
+    const naverData = {
+      code: 0,
+      route: {
+        trafast: [
+          {
+            summary: { distance: 2000, duration: 300000 },
+            path: [[127.1099, 37.3944], [127.1086, 37.4024]],
+            guide: [],
+          },
+        ],
+      },
+    };
+    const http = {
+      get: jest.fn().mockReturnValue(of({ data: naverData })),
+      post: jest.fn(),
+    };
+    const config = {
+      get: jest.fn((k: string) => (k.startsWith('NAVER') ? 'REAL_KEY' : 'KAKAO_KEY')),
+    };
+    const service = new DirectionsService(http as any, config as any);
+    const r = await service.getRoute({ ...req, mode: 'fast' });
+    expect(http.get).toHaveBeenCalled();
+    expect(r.provider).toBe('naver');
   });
 
   it('mode 가 없으면 safe 로 처리한다', async () => {

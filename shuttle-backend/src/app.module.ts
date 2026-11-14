@@ -29,6 +29,8 @@ import { ChatModule } from './chat/chat.module';
 import { ApprovalRequest } from './entities/approval-request.entity';
 import { ApprovalModule } from './approval/approval.module';
 import { DirectionsModule } from './directions/directions.module';
+import { MediaAsset } from './entities/media-asset.entity';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -68,6 +70,7 @@ import { DirectionsModule } from './directions/directions.module';
           YearlyZoneMapping,
           Attendance,
           AttendanceSubmission,
+          MediaAsset,
         ],
         synchronize: true,
         ssl: config.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
@@ -80,6 +83,7 @@ import { DirectionsModule } from './directions/directions.module';
     ChatModule,
     ApprovalModule,
     DirectionsModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

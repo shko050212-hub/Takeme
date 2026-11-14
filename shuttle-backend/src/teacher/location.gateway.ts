@@ -184,28 +184,44 @@ export class LocationGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
   }
 
-  /** Broadcast route/pickup-point/academy update */
+  /**
+   * 새 사진 업로드 알림 (기관 소켓 방 academy_{id})
+   */
+  broadcastMediaUploaded(academyId: number, mediaAsset: any) {
+    if (!this.server || !academyId) return;
+    this.server.to(`academy_${academyId}`).emit('mediaUploaded', mediaAsset);
+  }
+
+  /**
+   * 사진 삭제 알림 (기관 소켓 방 academy_{id})
+   */
+  broadcastMediaDeleted(academyId: number, mediaId: number) {
+    if (!this.server || !academyId) return;
+    this.server.to(`academy_${academyId}`).emit('mediaDeleted', { id: mediaId });
+  }
+
+  /** 경로/탑승지/유치원 변경 알림 (해당 기관 방에만 전송) */
   broadcastRouteUpdated(academyId?: number) {
-    if (this.server) {
-      this.server.emit('routeUpdated', {
-        academyId: academyId ?? null,
+    if (this.server && academyId) {
+      this.server.to(`academy_${academyId}`).emit('routeUpdated', {
+        academyId,
         timestamp: new Date().toISOString(),
       });
     }
   }
 
-  /** 원장 웹에서 탑승지 추가/삭제 시 지도교사에게 푸시 알림 전송 */
+  /** 원장 웹에서 탑승지 추가/삭제 시 지도교사에게 푸시 알림 전송 (해당 기관 방에만 전송) */
   broadcastTeacherPush(message: string, academyId?: number) {
-    if (this.server) {
-      this.server.emit('teacherPush', {
+    if (this.server && academyId) {
+      this.server.to(`academy_${academyId}`).emit('teacherPush', {
         message,
-        academyId: academyId ?? null,
+        academyId,
         timestamp: new Date().toISOString(),
       });
     }
   }
 
-  /** 지도교사가 탑승 완료 후 기사 앱에 "출발하셔도 됩니다" 신호 전송 */
+  /** 지도교사가 탑승 완료 후 기사 앱에 "출발하셔도 됩니다" 신호 전송 (해당 차량 방에만 전송) */
   broadcastDepartSignal(vehicleId: number, stopName?: string) {
     const room = `vehicle_${vehicleId}`;
     const payload = {
@@ -216,11 +232,10 @@ export class LocationGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     };
     if (this.server) {
       this.server.to(room).emit('driverDepartSignal', payload);
-      this.server.emit('driverDepartSignal', payload);
     }
   }
 
-  /** 원아 탑승/하차/결석 실시간 상태 브로드캐스트 (학부모 앱 및 차량 방 연계) */
+  /** 원아 탑승/하차/결석 실시간 상태 브로드캐스트 (학부모 개인 방 + 차량 방에만 전송) */
   broadcastChildBoardStatus(data: {
     parentUserId?: number;
     studentId: number;
@@ -243,7 +258,6 @@ export class LocationGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     if (data.vehicleId) {
       this.server.to(`vehicle_${data.vehicleId}`).emit('childBoardStatusChanged', payload);
     }
-    this.server.emit('globalChildBoardStatusChanged', payload);
   }
 
   @SubscribeMessage('joinVehicleRoom')

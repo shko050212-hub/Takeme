@@ -1,5 +1,5 @@
-import 'dart:typed_data';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
@@ -126,6 +126,20 @@ class ApiService {
       final refreshed = await tryRefreshToken();
       if (refreshed) {
         res = await http.post(url, headers: _headers(extra), body: encoded).timeout(const Duration(seconds: 10));
+      } else {
+        await logout();
+      }
+    }
+    return res;
+  }
+
+  Future<http.Response> putWithAuth(Uri url, dynamic body, [Map<String, String>? extra]) async {
+    final encoded = body is String ? body : jsonEncode(body);
+    var res = await http.put(url, headers: _headers(extra), body: encoded).timeout(const Duration(seconds: 10));
+    if (res.statusCode == 401 && _refreshToken != null) {
+      final refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await http.put(url, headers: _headers(extra), body: encoded).timeout(const Duration(seconds: 10));
       } else {
         await logout();
       }
@@ -668,6 +682,155 @@ class ApiService {
       };
     } catch (e) {
       return {'success': false, 'message': '메시지 전송에 실패했습니다.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getMyNotificationSettings() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/me/notification-settings');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  Future<bool> updateMyNotificationSettings(Map<String, bool> settings) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/me/notification-settings');
+      final res = await putWithAuth(url, settings);
+      return res.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
+  // ============================================================
+  // Realtime Chat API methods
+  // ============================================================
+
+  Future<Map<String, dynamic>> getChatUsers() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/users');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        return {
+          'success': true,
+          'drivers': (data['drivers'] as List? ?? []).cast<Map<String, dynamic>>(),
+          'teachers': (data['teachers'] as List? ?? []).cast<Map<String, dynamic>>(),
+          'parents': (data['parents'] as List? ?? []).cast<Map<String, dynamic>>(),
+          'admins': (data['admins'] as List? ?? []).cast<Map<String, dynamic>>(),
+        };
+      } else {
+        return {
+          'success': false,
+          'statusCode': res.statusCode,
+          'errorMessage': '서버 오류가 발생했습니다 (${res.statusCode}).',
+          'drivers': <Map<String, dynamic>>[],
+          'teachers': <Map<String, dynamic>>[],
+          'parents': <Map<String, dynamic>>[],
+          'admins': <Map<String, dynamic>>[],
+        };
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getChatUsers error: $e');
+      return {
+        'success': false,
+        'statusCode': 0,
+        'errorMessage': '네트워크 연결 오류가 발생했습니다.',
+        'drivers': <Map<String, dynamic>>[],
+        'teachers': <Map<String, dynamic>>[],
+        'parents': <Map<String, dynamic>>[],
+        'admins': <Map<String, dynamic>>[],
+      };
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getChatRooms() async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/rooms');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        if (data is List) {
+          return data.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getChatRooms error: $e');
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> getChatMessages(int roomId) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/messages?roomId=$roomId');
+      final res = await getWithAuth(url);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
+        if (data is List) {
+          return data.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (e) {
+      debugPrint('[ApiService] getChatMessages error: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> createChatRoom(List<int> userIds, {String? name, String? type}) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/rooms');
+      final payload = {
+        'userIds': userIds,
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (type != null && type.isNotEmpty) 'type': type,
+      };
+      final res = await postWithAuth(url, jsonEncode(payload));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] createChatRoom error: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> sendChatMessage(int roomId, String text) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/messages');
+      final res = await postWithAuth(url, jsonEncode({'roomId': roomId, 'text': text}));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] sendChatMessage error: $e');
+    }
+    return null;
+  }
+
+  Future<bool> markChatRoomAsRead(int roomId) async {
+    try {
+      final url = Uri.parse('${AppConfig.apiHost}/chat/rooms/$roomId/read');
+      final res = await postWithAuth(url, '{}');
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (e) {
+      debugPrint('[ApiService] markChatRoomAsRead error: $e');
+      return false;
+    }
+  }
+
+  Future<int> getChatTotalUnreadCount() async {
+    try {
+      final rooms = await getChatRooms();
+      int sum = 0;
+      for (final r in rooms) {
+        sum += (r['unreadCount'] as int? ?? 0);
+      }
+      return sum;
+    } catch (_) {
+      return 0;
     }
   }
 }

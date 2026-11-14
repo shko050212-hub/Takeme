@@ -13,6 +13,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "seed:rds": "ts-node -r tsconfig-paths/register src/seed-rds.ts",
+    "sync:board-media": "ts-node -r tsconfig-paths/register src/scripts/sync-board-photos-to-media.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

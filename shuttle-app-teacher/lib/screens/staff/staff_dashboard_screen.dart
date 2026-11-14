@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../../config.dart';
 import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
@@ -11,7 +10,8 @@ import '../../models/student_model.dart';
 import '../../models/route_model.dart';
 import '../../widgets/kakao_map_view.dart';
 import '../settings_screen.dart';
-import '../teacher/teacher_notification_screen.dart';
+import '../chat/chat_room_list_screen.dart';
+import '../media/photo_gallery_screen.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
@@ -27,17 +27,20 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   bool _isLoading = true;
   bool _isDriverOperating = false;
+  int? _vehicleId;
   String? _escortName;
   String? _escortConfirmedAt;
   bool _isCheckingIn = false;
   int _unreadNotificationCount = 0;
+  int _unreadChatCount = 0;
   Timer? _notificationPollTimer;
 
   int _currentRunNumber = 1;
-  bool _isBottomPanelExpanded = false;
 
   double? _busLat;
   double? _busLng;
+  List<dynamic>? _actualRoadPath;
+  int _progressIndex = 0;
 
   final ScrollController _scrollController = ScrollController();
   final FlutterTts _flutterTts = FlutterTts();
@@ -56,6 +59,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     SocketService().onNotificationReceived((_) {
       if (mounted) _loadUnreadCount();
     });
+    SocketService().onRoomUpdated((_) {
+      if (mounted) _loadUnreadCount();
+    });
   }
 
   @override
@@ -71,7 +77,13 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   Future<void> _loadUnreadCount() async {
     try {
       final count = await ApiService().getTeacherUnreadCount();
-      if (mounted) setState(() => _unreadNotificationCount = count);
+      final chatCount = await ApiService().getChatTotalUnreadCount();
+      if (mounted) {
+        setState(() {
+          _unreadNotificationCount = count;
+          _unreadChatCount = chatCount;
+        });
+      }
     } catch (_) {}
   }
 
@@ -90,6 +102,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     final vehicle = await ApiService().getTeacherVehicle(user.email);
     final students = await ApiService().getTeacherStudents(user.email);
     final route = await ApiService().getTeacherRoute(user.email);
+    final routePathData = await ApiService().getRoutePath();
 
     // Fetch parentPhone and escort status
     try {
@@ -124,6 +137,10 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       setState(() {
         _students = students;
         _routeData = route;
+        if (routePathData != null) {
+          _actualRoadPath = routePathData['path'];
+          _progressIndex = routePathData['progressIndex'] ?? 0;
+        }
         _isLoading = false;
 
         final runs = _students.map((s) => s.runNumber).toSet().toList()..sort();
@@ -135,6 +152,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       final vid = vehicle?['id'];
       if (vid != null) {
         final vehicleId = int.tryParse(vid.toString()) ?? 0;
+        _vehicleId = vehicleId;
         SocketService().joinVehicleRoom(vehicleId);
 
         SocketService().onLocationUpdated((data) {
@@ -148,6 +166,14 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
               _isDriverOperating = true;
             });
           }
+        });
+
+        SocketService().onRoutePathUpdated((data) {
+          if (!mounted) return;
+          setState(() {
+            _actualRoadPath = data['path'];
+            _progressIndex = data['progressIndex'] ?? 0;
+          });
         });
       }
     }
@@ -328,71 +354,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     );
   }
 
-  void _showTeacherQRModal() {
-    final user = ApiService().currentUser;
-    if (user == null) return;
 
-    final qrData = 'teacherEmail=${Uri.encodeComponent(user.email)}';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              '원아 탑승용 QR 코드',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '원아 또는 학부모님께 이 화면을 보여주세요.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
-                ],
-              ),
-              child: QrImageView(
-                data: qrData,
-                version: QrVersions.auto,
-                size: 220,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '교사: ${user.name} (${user.email})',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('닫기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _showStudentMemoDialog(StudentModel student) {
     _memoController.text = student.teacherMemo ?? '';
@@ -473,9 +435,13 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   void _showBroadcastModal() {
     _broadcastMessageController.clear();
-    bool sendToParents = true;
-    bool sendToStudents = false;
     bool isSending = false;
+
+    final runStudents = _students.where((s) => s.runNumber == _currentRunNumber).toList();
+    final targetStudents = _selectedStudentIds.isNotEmpty
+        ? runStudents.where((s) => _selectedStudentIds.contains(s.id)).toList()
+        : runStudents;
+    final targetStudentIds = targetStudents.map((s) => s.id).toList();
 
     showModalBottomSheet(
       context: context,
@@ -483,101 +449,126 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 24,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '단체 메시지 전송',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+        builder: (context, setModalState) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 24,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
             ),
-            const SizedBox(height: 4),
-            Text(
-              '선택된 원아 ${_selectedStudentIds.length}명에게 메시지를 전송합니다.',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 16),
-            Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                FilterChip(
-                  label: const Text('학부모'),
-                  selected: sendToParents,
-                  onSelected: (v) => setModalState(() => sendToParents = v),
-                  selectedColor: const Color(0xFFEFF6FF),
-                  checkmarkColor: const Color(0xFF2563EB),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '단체 메시지 전송',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: const Text('학생'),
-                  selected: sendToStudents,
-                  onSelected: (v) => setModalState(() => sendToStudents = v),
-                  selectedColor: const Color(0xFFEFF6FF),
-                  checkmarkColor: const Color(0xFF2563EB),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.people_outline, size: 18, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          targetStudents.isEmpty
+                              ? '현재 회차($_currentRunNumber차)에 원아가 없습니다.'
+                              : '수신 대상: $_currentRunNumber차 원아 학부모 총 ${targetStudents.length}명',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _broadcastMessageController,
+                  maxLines: 4,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: '전송할 메시지 내용을 입력하세요.\n(예: 현재 버스가 탑승지에 곧 도착할 예정입니다)',
+                    hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
+                    contentPadding: const EdgeInsets.all(14),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: isSending || targetStudentIds.isEmpty
+                      ? null
+                      : () async {
+                          final msg = _broadcastMessageController.text.trim();
+                          if (msg.isEmpty) return;
+
+                          setModalState(() => isSending = true);
+                          final user = ApiService().currentUser;
+                          if (user != null) {
+                            final res = await ApiService().broadcastMessage(
+                              user.email,
+                              studentIds: targetStudentIds,
+                              targetRoles: ['PARENT'],
+                              message: msg,
+                            );
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            if (!mounted) return;
+                            if (res['success'] == true) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('학부모 ${targetStudents.length}명에게 메시지를 전송했습니다.'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                ),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res['message'] ?? '메시지 전송에 실패했습니다.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: isSending
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text(
+                          targetStudents.isEmpty
+                              ? '수신 대상 없음'
+                              : '학부모 ${targetStudents.length}명에게 전송하기',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _broadcastMessageController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: '전송할 메시지 내용을 입력하세요 (예: 5분 후 탑승지에 도착 예정입니다)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                contentPadding: const EdgeInsets.all(12),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: isSending
-                  ? null
-                  : () async {
-                      final msg = _broadcastMessageController.text.trim();
-                      if (msg.isEmpty) return;
-
-                      final roles = <String>[];
-                      if (sendToParents) roles.add('PARENT');
-                      if (sendToStudents) roles.add('STUDENT');
-                      if (roles.isEmpty) return;
-
-                      setModalState(() => isSending = true);
-                      final user = ApiService().currentUser;
-                      if (user != null) {
-                        final res = await ApiService().broadcastMessage(
-                          user.email,
-                          studentIds: _selectedStudentIds.toList(),
-                          targetRoles: roles,
-                          message: msg,
-                        );
-                        if (!ctx.mounted) return;
-                        Navigator.pop(ctx);
-                        if (!mounted) return;
-                        if (res['success'] == true) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('메시지가 성공적으로 전송되었습니다.'), backgroundColor: Color(0xFF10B981)),
-                          );
-                        }
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: isSending
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text('메시지 전송하기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
     );
   }
 
@@ -607,11 +598,235 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     }
   }
 
+  Widget _buildStudentCard(StudentModel st) {
+    final isChecked = _selectedStudentIds.contains(st.id);
+    final phone = _parentPhones[st.id] ?? '';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: st.boarded
+              ? const Color(0xFFBBF7D0)
+              : (st.absent ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
+          width: (st.boarded || st.absent) ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Checkbox
+          Padding(
+            padding: const EdgeInsets.only(top: 2, right: 6),
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: isChecked,
+                onChanged: (v) {
+                  setState(() {
+                    if (v == true) {
+                      _selectedStudentIds.add(st.id);
+                    } else {
+                      _selectedStudentIds.remove(st.id);
+                    }
+                  });
+                },
+                activeColor: const Color(0xFF2563EB),
+              ),
+            ),
+          ),
+
+          // 2-row layout to prevent RenderFlex overflow
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 윗줄: 이름 · 알레르기 말줄임 · 학부모 전화번호 + 통화/복사 버튼
+                Row(
+                  children: [
+                    Text(
+                      st.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    if (st.allergies.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFFECACA)),
+                          ),
+                          child: Text(
+                            '알레르기: ${st.allergies}',
+                            style: const TextStyle(
+                              color: Color(0xFFDC2626),
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    // Parent Phone & Call Button
+                    if (phone.isNotEmpty)
+                      InkWell(
+                        onTap: () => _callOrCopyParentPhone(st.name, phone),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFDBEAFE)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.phone, size: 12, color: Color(0xFF2563EB)),
+                              const SizedBox(width: 3),
+                              Text(
+                                phone,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 6),
+
+                // 아랫줄: 주소 · 메모 · 탑승/결석/취소 버튼
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        st.boardingLocation ?? st.address,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+
+                    // Memo icon button
+                    InkWell(
+                      onTap: () => _showStudentMemoDialog(st),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.all(3),
+                        child: Icon(
+                          (st.teacherMemo != null && st.teacherMemo!.isNotEmpty) ||
+                                  (st.parentMessage != null && st.parentMessage!.isNotEmpty)
+                              ? Icons.error_outline
+                              : Icons.edit_note,
+                          size: 20,
+                          color: (st.teacherMemo != null && st.teacherMemo!.isNotEmpty)
+                              ? const Color(0xFFDC2626)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 4),
+
+                    // Action buttons
+                    if (!st.boarded && !st.absent) ...[
+                      SizedBox(
+                        height: 30,
+                        child: ElevatedButton(
+                          onPressed: () => _handleManualBoard(st),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          child: const Text('탑승', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        height: 30,
+                        child: OutlinedButton(
+                          onPressed: () => _handleSkipStudent(st),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                          child: const Text('결석', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                        ),
+                      ),
+                    ] else if (st.boarded) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('탑승완료', style: TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 11)),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        height: 28,
+                        child: TextButton(
+                          onPressed: () => _handleUnboardStudent(st),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            foregroundColor: const Color(0xFFDC2626),
+                          ),
+                          child: const Text('탑승 취소', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+                        ),
+                      ),
+                    ] else if (st.absent) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('미탑승', style: TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.bold, fontSize: 11)),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final runList = _students.where((s) => s.runNumber == _currentRunNumber).toList();
     final availableRuns = _students.map((s) => s.runNumber).toSet().toList()..sort();
-    final bottomPanelHeight = _isBottomPanelExpanded ? 200.0 : 76.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -624,11 +839,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.qr_code, color: Color(0xFF2563EB)),
-            onPressed: _showTeacherQRModal,
-            tooltip: '탑승 QR 띄우기',
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF64748B)),
             onPressed: _loadAllData,
           ),
@@ -637,16 +847,16 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             alignment: Alignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.notifications, color: Color(0xFF0F172A), size: 24),
-                tooltip: '알림',
+                icon: const Icon(Icons.forum_outlined, color: Color(0xFF0F172A), size: 24),
+                tooltip: '메신저 & 알림',
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const TeacherNotificationScreen()),
+                    MaterialPageRoute(builder: (_) => const ChatRoomListScreen()),
                   ).then((_) => _loadUnreadCount());
                 },
               ),
-              if (_unreadNotificationCount > 0)
+              if ((_unreadNotificationCount + _unreadChatCount) > 0)
                 Positioned(
                   right: 4,
                   bottom: 4,
@@ -661,7 +871,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                       alignment: Alignment.center,
                       child: Text(
-                        _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
+                        (_unreadNotificationCount + _unreadChatCount) > 9
+                            ? '9+'
+                            : '${_unreadNotificationCount + _unreadChatCount}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
@@ -674,6 +886,20 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                   ),
                 ),
             ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.cloud_outlined, color: Color(0xFF475569)),
+            tooltip: '사진 보관함',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoGalleryScreen(
+                    initialVehicleId: _vehicleId,
+                  ),
+                ),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: Color(0xFF475569)),
@@ -692,53 +918,95 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
-          : Stack(
-              children: [
-                Column(
-                  children: [
-                    // Top persistent map (North-up fixed, zoomable, stop tap to student)
-                    Container(
-                      height: 200,
-                      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: KakaoMapView(
-                        stops: _routeData?.stops ?? [],
-                        routePoints: _routeData?.routePoints ?? [],
-                        busLat: _busLat,
-                        busLng: _busLng,
-                        academyLat: _routeData?.academyLat,
-                        academyLng: _routeData?.academyLng,
-                        academyName: _routeData?.academyName,
-                        onStopTap: _onMapStopTap,
-                      ),
-                    ),
+          : OrientationBuilder(
+              builder: (context, orientation) {
+                final isLandscape = orientation == Orientation.landscape;
 
+                final mapWidget = Container(
+                  height: isLandscape ? double.infinity : 200,
+                  margin: isLandscape
+                      ? const EdgeInsets.fromLTRB(16, 8, 8, 8)
+                      : const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: KakaoMapView(
+                    stops: _routeData?.stops ?? [],
+                    routePoints: _routeData?.routePoints ?? [],
+                    actualRoadPath: _actualRoadPath,
+                    progressIndex: _progressIndex,
+                    busLat: _busLat,
+                    busLng: _busLng,
+                    academyLat: _routeData?.academyLat,
+                    academyLng: _routeData?.academyLng,
+                    academyName: _routeData?.academyName,
+                    onStopTap: _onMapStopTap,
+                  ),
+                );
+
+                final listWidget = Column(
+                  children: [
                     // Passenger count header & active selections
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                       color: const Color(0xFFF8FAFC),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            '탑승 명단 (${runList.where((s) => s.boarded).length}/${runList.length}명) · $_currentRunNumber차',
-                            style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF334155), fontSize: 14),
-                          ),
-                          if (_selectedStudentIds.isNotEmpty)
-                            GestureDetector(
-                              onTap: _showBroadcastModal,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                                ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
                                 child: Text(
-                                  '선택 메시지 전송 (${_selectedStudentIds.length})',
-                                  style: const TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold, fontSize: 11),
+                                  '탑승 명단 (${runList.where((s) => s.boarded).length}/${runList.length}명) · $_currentRunNumber차',
+                                  style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF334155), fontSize: 14),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              if (_selectedStudentIds.isNotEmpty)
+                                GestureDetector(
+                                  onTap: _showBroadcastModal,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                                    ),
+                                    child: Text(
+                                      '선택 메시지 전송 (${_selectedStudentIds.length})',
+                                      style: const TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold, fontSize: 11),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (availableRuns.length > 1) ...[
+                            const SizedBox(height: 6),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: availableRuns.map((r) {
+                                  final isSelected = _currentRunNumber == r;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: ChoiceChip(
+                                      label: Text('$r차 운행'),
+                                      selected: isSelected,
+                                      onSelected: (_) => setState(() => _currentRunNumber = r),
+                                      selectedColor: const Color(0xFF2563EB),
+                                      visualDensity: VisualDensity.compact,
+                                      labelStyle: TextStyle(
+                                        fontSize: 12,
+                                        color: isSelected ? Colors.white : const Color(0xFF475569),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
                             ),
+                          ],
                         ],
                       ),
                     ),
@@ -749,413 +1017,132 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                           ? const Center(child: Text('해당 회차에 배정된 원아가 없습니다.', style: TextStyle(color: Color(0xFF94A3B8))))
                           : ListView.separated(
                               controller: _scrollController,
-                              padding: EdgeInsets.only(
-                                left: 16,
-                                right: 16,
-                                top: 4,
-                                bottom: bottomPanelHeight + 16,
-                              ),
+                              padding: EdgeInsets.fromLTRB(isLandscape ? 8 : 16, 4, 16, 16),
                               itemCount: runList.length,
                               separatorBuilder: (context, index) => const SizedBox(height: 8),
-                              itemBuilder: (ctx, idx) {
-                                final st = runList[idx];
-                                final isChecked = _selectedStudentIds.contains(st.id);
-                                final phone = _parentPhones[st.id] ?? '';
-
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: st.boarded
-                                          ? const Color(0xFFBBF7D0)
-                                          : (st.absent ? const Color(0xFFFECACA) : const Color(0xFFE2E8F0)),
-                                      width: (st.boarded || st.absent) ? 1.5 : 1,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.03),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Checkbox
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2, right: 6),
-                                        child: SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: Checkbox(
-                                            value: isChecked,
-                                            onChanged: (v) {
-                                              setState(() {
-                                                if (v == true) {
-                                                  _selectedStudentIds.add(st.id);
-                                                } else {
-                                                  _selectedStudentIds.remove(st.id);
-                                                }
-                                              });
-                                            },
-                                            activeColor: const Color(0xFF2563EB),
-                                          ),
-                                        ),
-                                      ),
-
-                                      // 2-row layout to prevent RenderFlex overflow
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            // 윗줄: 이름 · 알레르기 말줄임 · 학부모 전화번호 + 통화/복사 버튼
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  st.name,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 15,
-                                                    color: Color(0xFF1E293B),
-                                                  ),
-                                                ),
-                                                if (st.allergies.isNotEmpty) ...[
-                                                  const SizedBox(width: 6),
-                                                  Flexible(
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: const Color(0xFFFEF2F2),
-                                                        borderRadius: BorderRadius.circular(4),
-                                                        border: Border.all(color: const Color(0xFFFECACA)),
-                                                      ),
-                                                      child: Text(
-                                                        '알레르기: ${st.allergies}',
-                                                        style: const TextStyle(
-                                                          color: Color(0xFFDC2626),
-                                                          fontSize: 10,
-                                                          fontWeight: FontWeight.bold,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                                const Spacer(),
-                                                // Parent Phone & Call Button
-                                                if (phone.isNotEmpty)
-                                                  InkWell(
-                                                    onTap: () => _callOrCopyParentPhone(st.name, phone),
-                                                    borderRadius: BorderRadius.circular(6),
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: const Color(0xFFEFF6FF),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                        border: Border.all(color: const Color(0xFFDBEAFE)),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          const Icon(Icons.phone, size: 12, color: Color(0xFF2563EB)),
-                                                          const SizedBox(width: 3),
-                                                          Text(
-                                                            phone,
-                                                            style: const TextStyle(
-                                                              fontSize: 11,
-                                                              fontWeight: FontWeight.w700,
-                                                              color: Color(0xFF1D4ED8),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-
-                                            const SizedBox(height: 6),
-
-                                            // 아랫줄: 주소 · 메모 · 탑승/결석/취소 버튼
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    st.boardingLocation ?? st.address,
-                                                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 4),
-
-                                                // Memo icon button
-                                                InkWell(
-                                                  onTap: () => _showStudentMemoDialog(st),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.all(3),
-                                                    child: Icon(
-                                                      (st.teacherMemo != null && st.teacherMemo!.isNotEmpty) ||
-                                                              (st.parentMessage != null && st.parentMessage!.isNotEmpty)
-                                                          ? Icons.error_outline
-                                                          : Icons.edit_note,
-                                                      size: 20,
-                                                      color: (st.teacherMemo != null && st.teacherMemo!.isNotEmpty)
-                                                          ? const Color(0xFFDC2626)
-                                                          : const Color(0xFF94A3B8),
-                                                    ),
-                                                  ),
-                                                ),
-
-                                                const SizedBox(width: 4),
-
-                                                // Action buttons
-                                                if (!st.boarded && !st.absent) ...[
-                                                  SizedBox(
-                                                    height: 30,
-                                                    child: ElevatedButton(
-                                                      onPressed: () => _handleManualBoard(st),
-                                                      style: ElevatedButton.styleFrom(
-                                                        backgroundColor: const Color(0xFF10B981),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                                        elevation: 0,
-                                                      ),
-                                                      child: const Text('탑승', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  SizedBox(
-                                                    height: 30,
-                                                    child: OutlinedButton(
-                                                      onPressed: () => _handleSkipStudent(st),
-                                                      style: OutlinedButton.styleFrom(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                                        side: const BorderSide(color: Color(0xFFCBD5E1)),
-                                                      ),
-                                                      child: const Text('결석', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
-                                                    ),
-                                                  ),
-                                                ] else if (st.boarded) ...[
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFFDCFCE7),
-                                                      borderRadius: BorderRadius.circular(6),
-                                                    ),
-                                                    child: const Text('탑승완료', style: TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 11)),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  SizedBox(
-                                                    height: 28,
-                                                    child: TextButton(
-                                                      onPressed: () => _handleUnboardStudent(st),
-                                                      style: TextButton.styleFrom(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                                                        foregroundColor: const Color(0xFFDC2626),
-                                                      ),
-                                                      child: const Text('탑승 취소', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
-                                                    ),
-                                                  ),
-                                                ] else if (st.absent) ...[
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFFFEE2E2),
-                                                      borderRadius: BorderRadius.circular(6),
-                                                    ),
-                                                    child: const Text('미탑승', style: TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.bold, fontSize: 11)),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
+                              itemBuilder: (ctx, idx) => _buildStudentCard(runList[idx]),
                             ),
                     ),
                   ],
-                ),
+                );
 
-                // Collapsible Bottom Panel (기본 접힘, 손잡이로 펼침)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                      boxShadow: [
-                        BoxShadow(color: Color(0x1A000000), blurRadius: 10, offset: Offset(0, -3)),
-                      ],
-                    ),
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Drag Handle (손잡이)
-                        GestureDetector(
-                          onTap: () => setState(() => _isBottomPanelExpanded = !_isBottomPanelExpanded),
-                          behavior: HitTestBehavior.opaque,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Center(
-                              child: Container(
-                                width: 44,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFCBD5E1),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              ),
-                            ),
+                if (isLandscape) {
+                  return Row(
+                    children: [
+                      Expanded(flex: 5, child: mapWidget),
+                      Expanded(flex: 5, child: listWidget),
+                    ],
+                  );
+                } else {
+                  return Column(
+                    children: [
+                      mapWidget,
+                      Expanded(child: listWidget),
+                    ],
+                  );
+                }
+              },
+            ),
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: [
+            BoxShadow(color: Color(0x12000000), blurRadius: 8, offset: Offset(0, -2)),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          bottom: true,
+          left: true,
+          right: true,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Row(
+              children: [
+                // Escort Button / Badge
+                Expanded(
+                  child: _escortConfirmedAt != null
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
                           ),
-                        ),
-
-                        // Bottom Panel Main Row (Always visible): 동승 시작 / 확인됨 + 요약
-                        Row(
-                          children: [
-                            // Escort Button / Badge
-                            Expanded(
-                              child: _escortConfirmedAt != null
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFDCFCE7),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: const Color(0xFF86EFAC)),
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Icon(Icons.verified, size: 20, color: Color(0xFF15803D)),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            _escortName != null && _escortName!.isNotEmpty
-                                                ? '동승: $_escortName (${_formatTime(_escortConfirmedAt)})'
-                                                : '동승 확인됨 · ${_formatTime(_escortConfirmedAt)}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 14,
-                                              color: Color(0xFF15803D),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : ElevatedButton.icon(
-                                      onPressed: _isCheckingIn ? null : _handleEscortCheckIn,
-                                      icon: _isCheckingIn
-                                          ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                            )
-                                          : const Icon(Icons.airline_seat_recline_normal, color: Colors.white, size: 20),
-                                      label: const Text(
-                                        '동승 시작',
-                                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.white),
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: _isDriverOperating ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        elevation: 0,
-                                      ),
-                                    ),
-                            ),
-
-                            const SizedBox(width: 8),
-
-                            // Expand / Collapse Toggle Button
-                            IconButton(
-                              onPressed: () => setState(() => _isBottomPanelExpanded = !_isBottomPanelExpanded),
-                              icon: Icon(
-                                _isBottomPanelExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                                color: const Color(0xFF64748B),
-                                size: 28,
-                              ),
-                              tooltip: _isBottomPanelExpanded ? '패널 접기' : '더보기 펼치기',
-                            ),
-                          ],
-                        ),
-
-                        // Expanded controls
-                        if (_isBottomPanelExpanded) ...[
-                          const SizedBox(height: 12),
-
-                          // Run Selector chips
-                          if (availableRuns.length > 1)
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: availableRuns.map((r) {
-                                  final isSelected = _currentRunNumber == r;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: ChoiceChip(
-                                      label: Text('$r차 운행'),
-                                      selected: isSelected,
-                                      onSelected: (_) => setState(() => _currentRunNumber = r),
-                                      selectedColor: const Color(0xFF2563EB),
-                                      labelStyle: TextStyle(
-                                        color: isSelected ? Colors.white : const Color(0xFF475569),
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-
-                          const SizedBox(height: 10),
-
-                          // Quick Actions row: 단체 메시지 & 탑승 QR
-                          Row(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _showBroadcastModal,
-                                  icon: const Icon(Icons.campaign_outlined, size: 18),
-                                  label: const Text('단체 메시지'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _showTeacherQRModal,
-                                  icon: const Icon(Icons.qr_code, size: 18),
-                                  label: const Text('탑승 QR'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              const Icon(Icons.verified, size: 18, color: Color(0xFF15803D)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Tooltip(
+                                  message: _escortName != null && _escortName!.isNotEmpty ? '동승자: $_escortName' : '',
+                                  child: Text(
+                                    '동승 확인됨 · ${_formatTime(_escortConfirmedAt)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                      color: Color(0xFF15803D),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ],
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: _isCheckingIn ? null : _handleEscortCheckIn,
+                          icon: _isCheckingIn
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.airline_seat_recline_normal, color: Colors.white, size: 18),
+                          label: const Text(
+                            '동승 시작',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Colors.white),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _isDriverOperating ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                        ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // 단체 메시지
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _showBroadcastModal,
+                    icon: const Icon(Icons.campaign, color: Colors.white, size: 18),
+                    label: const Text(
+                      '단체 메시지',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E293B),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
                     ),
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ),
     );
   }
 }

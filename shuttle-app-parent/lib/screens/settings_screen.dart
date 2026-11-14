@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/student_model.dart';
+import '../models/user_model.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final bool isEmbeddedTab;
+  const SettingsScreen({super.key, this.isEmbeddedTab = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -352,10 +354,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: Color(0xFF64748B)),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: !widget.isEmbeddedTab,
+        leading: widget.isEmbeddedTab
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: Color(0xFF64748B)),
+                onPressed: () => Navigator.pop(context),
+              ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: const Color(0xFFF1F5F9), height: 1),
@@ -501,11 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const Divider(height: 20, color: Color(0xFFF1F5F9)),
                         _buildInfoRow(
                           '계정 역할',
-                          user?.role == 'DRIVER'
-                              ? '기사님'
-                              : (user?.role == 'TEACHER'
-                                  ? '지도교사'
-                                  : (user?.role == 'PARENT' ? '학부모' : '학생')),
+                          UserModel.getRoleKorean(user?.role),
                         ),
                         const Divider(height: 20, color: Color(0xFFF1F5F9)),
                         Row(

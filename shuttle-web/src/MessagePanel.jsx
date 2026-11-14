@@ -271,6 +271,7 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
       const msgRoomId = newMsg.room?.id || newMsg.roomId;
 
       if (currentActive && Number(currentActive.id) === Number(msgRoomId)) {
+        markRoomAsRead(msgRoomId);
         setMessages((prev) => {
           if (prev.some((m) => m.id === newMsg.id)) {
             // Update existing message if payload status changed
@@ -307,12 +308,23 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
       fetchRooms();
     };
 
+    const handleMessagesRead = (data) => {
+      const currentActive = activeRoomRef.current;
+      if (currentActive && Number(currentActive.id) === Number(data?.roomId)) {
+        setMessages((prev) =>
+          prev.map((m) => ({ ...m, unreadCount: 0 }))
+        );
+      }
+    };
+
     socket.on('receiveMessage', handleReceiveMessage);
     socket.on('roomUpdated', handleRoomUpdated);
+    socket.on('messagesRead', handleMessagesRead);
 
     return () => {
       socket.off('receiveMessage', handleReceiveMessage);
       socket.off('roomUpdated', handleRoomUpdated);
+      socket.off('messagesRead', handleMessagesRead);
     };
   }, [socket]);
 
@@ -324,6 +336,7 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
       socket.emit('joinChatRoom', { roomId: activeRoom.id });
     }
 
+    markRoomAsRead(activeRoom.id);
     fetchMessages(activeRoom.id);
 
     return () => {
@@ -388,6 +401,18 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
       }
     } catch (e) {
       console.error('Failed to load chat rooms', e);
+    }
+  };
+
+  const markRoomAsRead = async (roomId) => {
+    if (!roomId) return;
+    try {
+      await fetch(`${API_BASE_URL}/chat/rooms/${roomId}/read`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+    } catch (e) {
+      console.error('Failed to mark room as read', e);
     }
   };
 
@@ -1102,23 +1127,24 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
   };
 
   const getRoleBadge = (role) => {
-    switch (role) {
+    switch (role?.toUpperCase?.() || role) {
       case 'DRIVER':
         return <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded">기사</span>;
-      case 'TEACHER':
       case 'HOMEROOM_TEACHER':
+        return <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">담임교사</span>;
       case 'SHUTTLE_TEACHER':
+        return <span className="bg-sky-100 text-sky-700 text-[10px] font-bold px-1.5 py-0.5 rounded">지도교사</span>;
+      case 'TEACHER':
         return <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">교사</span>;
       case 'PARENT':
         return <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded">학부모</span>;
       case 'STUDENT':
         return <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-1.5 py-0.5 rounded">학생</span>;
       case 'ACADEMY_ADMIN':
-        return <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded">관리자</span>;
       case 'SUPER_ADMIN':
-        return <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded">통합관리</span>;
+        return <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded">기관 관리자</span>;
       default:
-        return null;
+        return <span className="bg-slate-100 text-slate-600 text-[10px] font-medium px-1.5 py-0.5 rounded">알 수 없음</span>;
     }
   };
 
@@ -1191,8 +1217,10 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
         if (r.type === 'PAYMENT_SYSTEM') {
           return false; // Hide payment system channel
         } else if (r.type === 'NOTIFICATION_SYSTEM') {
-          if (seenSpecial.has('NOTIFICATION_SYSTEM')) return false;
-          seenSpecial.add('NOTIFICATION_SYSTEM');
+          // 개인 알림방(TakeMe 알림) 1개 + 기관 공지 채널(실시간 알림 채널) 1개만 표시
+          const key = r.name === 'TakeMe 알림' ? 'PERSONAL' : 'ACADEMY';
+          if (seenSpecial.has(key)) return false;
+          seenSpecial.add(key);
         }
         const title = getRoomTitle(r).toLowerCase();
         const lastText = (r.latestMessage?.text || '').toLowerCase();
@@ -1201,8 +1229,11 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
       })
       .sort((a, b) => {
 
-        if (a.type === 'NOTIFICATION_SYSTEM' && b.type !== 'NOTIFICATION_SYSTEM') return -1;
-        if (b.type === 'NOTIFICATION_SYSTEM' && a.type !== 'NOTIFICATION_SYSTEM') return 1;
+        const aPin = a.type === 'NOTIFICATION_SYSTEM';
+        const bPin = b.type === 'NOTIFICATION_SYSTEM';
+        if (aPin && bPin) return a.name === 'TakeMe 알림' ? -1 : 1; // 내 알림 -> 기관 공지
+        if (aPin) return -1;
+        if (bPin) return 1;
         // Rooms with unread messages or recent updates float to top
         const unreadA = (a.unreadCount || 0) > 0 ? 1 : 0;
         const unreadB = (b.unreadCount || 0) > 0 ? 1 : 0;
@@ -1211,7 +1242,7 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
         const tB = b.latestMessage ? new Date(b.latestMessage.createdAt).getTime() : new Date(b.updatedAt || b.createdAt).getTime();
         return tB - tA;
       });
-  }, [rooms, searchRoomQuery]);
+  }, [rooms, searchRoomQuery, currentEducationLevel]);
 
   // Filter users inside New Chat modal
   const filterUserList = (list) => {
@@ -1350,8 +1381,14 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
                   }`}
                 >
                   {/* Room Avatar */}
-                  <div className="relative">
-                    {isPaymentSystem ? (
+                  <div className="relative flex-shrink-0">
+                    {isSystemAlert ? (
+                      <div className="w-11 h-11 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-xs flex-shrink-0 relative">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                      </div>
+                    ) : isPaymentSystem ? (
                       <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs flex-shrink-0">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
@@ -1371,6 +1408,11 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
                       <div className="w-11 h-11 rounded-2xl bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-sm shadow-2xs flex-shrink-0">
                         {otherUser?.name?.[0] || title[0] || '대'}
                       </div>
+                    )}
+                    {room.unreadCount > 0 && (
+                      <span className="absolute -bottom-1 -right-1 bg-red-500 text-white text-[10px] font-black min-w-5 h-5 px-1 rounded-full flex items-center justify-center border-2 border-white shadow-2xs">
+                        {room.unreadCount > 9 ? '9+' : room.unreadCount}
+                      </span>
                     )}
                   </div>
 
@@ -2018,9 +2060,16 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
                         /* Standard Chat Bubble */
                         isMine ? (
                           <div className="flex justify-end items-end gap-1.5 animate-fade-in">
-                            <span className="text-[10px] text-slate-600 select-none pb-1 font-medium">
-                              {formatMessageTime(msg.createdAt)}
-                            </span>
+                            <div className="flex flex-col items-end pb-0.5 select-none">
+                              {Number(msg.unreadCount) > 0 && (
+                                <span className="text-[10px] text-amber-500 font-black leading-none pb-0.5">
+                                  {msg.unreadCount}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-600 font-medium">
+                                {formatMessageTime(msg.createdAt)}
+                              </span>
+                            </div>
                             <div className="bg-blue-600 text-white px-3.5 py-2.5 rounded-2xl rounded-tr-xs text-xs font-medium max-w-[70%] break-words shadow-xs">
                               <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                             </div>
@@ -2041,9 +2090,16 @@ export default function MessagePanel({ currentUser, selectedAcademyId, socket, i
                                 <div className="bg-white text-slate-800 px-3.5 py-2.5 rounded-2xl rounded-tl-xs text-xs font-medium break-words shadow-xs border border-white/80">
                                   <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                                 </div>
-                                <span className="text-[10px] text-slate-600 select-none pb-1 font-medium">
-                                  {formatMessageTime(msg.createdAt)}
-                                </span>
+                                <div className="flex flex-col items-start pb-0.5 select-none">
+                                  {Number(msg.unreadCount) > 0 && (
+                                    <span className="text-[10px] text-amber-500 font-black leading-none pb-0.5">
+                                      {msg.unreadCount}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-slate-600 font-medium">
+                                    {formatMessageTime(msg.createdAt)}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>

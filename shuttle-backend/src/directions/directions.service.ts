@@ -75,6 +75,7 @@ export class DirectionsService {
     // 출발지와 도착지가 30m 이내로 동일하고 경유지도 없는 경우 바로 0m 경로 반환
     if (distanceMeters(origin, destination) < 30 && waypoints.length === 0) {
       return {
+        provider: 'fallback',
         mode,
         criteria: { priority: criteria.priority, avoid: criteria.avoid ?? [] },
         distance: 0,
@@ -87,26 +88,57 @@ export class DirectionsService {
       };
     }
 
-    // 1. 네이버 클라우드 플랫폼(NCP) Directions API 호출
     const naverClientId = this.config.get<string>('NAVER_CLIENT_ID') || this.config.get<string>('NCP_CLIENT_ID');
     const naverClientSecret = this.config.get<string>('NAVER_CLIENT_SECRET') || this.config.get<string>('NCP_CLIENT_SECRET');
+    const kakaoApiKey = this.config.get<string>('KAKAO_REST_API_KEY');
 
-    if (naverClientId && naverClientSecret && typeof this.http?.get === 'function' && naverClientId !== 'TEST_KEY') {
-      try {
-        const naverResult = await this.fetchNaverRoute(origin, destination, waypoints, mode, naverClientId, naverClientSecret);
-        if (naverResult) return naverResult;
-      } catch (err: any) {
-        this.logger.warn(`[directions] Naver Directions 호출 실패: ${err?.message}`);
+    const tryKakao = async () => {
+      if (kakaoApiKey && typeof this.http?.post === 'function') {
+        try {
+          return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
+        } catch (err: any) {
+          this.logger.warn(`[directions] Kakao 길찾기 호출 실패: ${err?.message}`);
+        }
+      }
+      return null;
+    };
+
+    const tryNaver = async () => {
+      if (naverClientId && naverClientSecret && typeof this.http?.get === 'function' && naverClientId !== 'TEST_KEY') {
+        try {
+          return await this.fetchNaverRoute(origin, destination, waypoints, mode, naverClientId, naverClientSecret);
+        } catch (err: any) {
+          this.logger.warn(`[directions] Naver Directions 호출 실패: ${err?.message}`);
+        }
+      }
+      return null;
+    };
+
+    // 5단계: 안전 경로는 카카오(추천 + 유턴 회피) 우선 시도 후 실패 시 네이버,
+    // 빠른 경로는 네이버(최단시간 trafast) 우선 시도 후 실패 시 카카오
+    if (mode === 'safe') {
+      if (kakaoApiKey && typeof this.http?.post === 'function') {
+        try {
+          return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
+        } catch (kakaoErr: any) {
+          this.logger.warn(`[directions] Kakao 길찾기 호출 실패: ${kakaoErr?.message}`);
+          const naverResult = await tryNaver();
+          if (naverResult) return naverResult;
+          throw kakaoErr;
+        }
+      }
+      const naverResult = await tryNaver();
+      if (naverResult) return naverResult;
+    } else {
+      const naverResult = await tryNaver();
+      if (naverResult) return naverResult;
+
+      if (kakaoApiKey && typeof this.http?.post === 'function') {
+        return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
       }
     }
 
-    // 2. 카카오 모빌리티 길찾기 호출 (기존 키가 있는 경우)
-    const kakaoApiKey = this.config.get<string>('KAKAO_REST_API_KEY');
-    if (kakaoApiKey && typeof this.http?.post === 'function') {
-      return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
-    }
-
-    // 3. 직선 보간 안전 폴백
+    // 3. 직선 보간 안전 폴백 (API 키 미설정 시)
     return this.generateFallbackRoute(origin, destination, waypoints, mode);
   }
 
@@ -174,6 +206,7 @@ export class DirectionsService {
     }
 
     return {
+      provider: 'naver',
       mode,
       criteria: { priority: ROUTE_CRITERIA[mode].priority, avoid: ROUTE_CRITERIA[mode].avoid ?? [] },
       distance: summary.distance,
@@ -240,6 +273,7 @@ export class DirectionsService {
     }
 
     return {
+      provider: 'kakao',
       mode,
       criteria: { priority: criteria.priority, avoid: criteria.avoid ?? [] },
       distance: route.summary?.distance,
@@ -279,6 +313,7 @@ export class DirectionsService {
     path.push(destination);
 
     return {
+      provider: 'fallback',
       mode,
       criteria: { priority: ROUTE_CRITERIA[mode].priority, avoid: ROUTE_CRITERIA[mode].avoid ?? [] },
       distance: Math.round(totalDist),

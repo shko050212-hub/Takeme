@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -19,7 +19,7 @@ import { BoardPost } from '../entities/board-post.entity';
 import { BoardComment } from '../entities/board-comment.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 import { YearlyZoneMapping } from '../entities/yearly-zone-mapping.entity';
-import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import {
   S3_REF_PREFIX,
@@ -34,6 +34,7 @@ import {
 import { getStudentClassName, hasAssignedClass, isSameClass, HOMEROOM_ROLE, kstDateString, isValidDateString } from '../utils/school.util';
 import { Attendance, AttendanceStatus } from '../entities/attendance.entity';
 import { AttendanceSubmission } from '../entities/attendance-submission.entity';
+import { MediaAsset } from '../entities/media-asset.entity';
 import { formatTeacherName, cleanTeacherBaseName } from '../utils/teacher.util';
 
 @Injectable()
@@ -72,6 +73,8 @@ export class RoutingService {
     private attendanceRepository: Repository<Attendance>,
     @InjectRepository(AttendanceSubmission)
     private submissionRepository: Repository<AttendanceSubmission>,
+    @InjectRepository(MediaAsset)
+    private mediaAssetRepository: Repository<MediaAsset>,
     private httpService: HttpService,
     private configService: ConfigService,
   ) {}
@@ -3069,8 +3072,9 @@ export class RoutingService {
     visibility?: string;
     targetClass?: string;
     search?: string;
+    postType?: string;
   }) {
-    const { academyId, userId, visibility, targetClass, search } = params;
+    const { academyId, userId, visibility, targetClass, search, postType } = params;
     const academy = await this.getAcademy(academyId, userId);
 
     const qb = this.boardPostRepository.createQueryBuilder('post')
@@ -3082,6 +3086,10 @@ export class RoutingService {
       qb.where('post.academyId = :academyId', { academyId: academy.id });
     } else {
       qb.where('1 = 0');
+    }
+
+    if (postType && postType.trim()) {
+      qb.andWhere('post.postType = :postType', { postType: postType.trim() });
     }
 
     if (visibility && visibility !== 'ALL_INCL') {
@@ -3113,6 +3121,19 @@ export class RoutingService {
     }
 
     const posts = await qb.getMany();
+
+    // 작성자 계정(authorUserId)의 현재 역할로 authorRole 표출
+    const authorUserIds = posts.map(p => p.authorUserId).filter(Boolean);
+    if (authorUserIds.length > 0) {
+      const authorUsers = await this.userRepository.find({ where: { id: In(authorUserIds) } });
+      const roleMap = new Map<number, string>(authorUsers.map(u => [u.id, u.role]));
+      for (const p of posts) {
+        if (p.authorUserId && roleMap.has(p.authorUserId)) {
+          p.authorRole = roleMap.get(p.authorUserId)!;
+        }
+      }
+    }
+
     return Promise.all(posts.map(p => this.hydratePostMedia(p)));
   }
 
@@ -3133,6 +3154,12 @@ export class RoutingService {
       relations: { comments: true }
     });
     if (!post) throw new BadRequestException('게시글을 찾을 수 없습니다.');
+    if (post.authorUserId) {
+      const author = await this.userRepository.findOne({ where: { id: post.authorUserId } });
+      if (author?.role) {
+        post.authorRole = author.role;
+      }
+    }
     return this.hydratePostMedia(post);
   }
 
@@ -3145,11 +3172,13 @@ export class RoutingService {
     authorRole?: string;
     visibility?: string;
     targetClass?: string;
+    postType?: string;
     academyId?: number;
   }, academyId?: number, userId?: number) {
     const academy = await this.getAcademy(body.academyId || academyId, userId);
     let targetClass = body.targetClass || null;
     let authorRole = body.authorRole || 'ADMIN';
+    const postType = body.postType === 'NOTICE' ? 'NOTICE' : 'POST';
 
     if (userId) {
       const callingUser = await this.userRepository.findOne({ where: { id: userId } });
@@ -3165,6 +3194,7 @@ export class RoutingService {
     const post = this.boardPostRepository.create({
       title: body.title,
       content: body.content,
+      postType,
       imageUrl: toStoredMediaRef(body.imageUrl) || null,
       images: toStoredMediaRefs(body.images),
       authorName: body.authorName || '기관 관리자',
@@ -3178,8 +3208,36 @@ export class RoutingService {
       likedUserIds: [],
     } as any);
     const saved = (await this.boardPostRepository.save(post)) as unknown as BoardPost;
+
+    const rawRefs: string[] = [];
+    if (saved.imageUrl) rawRefs.push(saved.imageUrl);
+    if (Array.isArray(saved.images)) {
+      for (const img of saved.images) {
+        if (img && !rawRefs.includes(img)) rawRefs.push(img);
+      }
+    }
+
+    if (rawRefs.length > 0 && academy?.id) {
+      const sourceType = saved.postType === 'NOTICE' ? 'NOTICE' : 'BOARD';
+      for (const ref of rawRefs) {
+        const asset = this.mediaAssetRepository.create({
+          academyId: academy.id,
+          uploaderId: userId || 0,
+          uploaderName: body.authorName || '작성자',
+          uploaderRole: authorRole,
+          storageKey: ref,
+          filename: ref.split('/').pop() || 'photo.jpg',
+          sourceType,
+          postId: saved.id,
+          className: saved.targetClass || null,
+        });
+        await this.mediaAssetRepository.save(asset);
+      }
+    }
+
     if (academy?.id) {
-      this.notifyRouteUpdated(academy.id, '새 알림장이 등록되었습니다.');
+      const alertMsg = saved.postType === 'NOTICE' ? '새 알림장이 등록되었습니다.' : '새 게시물이 등록되었습니다.';
+      this.notifyRouteUpdated(academy.id, alertMsg);
     }
     return this.hydratePostMedia(saved);
   }
@@ -3191,6 +3249,7 @@ export class RoutingService {
     images?: string[];
     visibility?: string;
     targetClass?: string;
+    postType?: string;
   }, userId?: number, userRole?: string) {
     const post = await this.boardPostRepository.findOne({ where: { id } });
     if (!post) throw new BadRequestException('게시글을 찾을 수 없습니다.');
@@ -3204,6 +3263,13 @@ export class RoutingService {
     if (body.images !== undefined) post.images = toStoredMediaRefs(body.images);
     if (body.visibility !== undefined) post.visibility = body.visibility;
     if (body.targetClass !== undefined) post.targetClass = body.targetClass;
+    if (body.postType !== undefined) {
+      post.postType = body.postType === 'NOTICE' ? 'NOTICE' : 'POST';
+      await this.mediaAssetRepository.update(
+        { postId: post.id },
+        { sourceType: post.postType === 'NOTICE' ? 'NOTICE' : 'BOARD' }
+      );
+    }
     const saved = (await this.boardPostRepository.save(post)) as unknown as BoardPost;
     return this.hydratePostMedia(saved);
   }
@@ -3214,6 +3280,10 @@ export class RoutingService {
     const isAdmin = userRole === 'ADMIN' || userRole === 'ACADEMY_ADMIN';
     if (!isAdmin && userId && post.authorUserId && post.authorUserId !== userId) {
       throw new ForbiddenException('작성자 본인 또는 기관 관리자만 삭제할 수 있습니다.');
+    }
+    const relatedMedia = await this.mediaAssetRepository.find({ where: { postId: id } });
+    if (relatedMedia.length > 0) {
+      await this.mediaAssetRepository.remove(relatedMedia);
     }
     await this.boardPostRepository.delete(id);
     return { success: true };

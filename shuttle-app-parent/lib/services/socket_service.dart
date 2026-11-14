@@ -100,6 +100,7 @@ class SocketService {
   }
 
   void onNotificationReceived(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('notificationReceived');
     _socket?.on('notificationReceived', (data) {
       if (data is Map) {
         callback(Map<String, dynamic>.from(data));
@@ -107,6 +108,64 @@ class SocketService {
         callback({});
       }
     });
+  }
+
+  void onRoutePathUpdated(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('routePathUpdated');
+    _socket?.on('routePathUpdated', (data) {
+      if (data is Map<String, dynamic>) {
+        callback(data);
+      } else if (data is Map) {
+        callback(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void joinChatRoom(int roomId) {
+    _socket?.emit('joinChatRoom', {'roomId': roomId});
+  }
+
+  void leaveChatRoom(int roomId) {
+    _socket?.emit('leaveChatRoom', {'roomId': roomId});
+  }
+
+  void onReceiveMessage(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('receiveMessage');
+    _socket?.on('receiveMessage', (data) {
+      if (data is Map<String, dynamic>) {
+        callback(data);
+      } else if (data is Map) {
+        callback(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void onMessagesRead(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('messagesRead');
+    _socket?.on('messagesRead', (data) {
+      if (data is Map<String, dynamic>) {
+        callback(data);
+      } else if (data is Map) {
+        callback(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void onRoomUpdated(Function(Map<String, dynamic> data) callback) {
+    _socket?.off('roomUpdated');
+    _socket?.on('roomUpdated', (data) {
+      if (data is Map<String, dynamic>) {
+        callback(data);
+      } else if (data is Map) {
+        callback(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void offChatEvents() {
+    _socket?.off('receiveMessage');
+    _socket?.off('messagesRead');
+    _socket?.off('roomUpdated');
   }
 
   void disconnect() {

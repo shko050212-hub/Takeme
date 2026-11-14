@@ -75,7 +75,16 @@ export class User {
   notifyShuttleOperation: boolean; // 기사 운행 알림 수신 여부 (기본 켜짐)
 
   @Column({ default: true })
-  notifyBoardPost: boolean; // 담임 알림장 알림 수신 여부 (기본 켜짐)
+  notifyBoardPost: boolean; // 기존 알림장/게시물 통합 알림 수신 여부 (호환용)
+
+  @Column({ default: true })
+  notifyNotice: boolean; // 새 알림장 알림 수신 여부 (기본 켜짐)
+
+  @Column({ default: true })
+  notifyPost: boolean; // 새 게시물 알림 수신 여부 (기본 켜짐)
+
+  @Column({ type: 'simple-json', nullable: true })
+  notificationSettings: Record<string, boolean> | null;
 
   @CreateDateColumn()
   createdAt: Date;

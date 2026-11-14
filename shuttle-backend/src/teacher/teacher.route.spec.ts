@@ -30,7 +30,7 @@ describe('TeacherService.getRoute (탑승지 경유)', () => {
     });
     const service = new TeacherService(
       studentRepo as any, repo() as any, vehicleRepo as any, repo() as any, userRepo as any,
-      repo() as any, repo() as any, repo() as any, repo() as any, null as any, pickupRepo as any,
+      repo() as any, repo() as any, repo() as any, repo() as any, repo() as any, repo() as any, null as any, pickupRepo as any,
     );
     return { service, pickupRepo };
   }

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, In, Between } from 'typeorm';
 import { Student } from '../entities/student.entity';
@@ -15,8 +15,10 @@ import { ChatMessage } from '../entities/chat-message.entity';
 import { ChatRoomMember } from '../entities/chat-room-member.entity';
 import { LocationGateway } from './location.gateway';
 import { getStudentClassName, hasAssignedClass, isSameClass, HOMEROOM_ROLE, kstDateString, isValidDateString } from '../utils/school.util';
+import { isNotificationEnabled } from '../utils/notification.util';
 import { Attendance, AttendanceStatus } from '../entities/attendance.entity';
 import { AttendanceSubmission } from '../entities/attendance-submission.entity';
+import { ChatService } from '../chat/chat.service';
 import { formatTeacherName } from '../utils/teacher.util';
 
 @Injectable()
@@ -37,6 +39,9 @@ export class TeacherService {
     @Optional() @InjectRepository(PickupPoint) private pickupPointRepository?: Repository<PickupPoint>,
     @Optional() @InjectRepository(ChatMessage) private chatMessageRepository?: Repository<ChatMessage>,
     @Optional() @InjectRepository(ChatRoomMember) private chatRoomMemberRepository?: Repository<ChatRoomMember>,
+    @Inject(forwardRef(() => ChatService))
+    @Optional()
+    private readonly chatService?: ChatService
   ) {}
 
   private async isTodayHoliday(): Promise<boolean> {
@@ -361,6 +366,64 @@ export class TeacherService {
     };
   }
 
+  // Vehicle route path storage (in-memory per vehicle)
+  public static vehicleRoutePaths = new Map<number, { path: { lat: number; lng: number }[]; progressIndex: number; updatedAt: Date }>();
+
+  static getRoutePathForVehicle(vehicleId: number) {
+    const data = TeacherService.vehicleRoutePaths.get(vehicleId);
+    return data ? { path: data.path, progressIndex: data.progressIndex } : { path: [], progressIndex: 0 };
+  }
+
+  async saveRoutePath(email: string, vehicleId?: number, path?: { lat: number; lng: number }[], progressIndex?: number) {
+    const user = await this.userRepository.findOne({ where: { email }, relations: { academy: true } });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+
+    let vehicle: Vehicle | null = null;
+    if (vehicleId) {
+      vehicle = await this.vehicleRepository.findOne({ where: { id: vehicleId }, relations: { academy: true } });
+    } else {
+      vehicle = await this.findAssignedVehicle(user.id, { academy: true });
+    }
+    if (!vehicle) throw new BadRequestException('배정된 차량을 찾을 수 없습니다.');
+
+    if (user.academy?.id && vehicle.academy?.id && user.academy.id !== vehicle.academy.id) {
+      throw new ForbiddenException('소속 기관의 차량 경로만 등록할 수 있습니다.');
+    }
+
+    const rawPath = Array.isArray(path) ? path : [];
+    const validPath = rawPath
+      .filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number')
+      .map(p => ({ lat: Number(p.lat), lng: Number(p.lng) }));
+
+    const pIdx = typeof progressIndex === 'number' && progressIndex >= 0 ? progressIndex : 0;
+
+    TeacherService.vehicleRoutePaths.set(vehicle.id, {
+      path: validPath,
+      progressIndex: pIdx,
+      updatedAt: new Date(),
+    });
+
+    if (this.locationGateway?.server) {
+      this.locationGateway.server.to(`vehicle_${vehicle.id}`).emit('routePathUpdated', {
+        vehicleId: vehicle.id,
+        path: validPath,
+        progressIndex: pIdx,
+      });
+    }
+
+    return { success: true, vehicleId: vehicle.id, count: validPath.length, progressIndex: pIdx };
+  }
+
+  async getTeacherRoutePath(email: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('사용자를 찾을 수 없습니다.');
+
+    const vehicle = await this.findAssignedVehicle(user.id);
+    if (!vehicle) return { path: [], progressIndex: 0 };
+
+    return TeacherService.getRoutePathForVehicle(vehicle.id);
+  }
+
   async getInbox(email: string) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) throw new BadRequestException('User not found');
@@ -521,6 +584,16 @@ export class TeacherService {
       } catch (err) {
         console.error('[notifyParentBoardStatus] notification save error:', err);
       }
+
+      // 메신저 "TakeMe 알림"(개인 알림) 전송 - 수신 설정에서 꺼진 종류는 보내지 않음
+      if (status === 'BOARDED' && this.chatService) {
+        this.chatService.sendSystemNotificationToUser(
+          parent.id,
+          '셔틀 탑승 안내',
+          `${studentName} 원아가 ${vehicle ? vehicle.busNumber + '호차에 ' : ''}탑승 완료했습니다.`,
+          { type: 'shuttle' },
+        ).catch(() => {});
+      }
     }
 
     if (this.locationGateway) {
@@ -596,6 +669,15 @@ export class TeacherService {
       });
       await this.notificationRepository.save(adminNoti);
       await this.appendBoardingLog(vehicle.id, studentId, `${student.adminDisplayName || student.name} 원생 결석 처리`, 'SYSTEM');
+
+      if (this.chatService && student.parentUser) {
+        await this.chatService.sendSystemNotificationToUser(
+          student.parentUser.id,
+          '결석/미탑승 안내',
+          `${student.adminDisplayName || student.name} 원생이 오늘 결석(미탑승) 처리되었습니다.`,
+          { type: 'shuttle' }
+        ).catch(() => {});
+      }
     }
 
     // 학부모 실시간 알림 및 소켓 브로드캐스트
@@ -692,24 +774,35 @@ export class TeacherService {
 
     // 기사 대상 알림 생성
     try {
-      const escortNoti = this.notificationRepository.create({
-        vehicle,
-        recipient: vehicle.driverUser || undefined,
-        recipientRole: 'DRIVER',
-        type: 'ESCORT_CONFIRMED',
-        message: `${escortName} 지도교사가 동승 확인을 완료하였습니다.`,
-        academy: vehicle.academy || undefined,
-      });
-      await this.notificationRepository.save(escortNoti);
-
-      if (vehicle.driverUser && this.locationGateway?.server) {
-        this.locationGateway.server.to(`user_${vehicle.driverUser.id}`).emit('notificationReceived', {
-          id: escortNoti.id,
-          title: '동승 확인 완료',
-          message: escortNoti.message,
+      if (vehicle.driverUser && isNotificationEnabled(vehicle.driverUser, 'escort')) {
+        const escortNoti = this.notificationRepository.create({
+          vehicle,
+          recipient: vehicle.driverUser || undefined,
+          recipientRole: 'DRIVER',
           type: 'ESCORT_CONFIRMED',
-          createdAt: escortNoti.createdAt,
+          message: `${escortName} 지도교사가 동승 확인을 완료하였습니다.`,
+          academy: vehicle.academy || undefined,
         });
+        await this.notificationRepository.save(escortNoti);
+
+        if (this.locationGateway?.server) {
+          this.locationGateway.server.to(`user_${vehicle.driverUser.id}`).emit('notificationReceived', {
+            id: escortNoti.id,
+            title: '동승 확인 완료',
+            message: escortNoti.message,
+            type: 'ESCORT_CONFIRMED',
+            createdAt: escortNoti.createdAt,
+          });
+        }
+
+        if (this.chatService) {
+          await this.chatService.sendSystemNotificationToUser(
+            vehicle.driverUser.id,
+            '동승 확인 완료',
+            `${escortName} 지도교사가 동승 확인을 완료하였습니다.`,
+            { type: 'escort' }
+          ).catch(() => {});
+        }
       }
     } catch (_) {}
 
@@ -799,6 +892,22 @@ export class TeacherService {
       if (this.locationGateway) {
         this.locationGateway.broadcastOperationStatus(vehicle.id, true, vehicle.busNumber);
       }
+
+      if (this.chatService) {
+        this.getTodayStudentsForVehicle(vehicle.id).then((students) => {
+          const parentIds = students
+            .map((s) => s.parentUser?.id)
+            .filter((id): id is number => typeof id === 'number');
+          if (parentIds.length > 0) {
+            this.chatService?.sendSystemNotificationToUsers(
+              parentIds,
+              '운행 시작 안내',
+              `${busName} 운행이 시작되었습니다. 지도에서 실시간 위치를 확인할 수 있습니다.`,
+              { type: 'shuttle' }
+            ).catch(() => {});
+          }
+        }).catch(() => {});
+      }
     }
     return { success: true };
   }
@@ -822,6 +931,22 @@ export class TeacherService {
 
       if (this.locationGateway) {
         this.locationGateway.broadcastOperationStatus(vehicle.id, false, vehicle.busNumber);
+      }
+
+      if (this.chatService) {
+        this.getTodayStudentsForVehicle(vehicle.id).then((students) => {
+          const parentIds = students
+            .map((s) => s.parentUser?.id)
+            .filter((id): id is number => typeof id === 'number');
+          if (parentIds.length > 0) {
+            this.chatService?.sendSystemNotificationToUsers(
+              parentIds,
+              '운행 종료 안내',
+              `${busName} 운행이 안전하게 종료되었습니다.`,
+              { type: 'shuttle' }
+            ).catch(() => {});
+          }
+        }).catch(() => {});
       }
 
       // 미탑승 학생 자동 결석 처리
@@ -1596,8 +1721,30 @@ export class TeacherService {
       });
     }
 
-    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return items.slice(0, 50);
+    if (user.notificationSettings && user.notificationSettings.all === false) {
+      return [];
+    }
+
+    const s = user.notificationSettings;
+    const filtered = items.filter(item => {
+      if (!s) return true;
+      if (item.type === 'APPROVAL_REQUEST' || item.type === 'APPROVAL_RESULT' || item.type === 'SCHEDULE_CHANGE') {
+        if (s.change_request === false) return false;
+      }
+      if (item.type === 'ESCORT_CONFIRMED') {
+        if (s.escort === false) return false;
+      }
+      if (item.type === 'NOTICE') {
+        if (s.notice === false) return false;
+      }
+      if (item.type === 'MESSAGE') {
+        if (s.chat === false) return false;
+      }
+      return true;
+    });
+
+    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return filtered.slice(0, 50);
   }
 
   async getTeacherUnreadCount(email: string): Promise<{ count: number }> {

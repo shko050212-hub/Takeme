@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -16,6 +17,7 @@ import '../login_screen.dart';
 import '../../services/api_service.dart';
 import 'operation_log_screen.dart';
 import 'driver_notification_screen.dart';
+import '../chat/chat_room_list_screen.dart';
 
 /// 기사 전용 화면 (팀 앱과 같은 크기·글꼴)
 /// - 1단계(운행 준비): 전체 지도 + 하단 준비 패널('경로 탐색' 버튼)
@@ -496,6 +498,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
         }
       case 'offroute':
         _nav.simulateOffRoute();
+      case 'wrong_turn':
+        _nav.simulateWrongTurn();
       case 'switch':
         await _nav.selectMode(_nav.mode.other);
       case 'send':
@@ -615,6 +619,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
                             ),
                           ),
                       ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.forum_outlined, color: Color(0xFF0F172A), size: 22),
+                      tooltip: '메신저',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatRoomListScreen()),
+                        ).then((_) => _loadUnreadCount());
+                      },
                     ),
                     _menu(),
                   ],
@@ -927,7 +941,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
     } else {
       items.add(_menuItem('sim', _nav.simulating ? Icons.pause : Icons.play_arrow,
           _nav.simulating ? '시뮬레이션 멈추기' : '주행 시뮬레이션 시작'));
-      if (_nav.simulating) items.add(_menuItem('offroute', Icons.alt_route, '경로 이탈 테스트'));
+      if (_nav.simulating) {
+        items.add(_menuItem('offroute', Icons.alt_route, '경로 이탈 테스트'));
+        items.add(_menuItem('wrong_turn', Icons.turn_sharp_right, '교차로 반대 방향 오진입 테스트'));
+      }
       items.add(_menuItem('switch', Icons.swap_horiz, '${_nav.mode.other.title}로 바꾸기'));
       if (_nav.serverLive) {
         items.add(_menuItem('send', _nav.simSendToServer ? Icons.check_box : Icons.check_box_outline_blank,
@@ -1181,6 +1198,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
                 color: selected ? _C.blue : _C.slate600,
               ),
             ),
+            if ((kDebugMode || _nav.testMode) && plan.provider != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                '[길찾기: ${plan.provider == 'kakao' ? '카카오' : plan.provider == 'naver' ? '네이버' : '폴백'}]',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: selected ? _C.blue : _C.slate500),
+              ),
+            ],
           ],
         );
       case PlanStatus.idle:
@@ -1410,6 +1434,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+                          if ((kDebugMode || _nav.testMode) && _nav.currentProvider != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '[길찾기: ${_nav.currentProvider == 'kakao' ? '카카오' : _nav.currentProvider == 'naver' ? '네이버' : '폴백'}]',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
               ),

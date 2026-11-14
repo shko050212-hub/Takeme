@@ -65,10 +65,11 @@ export class ParentController {
   async getClassBoard(
     @AuthEmail() authEmail: string,
     @Query('email') queryEmail?: string,
+    @Query('postType') postType?: string,
   ) {
     const email = authEmail || queryEmail;
     if (!email) throw new BadRequestException('이메일이 필요합니다.');
-    return this.parentService.getClassBoard(email);
+    return this.parentService.getClassBoard(email, postType);
   }
 
   @Post('notifications/read-all')
@@ -106,6 +107,12 @@ export class ParentController {
     if (!email) throw new BadRequestException('Email is required');
     const parsedStudentId = studentId ? parseInt(studentId, 10) : undefined;
     return this.parentService.getRoute(email, parsedStudentId, direction);
+  }
+
+  @Get('route-path')
+  async getRoutePath(@AuthEmail() email: string) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.parentService.getRoutePath(email);
   }
 
   @Post('message')

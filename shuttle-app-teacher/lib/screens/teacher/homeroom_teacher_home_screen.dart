@@ -4,11 +4,11 @@ import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
 import '../settings_screen.dart';
 import '../staff/teacher_board_view.dart';
-import '../staff/teacher_message_view.dart';
+import '../chat/chat_room_list_screen.dart';
 import 'homeroom_students_view.dart';
 import 'homeroom_attendance_view.dart';
 import 'homeroom_change_requests_view.dart';
-import 'teacher_notification_screen.dart';
+import '../media/photo_gallery_screen.dart';
 
 class HomeroomTeacherHomeScreen extends StatefulWidget {
   const HomeroomTeacherHomeScreen({super.key});
@@ -19,23 +19,30 @@ class HomeroomTeacherHomeScreen extends StatefulWidget {
 
 class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
   int _selectedTabIndex = 0;
+  late final PageController _pageController;
   bool _isRefreshing = false;
   int _unreadNotificationCount = 0;
+  int _unreadChatCount = 0;
   Timer? _notificationPollTimer;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _selectedTabIndex);
     _loadUnreadCount();
     _notificationPollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadUnreadCount());
     SocketService().connect(ApiService().token);
     SocketService().onNotificationReceived((_) {
       if (mounted) _loadUnreadCount();
     });
+    SocketService().onRoomUpdated((_) {
+      if (mounted) _loadUnreadCount();
+    });
   }
 
   @override
   void dispose() {
+    _pageController.dispose();
     _notificationPollTimer?.cancel();
     super.dispose();
   }
@@ -43,26 +50,33 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
   Future<void> _loadUnreadCount() async {
     try {
       final count = await ApiService().getTeacherUnreadCount();
-      if (mounted) setState(() => _unreadNotificationCount = count);
+      final chatCount = await ApiService().getChatTotalUnreadCount();
+      if (mounted) {
+        setState(() {
+          _unreadNotificationCount = count;
+          _unreadChatCount = chatCount;
+        });
+      }
     } catch (_) {}
   }
 
   Widget _buildNotificationButton() {
+    final totalUnread = _unreadNotificationCount + _unreadChatCount;
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
         IconButton(
-          icon: const Icon(Icons.notifications, color: Color(0xFF0F172A), size: 24),
-          tooltip: '알림',
+          icon: const Icon(Icons.forum_outlined, color: Color(0xFF0F172A), size: 24),
+          tooltip: '메신저 & 알림',
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const TeacherNotificationScreen()),
+              MaterialPageRoute(builder: (_) => const ChatRoomListScreen()),
             ).then((_) => _loadUnreadCount());
           },
         ),
-        if (_unreadNotificationCount > 0)
+        if (totalUnread > 0)
           Positioned(
             right: 4,
             bottom: 4,
@@ -77,7 +91,7 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
                 constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 alignment: Alignment.center,
                 child: Text(
-                  _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
+                  totalUnread > 9 ? '9+' : '$totalUnread',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
@@ -93,14 +107,101 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
     );
   }
 
+  Widget _buildTabItem({
+    required int index,
+    required IconData icon,
+    required String label,
+    int badgeCount = 0,
+  }) {
+    final isSelected = _selectedTabIndex == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFFF1F5F9) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 24,
+                      color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                    ),
+                    if (badgeCount > 0)
+                      Positioned(
+                        right: -7,
+                        bottom: -4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                          alignment: Alignment.center,
+                          child: Text(
+                            badgeCount > 9 ? '9+' : '$badgeCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.2),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _getAppTitle() {
     switch (_selectedTabIndex) {
       case 0:
         return '우리 반 원아 명단';
       case 1:
-        return '학급 알림장';
+        return '학급 알림장·게시물';
       case 2:
-        return '학급 메시지 소통';
+        return '출석부 관리';
+      case 3:
+        return '통학 변동 현황';
+      case 4:
+        return '실시간 메신저';
       default:
         return '담임교사 홈';
     }
@@ -125,6 +226,20 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
           elevation: 0,
           actions: [
             _buildNotificationButton(),
+            IconButton(
+              icon: const Icon(Icons.cloud_outlined, color: Color(0xFF475569)),
+              tooltip: '사진 보관함',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PhotoGalleryScreen(
+                      initialClassName: user?.assignedClass,
+                    ),
+                  ),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.settings_outlined, color: Color(0xFF475569)),
               onPressed: () {
@@ -254,7 +369,20 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
-          _buildNotificationButton(),
+          IconButton(
+            icon: const Icon(Icons.cloud_outlined, color: Color(0xFF475569)),
+            tooltip: '사진 보관함',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoGalleryScreen(
+                    initialClassName: user.assignedClass,
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: Color(0xFF475569)),
             onPressed: () {
@@ -270,40 +398,49 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
           child: Container(color: const Color(0xFFF1F5F9), height: 1),
         ),
       ),
-      body: IndexedStack(
-        index: _selectedTabIndex,
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (idx) {
+          setState(() => _selectedTabIndex = idx);
+        },
         children: const [
           HomeroomStudentsView(),
           TeacherBoardView(),
-          TeacherMessageView(),
+          HomeroomAttendanceView(),
+          HomeroomChangeRequestsView(),
+          ChatRoomListScreen(isEmbeddedTab: true),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedTabIndex,
-        onTap: (idx) => setState(() => _selectedTabIndex = idx),
-        selectedItemColor: const Color(0xFF2563EB),
-        unselectedItemColor: const Color(0xFF64748B),
-        backgroundColor: Colors.white,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_alt_outlined),
-            activeIcon: Icon(Icons.people_alt),
-            label: '우리 반 원아',
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.photo_library_outlined),
-            activeIcon: Icon(Icons.photo_library),
-            label: '학급 알림장',
+        ),
+        child: SafeArea(
+          top: false,
+          bottom: true,
+          left: true,
+          right: true,
+          child: SizedBox(
+            height: 64,
+            child: Row(
+              children: [
+                _buildTabItem(index: 0, icon: Icons.people_alt_outlined, label: '우리 반 원아'),
+                _buildTabItem(index: 1, icon: Icons.photo_library_outlined, label: '알림장·게시물'),
+                _buildTabItem(index: 2, icon: Icons.fact_check_outlined, label: '출석부'),
+                _buildTabItem(index: 3, icon: Icons.edit_calendar_outlined, label: '통학 변동'),
+                _buildTabItem(
+                  index: 4,
+                  icon: Icons.forum_outlined,
+                  label: '메신저',
+                  badgeCount: _unreadChatCount + _unreadNotificationCount,
+                ),
+              ],
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.mail_outline),
-            activeIcon: Icon(Icons.mail),
-            label: '메시지',
-          ),
-        ],
+        ),
       ),
     );
   }

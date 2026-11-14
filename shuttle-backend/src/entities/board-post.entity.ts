@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, Index } from 'typeorm';
 import { Academy } from './academy.entity';
 import { BoardComment } from './board-comment.entity';
 
@@ -6,6 +6,10 @@ import { BoardComment } from './board-comment.entity';
 export class BoardPost {
   @PrimaryGeneratedColumn()
   id: number;
+
+  @Column({ type: 'varchar', length: 20, default: 'POST' })
+  @Index()
+  postType: string; // 'NOTICE' | 'POST'
 
   @Column({ type: 'varchar', length: 255 })
   title: string;

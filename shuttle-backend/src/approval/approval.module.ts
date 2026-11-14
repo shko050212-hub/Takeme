@@ -13,6 +13,7 @@ import { Notification } from '../entities/notification.entity';
 import { AcademyHoliday } from '../entities/academy-holiday.entity';
 import { StudentSchedule } from '../entities/student-schedule.entity';
 import { TeacherModule } from '../teacher/teacher.module';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { TeacherModule } from '../teacher/teacher.module';
       StudentSchedule,
     ]),
     forwardRef(() => TeacherModule),
+    forwardRef(() => ChatModule),
   ],
   controllers: [ApprovalController],
   providers: [ApprovalService],

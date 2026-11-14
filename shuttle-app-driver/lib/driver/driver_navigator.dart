@@ -77,6 +77,7 @@ class RoutePlan {
   final int turnCount;
   final List<TrafficSegment> traffic; // 교통 상황 색 표시용
   final String criteriaFromServer; // 서버가 실제로 적용했다고 알려준 기준 (검증용)
+  final String? provider; // 5단계: 사용한 길찾기 서비스 ('kakao' | 'naver' | 'fallback')
   final DateTime createdAt;
 
   RoutePlan({
@@ -90,6 +91,7 @@ class RoutePlan {
     required this.turnCount,
     required this.traffic,
     required this.criteriaFromServer,
+    this.provider,
   }) : createdAt = DateTime.now();
 
   double get avgSpeed => durationS > 0 ? math.max(2, distanceM / durationS) : 8;
@@ -175,6 +177,9 @@ class DriverNavigator extends ChangeNotifier {
   int _offRouteCount = 0;
   DateTime _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastAutoRouteSync = DateTime.fromMillisecondsSinceEpoch(0);
+
+  int _lastSyncedProgress = -1;
+  DateTime _lastRoutePathSync = DateTime.fromMillisecondsSinceEpoch(0);
 
   // ── 안전 운전 보조 & 지도교사 출발 신호 ──
   int speedKmh = 0;
@@ -273,6 +278,9 @@ class DriverNavigator extends ChangeNotifier {
     final a = active;
     return a == null ? '-' : '${(remainingM / a.avgSpeed / 60).ceil()}분';
   }
+
+  /// 5단계: 현재 활성 경로의 길찾기 제공자 ('kakao' | 'naver' | 'fallback')
+  String? get currentProvider => active?.provider;
 
   /// 다음 회전 안내 (거리, 문구)
   (double, String)? get nextTurn {
@@ -408,6 +416,44 @@ class DriverNavigator extends ChangeNotifier {
       await _post('/teacher/driving-event', {'type': type, 'detail': detail});
     } catch (e) {
       debugPrint('[nav] logDrivingEvent failed: $e');
+    }
+  }
+
+  /// 실제 도로 경로와 진행률을 서버로 전송 (학부모·지도교사 지도 실시간 공유)
+  Future<void> _syncRoutePathToServer({bool force = false}) async {
+    final mayLeaveDevice = serverLive && !testMode;
+    if (!mayLeaveDevice || vehicleId == null) return;
+    final a = active;
+    if (a == null || a.path.isEmpty) return;
+
+    final now = DateTime.now();
+    if (!force && (_progress - _lastSyncedProgress).abs() < 5 && now.difference(_lastRoutePathSync).inSeconds < 10) {
+      return;
+    }
+
+    _lastSyncedProgress = _progress;
+    _lastRoutePathSync = now;
+
+    try {
+      final rawPath = a.path;
+      final step = math.max(1, (rawPath.length / 300).ceil());
+      final simplified = <Map<String, double>>[];
+      for (var i = 0; i < rawPath.length; i += step) {
+        simplified.add({'lat': rawPath[i].lat, 'lng': rawPath[i].lng});
+      }
+      if (rawPath.isNotEmpty && (simplified.isEmpty || simplified.last['lat'] != rawPath.last.lat)) {
+        simplified.add({'lat': rawPath.last.lat, 'lng': rawPath.last.lng});
+      }
+
+      final scaledProgress = (_progress / step).floor().clamp(0, simplified.length - 1);
+
+      await _post('/teacher/route-path', {
+        'vehicleId': vehicleId,
+        'path': simplified,
+        'progressIndex': scaledProgress,
+      });
+    } catch (e) {
+      debugPrint('[nav] syncRoutePathToServer error: $e');
     }
   }
 
@@ -753,6 +799,7 @@ class DriverNavigator extends ChangeNotifier {
       for (final t in (r['traffic'] as List? ?? []))
         TrafficSegment((t['from'] as num).toInt(), (t['to'] as num).toInt(), (t['state'] as num?)?.toInt() ?? 0),
     ];
+    final provider = r['provider'] as String?;
     final plan = RoutePlan(
       mode: m,
       origin: origin,
@@ -764,9 +811,10 @@ class DriverNavigator extends ChangeNotifier {
       turnCount: (r['turnCount'] as num?)?.toInt() ?? guides.length,
       traffic: traffic,
       criteriaFromServer: criteria,
+      provider: provider,
     );
     debugPrint('[nav] ${m.key}: ${plan.distanceM.round()}m ${plan.durationS.round()}s '
-        'turns=${plan.turnCount} points=${path.length} ($criteria)');
+        'turns=${plan.turnCount} points=${path.length} provider=$provider ($criteria)');
     return plan;
   }
 
@@ -853,12 +901,17 @@ class DriverNavigator extends ChangeNotifier {
       return;
     }
     map.resetZoom();
+    final uturns = slots[mode]!.plan?.guides
+        .where((g) => g.text.contains('유턴') || g.text.contains('U턴'))
+        .map((g) => g.point)
+        .toList();
     map.setRoutes(
       primary: slots[mode]!.plan?.path,
       traffic: slots[mode]!.plan?.traffic,
       alternate: slots[mode.other]!.plan?.path,
       stops: _stopsJson(stops),
       academy: academy,
+      uturnPoints: uturns,
       fit: true,
     );
   }
@@ -941,17 +994,50 @@ class DriverNavigator extends ChangeNotifier {
     final shouldFitOverview = fit && (!driving || !follow);
     if (shouldFitOverview) map.resetZoom();
     map.setHeadingUp(headingUp);
+    final uturns = plan.guides
+        .where((g) => g.text.contains('유턴') || g.text.contains('U턴'))
+        .map((g) => g.point)
+        .toList();
     map.setRoutes(
       primary: plan.path,
       traffic: plan.traffic,
       stops: _stopsJson(activeStops),
       academy: academy,
+      uturnPoints: uturns,
       fit: shouldFitOverview,
     );
     map.updateRouteProgress(segmentIndex: 0, fraction: 0.0);
     _updateProgress();
+    _syncRoutePathToServer(force: true);
     if (driving && position != null) {
       map.moveMe(position!, heading: heading, follow: follow, navigating: true, speedKmh: speedKmh.toDouble());
+    }
+
+    // 3단계: 새 경로를 받으면 첫 안내 음성을 즉시 냄
+    if (driving) {
+      final turn = nextTurn;
+      if (turn != null) {
+        final (d, text) = turn;
+        NavGuide? g;
+        for (final x in plan.guides) {
+          if (x.pathIndex > _progress) {
+            g = x;
+            break;
+          }
+        }
+        if (d <= 60) {
+          if (g != null) {
+            g.saidNear = true;
+            g.saidFar = true;
+          }
+          _speak('곧 $text');
+        } else {
+          if (g != null) {
+            g.saidFar = true;
+          }
+          _speak('${(d / 10).round() * 10}미터 앞에서 $text');
+        }
+      }
     }
   }
 
@@ -1000,6 +1086,7 @@ class DriverNavigator extends ChangeNotifier {
       }
       _onPosition(position!, acc: accuracy);
       _syncOverlay();
+    _syncRoutePathToServer();
       _speak('운행을 시작합니다. ${mode.title}로 안내합니다. 오늘도 안전 운행 부탁드립니다.');
     } catch (e) {
       actionError = e.toString();
@@ -1021,6 +1108,7 @@ class DriverNavigator extends ChangeNotifier {
     }
     _resetDriving();
     _syncOverlay();
+    _syncRoutePathToServer();
     busy = false;
     notifyListeners();
     _speak(testMode ? '테스트를 종료합니다.' : '차량 내부 확인이 완료되어 운행을 종료합니다. 수고하셨습니다.');
@@ -1242,28 +1330,70 @@ class DriverNavigator extends ChangeNotifier {
     }
   }
 
-  /// 경로 선분 중 p 와 가장 가까운 선분 인덱스, 선분 내 비율(0~1), 스냅 좌표, 이탈 거리(m), 도로 방향(도)을 구한다.
-  (int, double, GeoPoint, double, double) _findNearestSegment(
+  static double _angleDiff(double a, double b) {
+    final d = ((a - b).abs()) % 360.0;
+    return d > 180.0 ? 360.0 - d : d;
+  }
+
+  /// 경로 선분 중 p 와 가장 가까운 선분 인덱스, 선분 내 비율(0~1), 스냅 좌표, 이탈 거리(m), 도로 방향(도), 유효 스냅 여부를 구한다.
+  /// 1단계 개선: 현재 진행 위치(_progress) 기준 앞쪽 300m 이내의 구간만 후보로 하며,
+  /// 속도 3m/s 이상 주행 시 진행 방향과 60도 초과 차이나는 반대 방향/이탈 구간은 스냅하지 않는다.
+  (int, double, GeoPoint, double, double, bool) _findNearestSegment(
     List<GeoPoint> path,
     GeoPoint p, {
     int from = 0,
-    int? to,
+    List<double>? cumDist,
+    double forwardMeters = 300.0,
+    double? gpsHeading,
+    double? speedMps,
   }) {
-    if (path.isEmpty) return (0, 0.0, p, 0.0, 0.0);
-    if (path.length == 1) return (0, 0.0, path[0], distanceM(path[0], p), 0.0);
+    if (path.isEmpty) return (0, 0.0, p, 0.0, 0.0, false);
+    if (path.length == 1) {
+      final d = distanceM(path[0], p);
+      return (0, 0.0, path[0], d, 0.0, d <= 35.0);
+    }
 
-    final end = math.min(to ?? (path.length - 2), path.length - 2);
-    final start = math.max(0, from).clamp(0, end);
+    final start = math.max(0, from).clamp(0, path.length - 2);
+    final maxEnd = path.length - 2;
+
+    int end = start;
+    if (cumDist != null && cumDist.length == path.length) {
+      final baseCum = cumDist[start];
+      while (end < maxEnd) {
+        if (cumDist[end + 1] - baseCum > forwardMeters && (end - start) >= 2) {
+          break;
+        }
+        end++;
+      }
+    } else {
+      double acc = 0;
+      while (end < maxEnd) {
+        acc += distanceM(path[end], path[end + 1]);
+        if (acc > forwardMeters && (end - start) >= 2) {
+          break;
+        }
+        end++;
+      }
+    }
 
     var bestSeg = start;
     var bestT = 0.0;
     var bestPoint = path[start];
     var bestDist = double.infinity;
-    var bestBearing = 0.0;
+    var bestBearing = bearingDeg(path[start], path[start + 1]);
+    bool foundValid = false;
+
+    final filterHeading = (speedMps != null && speedMps >= 3.0 && gpsHeading != null && gpsHeading >= 0);
 
     for (var i = start; i <= end; i++) {
       final a = path[i];
       final b = path[i + 1];
+
+      final segBearing = bearingDeg(a, b);
+      if (filterHeading && _angleDiff(segBearing, gpsHeading) > 60.0) {
+        // 주행 중 진행 방향과 60도 초과 차이나는 반대 구간/역방향 제외
+        continue;
+      }
 
       final cosLat = math.cos(a.lat * math.pi / 180.0);
       final dx = (b.lng - a.lng) * cosLat;
@@ -1290,11 +1420,19 @@ class DriverNavigator extends ChangeNotifier {
         bestSeg = i;
         bestT = t;
         bestPoint = projPoint;
-        bestBearing = bearingDeg(a, b);
+        bestBearing = segBearing;
+        foundValid = true;
       }
     }
 
-    return (bestSeg, bestT, bestPoint, bestDist, bestBearing);
+    final isSnapped = foundValid && bestDist <= 35.0;
+    if (!isSnapped) {
+      final fallbackDist = distanceM(path[start], p);
+      final fallbackBearing = bearingDeg(path[start], path[math.min(start + 1, path.length - 1)]);
+      return (start, 0.0, path[start], fallbackDist, fallbackBearing, false);
+    }
+
+    return (bestSeg, bestT, bestPoint, bestDist, bestBearing, true);
   }
 
   void _updateProgress({double? gpsHeading, double? speedMps, GeoPoint? prev}) {
@@ -1302,37 +1440,57 @@ class DriverNavigator extends ChangeNotifier {
     final pos = position;
     if (a == null || pos == null) return;
 
-    final (segIdx, frac, _, off, roadBearing) = _findNearestSegment(
+    final speedMpsVal = speedMps ?? (speedKmh / 3.6);
+
+    final (segIdx, frac, _, off, roadBearing, isSnapped) = _findNearestSegment(
       a.path,
       pos,
-      from: math.max(0, _progress - 5),
-      to: _progress + 80,
+      from: _progress,
+      cumDist: a.cum,
+      forwardMeters: 300.0,
+      gpsHeading: gpsHeading,
+      speedMps: speedMpsVal,
     );
-    _progress = segIdx;
-    _progressFrac = frac;
 
-    // 화살표 방향: 경로선 30m 이내면 도로 구간 방향, 아니면 속도 2m/s 이상일 때만 GPS 방향, 정지 중엔 마지막 방향
-    final speedMpsVal = speedMps ?? (speedKmh / 3.6);
-    if (driving && off <= 30.0) {
-      heading = roadBearing;
-    } else if (speedMpsVal >= 2.0 && gpsHeading != null && gpsHeading >= 0) {
-      heading = gpsHeading;
-    } else if (speedMpsVal >= 2.0 && prev != null && distanceM(prev, pos) > 2) {
-      heading = bearingDeg(prev, pos);
+    // 1단계: 진행 위치는 항상 앞으로만 움직임
+    if (isSnapped) {
+      if (segIdx > _progress || (segIdx == _progress && frac >= _progressFrac)) {
+        _progress = segIdx;
+        _progressFrac = frac;
+      }
     }
-    // 정지 중(speedMpsVal < 2.0)이면 마지막 방향(heading) 유지
 
-    // 70m 이상 벗어난 상태가 3번 연속이면 재탐색 (20초에 한 번, 중복 요청 방지)
-    _offRouteCount = off > 70 ? _offRouteCount + 1 : 0;
-    if (_offRouteCount >= 3 && !rerouting && DateTime.now().difference(_lastReroute).inSeconds > 20) {
+    // 2단계 화살표 방향:
+    // 속도가 3m/s 이상이면 GPS 방향, 그 아래는 1단계의 앞방향 도로 구간 방향, 정지 중(0.5m/s 미만)에는 마지막 값 유지.
+    // 도로 반대 방향은 절대 쓰지 않는다.
+    if (speedMpsVal >= 3.0 && gpsHeading != null && gpsHeading >= 0) {
+      heading = gpsHeading;
+    } else if (speedMpsVal >= 3.0 && prev != null && distanceM(prev, pos) > 2) {
+      heading = bearingDeg(prev, pos);
+    } else if (speedMpsVal >= 0.5 && isSnapped) {
+      heading = roadBearing;
+    }
+    // speedMpsVal < 0.5 이면 이전 heading 유지
+
+    // 3단계 빠른 재탐색:
+    // 이탈 조건: 경로와 거리 35m 이상이거나, 진행 방향과 경로 방향 차이가 100도 이상인 상태가 연속 2회
+    final curHeading = heading;
+    final headingDeviated = (speedMpsVal >= 3.0 && curHeading != null)
+        ? _angleDiff(curHeading, roadBearing) >= 100.0
+        : false;
+    final isOff = (!isSnapped && off >= 35.0) || headingDeviated;
+
+    _offRouteCount = isOff ? _offRouteCount + 1 : 0;
+    if (_offRouteCount >= 2 && !rerouting && DateTime.now().difference(_lastReroute).inSeconds >= 8) {
       _offRouteCount = 0;
       _lastReroute = DateTime.now();
-      _speak('경로를 벗어났습니다. 경로를 다시 찾습니다.');
+      _speak('경로를 다시 찾습니다.');
       _reroute(reason: 'off-route');
       return;
     }
 
     _syncOverlay();
+    _syncRoutePathToServer();
 
     final turn = nextTurn;
     if (turn == null) return;
@@ -1399,12 +1557,14 @@ class DriverNavigator extends ChangeNotifier {
     notifyListeners();
     if (active != null) {
       _syncOverlay();
+    _syncRoutePathToServer();
       _speak('테스트 경로를 시작합니다. 실제 운행이 아닙니다.');
       startSimulation();
     } else {
       testMode = false;
       _resetDriving();
       _syncOverlay();
+    _syncRoutePathToServer();
       _testStops.clear();
       _drawPreview();
       notifyListeners();
@@ -1421,11 +1581,20 @@ class DriverNavigator extends ChangeNotifier {
       if (a == null) return;
       _simMeters = math.min(_simMeters + 11, a.cum.last);
       var p = pointAlong(a.path, a.cum, _simMeters);
-      if (_offRouteTestTicks > 0) {
+      double? simHeading;
+
+      if (_wrongTurnTicks > 0) {
+        _wrongTurnTicks--;
+        // 6단계 ②: 교차로에서 반대 방향으로 잘못 진입 (도로 방향과 180도 반대로 주행)
+        final roadHeading = _roadBearingAt(a.path, _progress) ?? 0.0;
+        simHeading = (roadHeading + 180.0) % 360.0;
+        p = GeoPoint(p.lat - 0.0004, p.lng);
+      } else if (_offRouteTestTicks > 0) {
         _offRouteTestTicks--;
         p = GeoPoint(p.lat + 0.0012, p.lng); // 북쪽으로 약 130m 벗어남
       }
-      _onPosition(p, simulated: true);
+
+      _onPosition(p, gpsHeading: simHeading, speedMps: 11.0, simulated: true);
       if (_simMeters >= a.cum.last) _stopSimulation();
     });
     notifyListeners();
@@ -1437,6 +1606,7 @@ class DriverNavigator extends ChangeNotifier {
     simulating = false;
     speedKmh = 0;
     _offRouteTestTicks = 0;
+    _wrongTurnTicks = 0;
   }
 
   void stopSimulation() {
@@ -1448,6 +1618,16 @@ class DriverNavigator extends ChangeNotifier {
   void simulateOffRoute() {
     if (!simulating) return;
     _offRouteTestTicks = 4;
+    _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
+    notifyListeners();
+  }
+
+  int _wrongTurnTicks = 0;
+
+  /// 6단계 ②: 교차로에서 반대 방향으로 잘못 진입 테스트 (2~3초 내 재탐색 확인용)
+  void simulateWrongTurn() {
+    if (!simulating) return;
+    _wrongTurnTicks = 3;
     _lastReroute = DateTime.fromMillisecondsSinceEpoch(0);
     notifyListeners();
   }

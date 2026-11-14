@@ -56,6 +56,7 @@ abstract class NavMapController {
     List<GeoPoint>? alternate,
     required List<Map<String, dynamic>> stops,
     GeoPoint? academy,
+    List<GeoPoint>? uturnPoints,
     bool fit = true,
   });
 
@@ -96,6 +97,7 @@ class NavMapControllerImpl implements NavMapController {
   List<GeoPoint>? alternateRoute;
   List<Map<String, dynamic>> stops = [];
   GeoPoint? academy;
+  List<GeoPoint>? uturnPoints;
   bool shouldFitOnRoutes = true;
 
   GeoPoint? currentPosition;
@@ -133,6 +135,7 @@ class NavMapControllerImpl implements NavMapController {
     List<GeoPoint>? alternate,
     required List<Map<String, dynamic>> stops,
     GeoPoint? academy,
+    List<GeoPoint>? uturnPoints,
     bool fit = true,
   }) {
     primaryRoute = primary;
@@ -140,6 +143,7 @@ class NavMapControllerImpl implements NavMapController {
     alternateRoute = alternate;
     this.stops = List<Map<String, dynamic>>.from(stops);
     this.academy = academy;
+    this.uturnPoints = uturnPoints;
     shouldFitOnRoutes = fit;
     routeProgressIndex = 0;
     routeProgressFraction = 0.0;

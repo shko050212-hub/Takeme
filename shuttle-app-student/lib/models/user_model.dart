@@ -29,6 +29,30 @@ class UserModel {
     );
   }
 
+  static String getRoleKorean(String? role) {
+    switch (role?.toUpperCase()) {
+      case 'HOMEROOM_TEACHER':
+        return '담임교사';
+      case 'SHUTTLE_TEACHER':
+        return '지도교사';
+      case 'TEACHER':
+        return '교사';
+      case 'DRIVER':
+        return '기사';
+      case 'PARENT':
+        return '학부모';
+      case 'STUDENT':
+        return '학생';
+      case 'ACADEMY_ADMIN':
+      case 'SUPER_ADMIN':
+        return '기관 관리자';
+      default:
+        return '알 수 없음';
+    }
+  }
+
+  String get roleKorean => getRoleKorean(role);
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

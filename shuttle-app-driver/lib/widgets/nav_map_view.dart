@@ -1,25 +1,99 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 
 import 'nav_map_controller.dart';
+import 'nav_map_view_naver.dart';
 
 export 'nav_map_controller.dart';
 
-const String _vworldKey = String.fromEnvironment('VWORLD_KEY', defaultValue: '');
+/// secrets.json (--dart-define-from-file) 에서 받는 네이버 지도 Client ID
+const String naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID');
 
-class NavMapView extends StatefulWidget {
+/// 네이버 지도 SDK 초기화/인증 성공 여부 (main.dart 에서 초기화 후 갱신, 인증 실패 시 false 로 바뀌어 이전 지도로 복귀)
+final ValueNotifier<bool> naverMapAvailable = ValueNotifier<bool>(false);
+
+/// 네이버 지도를 쓰지 못하고 OpenStreetMap 으로 대신 표시하는 이유 (디버그 화면 표시용)
+final ValueNotifier<String> naverMapFallbackReason = ValueNotifier<String>('');
+
+/// 지도 선택: NAVER_MAP_CLIENT_ID 가 있고 SDK 인증이 성공하면 네이버 지도.
+/// 키가 없거나 인증/초기화에 실패한 경우(또는 웹)에만 OpenStreetMap 으로 대신 표시한다.
+bool get _useNaver => naverMapClientId.isNotEmpty && !kIsWeb;
+
+class NavMapView extends StatelessWidget {
   final NavMapController controller;
 
   const NavMapView({super.key, required this.controller});
 
   @override
-  State<NavMapView> createState() => _NavMapViewState();
+  Widget build(BuildContext context) {
+    if (!_useNaver) {
+      return _withLabel(
+        FlutterMapNavView(controller: controller),
+        'OSM',
+        kIsWeb
+            ? '웹에서는 네이버 지도를 쓸 수 없음'
+            : 'NAVER_MAP_CLIENT_ID 없음 (--dart-define-from-file=secrets.json 으로 실행하세요)',
+      );
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: naverMapAvailable,
+      builder: (context, ok, _) => ok
+          ? _withLabel(NaverNavMapView(controller: controller), 'NAVER', null)
+          : _withLabel(
+              FlutterMapNavView(controller: controller),
+              'OSM',
+              naverMapFallbackReason.value.isEmpty ? '네이버 지도 초기화 대기/실패' : naverMapFallbackReason.value,
+            ),
+    );
+  }
+
+  /// 디버그 모드에서만 어떤 지도를 쓰는지 구석에 작게 표시 (대체 지도면 이유도 함께 표시)
+  Widget _withLabel(Widget map, String name, String? warning) {
+    if (!kDebugMode) return map;
+    return Stack(
+      children: [
+        Positioned.fill(child: map),
+        Positioned(
+          top: 4,
+          right: 4,
+          left: warning == null ? null : 4,
+          child: IgnorePointer(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: warning == null ? Colors.black54 : const Color(0xCCEA580C),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  warning == null ? '지도: $name' : '지도: $name · $warning',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateMixin {
+class FlutterMapNavView extends StatefulWidget {
+  final NavMapController controller;
+
+  const FlutterMapNavView({super.key, required this.controller});
+
+  @override
+  State<FlutterMapNavView> createState() => _FlutterMapNavViewState();
+}
+
+class _FlutterMapNavViewState extends State<FlutterMapNavView> with SingleTickerProviderStateMixin {
   late final MapController _mapController;
   late final Ticker _ticker;
   Duration? _lastTick;
@@ -117,7 +191,7 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
   }
 
   @override
-  void didUpdateWidget(covariant NavMapView oldWidget) {
+  void didUpdateWidget(covariant FlutterMapNavView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       (oldWidget.controller as NavMapControllerImpl).removeListener(_onControllerUpdated);
@@ -367,6 +441,77 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
     return from + diff;
   }
 
+  static double _angleDiff(double a, double b) {
+    final d = ((a - b).abs()) % 360.0;
+    return d > 180.0 ? 360.0 - d : d;
+  }
+
+  static double _bearingBetween(LatLng a, LatLng b) {
+    const rad = math.pi / 180.0;
+    final lat1 = a.latitude * rad;
+    final lat2 = b.latitude * rad;
+    final dLng = (b.longitude - a.longitude) * rad;
+    final y = math.sin(dLng) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
+    return (math.atan2(y, x) * 180.0 / math.pi + 360.0) % 360.0;
+  }
+
+  static double _distanceMeters(LatLng a, LatLng b) {
+    const rad = math.pi / 180.0;
+    const r = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * rad;
+    final dLng = (b.longitude - a.longitude) * rad;
+    final sinLat = math.sin(dLat / 2);
+    final sinLng = math.sin(dLng / 2);
+    final h = sinLat * sinLat + math.cos(a.latitude * rad) * math.cos(b.latitude * rad) * sinLng * sinLng;
+    return 2 * r * math.asin(math.min(1.0, math.sqrt(h)));
+  }
+
+  static LatLng _offsetPointRight(LatLng pt, double bearingDeg, double offsetMeters) {
+    const rad = math.pi / 180.0;
+    const latScale = 111132.954;
+    final lngScale = 111412.84 * math.cos(pt.latitude * rad);
+    final rightAngle = (bearingDeg + 90.0) * rad;
+    final dy = math.cos(rightAngle) * offsetMeters;
+    final dx = math.sin(rightAngle) * offsetMeters;
+    return LatLng(pt.latitude + dy / latScale, pt.longitude + dx / lngScale);
+  }
+
+  static double _pointToSegDist(LatLng p, LatLng a, LatLng b) {
+    const rad = math.pi / 180.0;
+    const latScale = 111132.954;
+    final lngScale = 111412.84 * math.cos(p.latitude * rad);
+    final px = p.longitude * lngScale;
+    final py = p.latitude * latScale;
+    final ax = a.longitude * lngScale;
+    final ay = a.latitude * latScale;
+    final bx = b.longitude * lngScale;
+    final by = b.latitude * latScale;
+    final dx = bx - ax;
+    final dy = by - ay;
+    final lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-6) return _distanceMeters(p, a);
+    final t = (((px - ax) * dx + (py - ay) * dy) / lenSq).clamp(0.0, 1.0);
+    final cx = ax + t * dx;
+    final cy = ay + t * dy;
+    return math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+  }
+
+  List<LatLng> _getActiveRoutePoints() {
+    final pri = _getPrimaryRouteLatLngs();
+    if (pri == null || pri.isEmpty) return const [];
+    if (_isNavigating) {
+      final segIdx = _impl.routeProgressIndex.clamp(0, pri.length - 1);
+      final curPos = LatLng(_animatedLat, _animatedLng);
+      final active = <LatLng>[curPos];
+      if (segIdx + 1 < pri.length) {
+        active.addAll(pri.sublist(segIdx + 1));
+      }
+      return active;
+    }
+    return pri;
+  }
+
   /// 경로선 상에서 moveMeters 만큼 전진하여 _animatedLat, _animatedLng를 갱신
   void _advanceAlongRoute(double moveMeters, List<LatLng>? primary) {
     if (primary == null || primary.length < 2) return;
@@ -395,6 +540,8 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
   }
 
   /// 경로선 30m 이내 스냅 상세 계산 (투영점, 세그먼트 인덱스, 비율, 스냅 여부 산출)
+  /// 1단계 개선: 현재 진행 위치(_impl.routeProgressIndex) 기준 앞쪽 300m 이내의 구간만 후보로 하며,
+  /// 속도 3m/s(약 11km/h) 이상 주행 시 진행 방향과 60도 초과 차이나는 반대 방향/이탈 구간은 스냅하지 않는다.
   (LatLng point, int segIndex, double t, bool isSnapped) _snapToRouteDetail(
     LatLng rawPos,
     List<LatLng>? primaryRoute,
@@ -416,7 +563,12 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
     int bestSeg = 0;
     double bestT = 0.0;
 
-    for (int i = 0; i < primaryRoute.length - 1; i++) {
+    final startIdx = _impl.routeProgressIndex.clamp(0, primaryRoute.length - 2);
+    final speedMps = (_impl.currentSpeedKmh ?? 0.0) / 3.6;
+    final carHeading = _impl.currentHeading;
+
+    double cumDist = 0.0;
+    for (int i = startIdx; i < primaryRoute.length - 1; i++) {
       final a = primaryRoute[i];
       final b = primaryRoute[i + 1];
 
@@ -428,7 +580,25 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
       final dx = bx - ax;
       final dy = by - ay;
       final segLenSq = dx * dx + dy * dy;
+      final segLen = math.sqrt(segLenSq);
       if (segLenSq < 1e-6) continue;
+
+      if (i > startIdx) {
+        cumDist += segLen;
+        if (cumDist > 300.0 && (i - startIdx) >= 2) {
+          break; // 앞쪽 300m 이내만 탐색
+        }
+      }
+
+      // 속도 3m/s 이상이고 방향값이 있으면 60도 초과 차이나는 반대 구간/역방향 제외
+      if (speedMps >= 3.0 && carHeading != null && !carHeading.isNaN) {
+        final segBearing = (math.atan2(dx, dy) * 180.0 / math.pi + 360.0) % 360.0;
+        final angleDiff = ((carHeading - segBearing).abs()) % 360.0;
+        final normalizedDiff = angleDiff > 180.0 ? 360.0 - angleDiff : angleDiff;
+        if (normalizedDiff > 60.0) {
+          continue;
+        }
+      }
 
       final t = ((px - ax) * dx + (py - ay) * dy) / segLenSq;
       final clampedT = t.clamp(0.0, 1.0);
@@ -451,7 +621,7 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
     if (bestPoint != null) {
       return (bestPoint, bestSeg, bestT, true);
     }
-    return (rawPos, 0, 0.0, false);
+    return (rawPos, startIdx, 0.0, false);
   }
 
   List<Polyline> _buildPolylines() {
@@ -470,24 +640,69 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
       );
     }
 
-    // 2. 주 경로 기본 윤곽선 및 교통 색상 (지나온 경로 지우기)
+    // 2. 주 경로 기본 윤곽선 및 교통 색상 (지나온 경로 지우기 및 유턴 겹침 분리)
     final pri = _getPrimaryRouteLatLngs();
     if (pri != null && pri.length > 1) {
-      final List<LatLng> activePoints;
-      final int currentSegIdx;
+      final activePoints = _getActiveRoutePoints();
+      final int currentSegIdx = _isNavigating ? _impl.routeProgressIndex.clamp(0, pri.length - 1) : 0;
 
-      if (_isNavigating) {
-        // 주행 중: 현재 화살표 위치부터 끝까지만 그림 (지나온 경로 지우기)
-        final segIdx = _impl.routeProgressIndex.clamp(0, pri.length - 1);
-        currentSegIdx = segIdx;
-        final curPos = LatLng(_animatedLat, _animatedLng);
-        activePoints = <LatLng>[curPos];
-        if (segIdx + 1 < pri.length) {
-          activePoints.addAll(pri.sublist(segIdx + 1));
+      // 4단계: 같은 도로를 반대 방향으로 다시 지나는 구간(유턴/복귀 구간) 검출
+      // 먼저 지날 구간은 진한 색으로 위에, 나중 구간은 연한 색으로 아래에 그리고 진행 방향 오른쪽으로 3.5m 띄워 두 줄 표시
+      final isOverlap = List<bool>.filled(math.max(0, activePoints.length - 1), false);
+      if (activePoints.length >= 4) {
+        for (int j = 2; j < activePoints.length - 1; j++) {
+          final bj = _bearingBetween(activePoints[j], activePoints[j + 1]);
+          final midJ = LatLng(
+            (activePoints[j].latitude + activePoints[j + 1].latitude) / 2,
+            (activePoints[j].longitude + activePoints[j + 1].longitude) / 2,
+          );
+          for (int i = 0; i < j - 1; i++) {
+            final bi = _bearingBetween(activePoints[i], activePoints[i + 1]);
+            if (_angleDiff(bi, bj) >= 135.0) {
+              final dist = _pointToSegDist(midJ, activePoints[i], activePoints[i + 1]);
+              if (dist <= 18.0) {
+                isOverlap[j] = true;
+                break;
+              }
+            }
+          }
         }
-      } else {
-        currentSegIdx = 0;
-        activePoints = pri;
+      }
+
+      // 나중(돌아오는) 겹침 구간: 진행 방향 오른쪽으로 3.5m 띄우고 연한 색으로 아래에 먼저 그림
+      final returnRuns = <List<LatLng>>[];
+      List<LatLng>? curRun;
+      for (int k = 0; k < activePoints.length - 1; k++) {
+        if (isOverlap[k]) {
+          final bk = _bearingBetween(activePoints[k], activePoints[k + 1]);
+          final p1 = _offsetPointRight(activePoints[k], bk, 3.5);
+          final p2 = _offsetPointRight(activePoints[k + 1], bk, 3.5);
+          if (curRun == null) {
+            curRun = [p1, p2];
+          } else {
+            curRun.add(p2);
+          }
+        } else {
+          if (curRun != null) {
+            returnRuns.add(curRun);
+            curRun = null;
+          }
+        }
+      }
+      if (curRun != null) returnRuns.add(curRun);
+
+      for (final run in returnRuns) {
+        if (run.length > 1) {
+          lines.add(
+            Polyline(
+              points: run,
+              color: const Color(0xFF86EFAC).withValues(alpha: 0.85), // 연한 색으로 아래에
+              strokeWidth: 6,
+              strokeCap: StrokeCap.round,
+              strokeJoin: StrokeJoin.round,
+            ),
+          );
+        }
       }
 
       if (activePoints.length > 1) {
@@ -503,18 +718,16 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
         );
       }
 
-      // 3. 교통 색상 경로 (지나온 구간 제외, 현재 위치부터 끝까지만 그림)
+      // 3. 교통 색상 경로 (먼저 지날 주 경로는 진한 색으로 위에 그림)
       final traffic = _impl.trafficSegments;
       if (traffic != null && traffic.isNotEmpty) {
         for (final seg in traffic) {
           if (_isNavigating && seg.to < currentSegIdx) {
-            // 이미 완전히 지나온 구간은 제외
             continue;
           }
 
           final List<LatLng> segPoints;
           if (_isNavigating && seg.from <= currentSegIdx && currentSegIdx <= seg.to) {
-            // 현재 주행 중인 구간: 현재 위치부터 이 구간 끝까지
             final curPos = LatLng(_animatedLat, _animatedLng);
             final nextIdx = (currentSegIdx + 1).clamp(0, pri.length);
             final toIdx = (seg.to + 1).clamp(0, pri.length);
@@ -523,7 +736,6 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
               segPoints.addAll(pri.sublist(nextIdx, toIdx));
             }
           } else {
-            // 아직 도달하지 않은 앞쪽 구간
             final from = seg.from.clamp(0, pri.length - 1);
             final to = (seg.to + 1).clamp(0, pri.length);
             if (to > from + 1) {
@@ -626,6 +838,73 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
       );
     }
 
+    // 4. 유턴 지점 마커 (안내 경로 중 유턴 지점)
+    final uturns = _impl.uturnPoints;
+    if (uturns != null && uturns.isNotEmpty) {
+      final pri = _getPrimaryRouteLatLngs();
+      final curProgress = _isNavigating ? _impl.routeProgressIndex : 0;
+      for (final u in uturns) {
+        final uLatLng = LatLng(u.lat, u.lng);
+        // 이미 지나온 유턴 마커는 주행 중 숨김
+        if (_isNavigating && pri != null && pri.isNotEmpty) {
+          int nearestIdx = 0;
+          double minDist = double.infinity;
+          for (int k = 0; k < pri.length; k++) {
+            final d = _distanceMeters(uLatLng, pri[k]);
+            if (d < minDist) {
+              minDist = d;
+              nearestIdx = k;
+            }
+          }
+          if (nearestIdx < curProgress - 1) continue;
+        }
+
+        markers.add(
+          Marker(
+            point: uLatLng,
+            width: 32,
+            height: 32,
+            rotate: true,
+            child: const _UturnMarkerWidget(),
+          ),
+        );
+      }
+    }
+
+    // 5. 진행 방향 화살표 무늬 (꺾쇠) 마커 (약 65m 간격)
+    final activeForChevrons = _getActiveRoutePoints();
+    if (activeForChevrons.length > 1) {
+      double accDist = 0;
+      double nextChevronDist = 40.0;
+      int chevronCount = 0;
+      for (int i = 0; i < activeForChevrons.length - 1 && chevronCount < 35; i++) {
+        final a = activeForChevrons[i];
+        final b = activeForChevrons[i + 1];
+        final segLen = _distanceMeters(a, b);
+        if (segLen < 1.0) continue;
+        while (accDist + segLen >= nextChevronDist && chevronCount < 35) {
+          final frac = ((nextChevronDist - accDist) / segLen).clamp(0.0, 1.0);
+          final pt = LatLng(
+            a.latitude + frac * (b.latitude - a.latitude),
+            a.longitude + frac * (b.longitude - a.longitude),
+          );
+          final bearing = _bearingBetween(a, b);
+          markers.add(
+            Marker(
+              point: pt,
+              width: 16,
+              height: 16,
+              rotate: false,
+              child: _RouteChevronWidget(bearingDeg: bearing),
+            ),
+          );
+          chevronCount++;
+          nextChevronDist += 65.0;
+        }
+        accDist += segLen;
+      }
+    }
+
     return markers;
   }
 
@@ -668,11 +947,9 @@ class _NavMapViewState extends State<NavMapView> with SingleTickerProviderStateM
             },
           ),
           children: [
-            // 브이월드 또는 OpenStreetMap 타일 레이어 (캐시 및 panBuffer 최적화)
+            // OpenStreetMap 타일 레이어 (네이버 지도를 쓸 수 없을 때만 사용) (캐시 및 panBuffer 최적화)
             TileLayer(
-              urlTemplate: _vworldKey.isNotEmpty
-                  ? 'https://api.vworld.kr/req/wmts/1.0.0/$_vworldKey/Base/{z}/{y}/{x}.png'
-                  : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.takeme.driver',
               maxZoom: 19,
               minZoom: 6,
@@ -851,6 +1128,66 @@ class _AcademyMarkerWidget extends StatelessWidget {
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 경로선 위 진행 방향 화살표 무늬 (꺾쇠 모양)
+class _RouteChevronWidget extends StatelessWidget {
+  final double bearingDeg;
+
+  const _RouteChevronWidget({required this.bearingDeg});
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: bearingDeg * math.pi / 180.0,
+      child: const Center(
+        child: Icon(
+          Icons.keyboard_arrow_up_rounded,
+          size: 16,
+          color: Colors.white,
+          shadows: [
+            Shadow(
+              color: Color(0x66000000),
+              blurRadius: 2,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 유턴 지점 마커 위젯 (파란 원형 표지판 + 흰색 유턴 아이콘)
+class _UturnMarkerWidget extends StatelessWidget {
+  const _UturnMarkerWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: const Color(0xFF2563EB),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x52000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.u_turn_left_rounded,
+          color: Colors.white,
+          size: 20,
         ),
       ),
     );

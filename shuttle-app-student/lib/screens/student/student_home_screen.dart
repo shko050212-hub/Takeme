@@ -10,7 +10,7 @@ import 'change_request_modal.dart';
 import 'my_requests_screen.dart';
 import 'student_notification_list_screen.dart';
 import 'student_board_screen.dart';
-import 'student_chat_room_list_screen.dart';
+import '../chat/chat_room_list_screen.dart';
 import '../settings_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
@@ -600,7 +600,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   childClassName: _studentInfo?.className,
                   isEmbedded: true,
                 ),
-                const StudentChatRoomListScreen(isEmbedded: true),
+                const ChatRoomListScreen(isEmbeddedTab: true),
               ],
             ),
       bottomNavigationBar: BottomNavigationBar(

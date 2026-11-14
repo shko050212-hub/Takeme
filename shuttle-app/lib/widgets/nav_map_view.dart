@@ -8,7 +8,7 @@ import 'nav_map_controller.dart';
 
 export 'nav_map_controller.dart';
 
-const String _vworldKey = String.fromEnvironment('VWORLD_KEY', defaultValue: '');
+const String _vworldKey = String.fromEnvironment('VWORLD_KEY', defaultValue: '09C4DAB2-0E44-4794-88FA-2483B1177D28');
 
 class NavMapView extends StatefulWidget {
   final NavMapController controller;

@@ -30,6 +30,23 @@ export class TeacherController {
     return this.teacherService.getRoute(email);
   }
 
+  @Post('route-path')
+  async saveRoutePath(
+    @AuthEmail() email: string,
+    @Body('vehicleId') vehicleId?: number,
+    @Body('path') path?: { lat: number; lng: number }[],
+    @Body('progressIndex') progressIndex?: number,
+  ) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.saveRoutePath(email, vehicleId, path, progressIndex);
+  }
+
+  @Get('route-path')
+  async getRoutePath(@AuthEmail() email: string) {
+    if (!email) throw new BadRequestException('이메일이 필요합니다.');
+    return this.teacherService.getTeacherRoutePath(email);
+  }
+
   @Get('inbox')
   async getInbox(@AuthEmail() email: string) {
     if (!email) throw new BadRequestException('이메일이 필요합니다.');

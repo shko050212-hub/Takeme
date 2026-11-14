@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
+import 'widgets/nav_map_view.dart';
 import 'utils/network_helper.dart';
 
 void main() async {
@@ -11,6 +14,22 @@ void main() async {
   setupNetworkSecurity();
   await initializeDateFormatting('ko_KR', null);
   await ApiService().init();
+  if (naverMapClientId.isNotEmpty && !kIsWeb) {
+    try {
+      await FlutterNaverMap().init(
+        clientId: naverMapClientId,
+        onAuthFailed: (e) {
+          debugPrint('[naver_map] 인증 실패, 대체 지도로 전환: $e');
+          naverMapFallbackReason.value = '네이버 인증 실패 (클라이언트 ID/패키지명 등록 확인): $e';
+          naverMapAvailable.value = false;
+        },
+      );
+      naverMapAvailable.value = true;
+    } catch (e) {
+      debugPrint('[naver_map] 초기화 실패, 대체 지도로 전환: $e');
+      naverMapFallbackReason.value = '네이버 SDK 초기화 실패: $e';
+    }
+  }
   runApp(const TakeMeDriverApp());
 }
 
