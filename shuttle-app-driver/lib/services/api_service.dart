@@ -39,6 +39,15 @@ void throwIfServerError(http.Response res) {
   }
 }
 
+/// 예전 기관 공지사항 방("공지사항"/"실시간 알림 채널")은 보여주지 않는다.
+/// 기관 전체 소식도 TakeMe 알림(개인 알림방)으로 오므로 같은 역할의 방이 둘일 필요가 없다.
+/// (서버도 더 이상 이 방을 내려주지 않지만, 서버 배포 전에도 앱에서 바로 숨긴다)
+bool isOldNoticeRoom(Map<String, dynamic> r) {
+  final type = r['type']?.toString();
+  final name = r['name']?.toString() ?? '';
+  return type == 'NOTIFICATION_SYSTEM' && name != 'TakeMe 알림';
+}
+
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
@@ -780,7 +789,7 @@ class ApiService {
       if (res.statusCode == 200) {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
         if (data is List) {
-          return data.cast<Map<String, dynamic>>();
+          return data.cast<Map<String, dynamic>>().where((r) => !isOldNoticeRoom(r)).toList();
         }
       }
     } catch (e) {
