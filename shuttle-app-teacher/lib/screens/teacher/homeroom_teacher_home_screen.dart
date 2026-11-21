@@ -201,7 +201,7 @@ class _HomeroomTeacherHomeScreenState extends State<HomeroomTeacherHomeScreen> {
       case 3:
         return '통학 변동 현황';
       case 4:
-        return '실시간 메신저';
+        return '대화방 & 메시지';
       default:
         return '담임교사 홈';
     }

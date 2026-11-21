@@ -38,8 +38,7 @@ class ParentChatRoomListScreen extends StatefulWidget {
   State<ParentChatRoomListScreen> createState() => _ParentChatRoomListScreenState();
 }
 
-class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> {
   List<ChatRoomModel> _rooms = [];
   bool _isLoading = true;
   String? _loadError; // 채팅방 목록 불러오기 실패 이유 (null 이면 정상)
@@ -51,16 +50,9 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _myEmail = ApiService().currentUser?.email ?? 'parent@takeme.com';
     _loadRooms();
     _loadContacts();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadContacts() async {
@@ -189,12 +181,6 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
     }
   }
 
-  List<ChatRoomModel> get _directRooms =>
-      _rooms.where((r) => r.type == 'DIRECT' || r.type == 'NOTIFICATION_SYSTEM').toList();
-
-  List<ChatRoomModel> get _groupRooms =>
-      _rooms.where((r) => r.type == 'GROUP').toList();
-
   Future<void> _openDirectRoom({
     required String name,
     required int targetUserId,
@@ -236,10 +222,15 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
     required String groupName,
     required List<int> userIds,
   }) async {
-    // 이미 같은 이름의 그룹방이 있는지 확인
-    for (final room in _groupRooms) {
-      if (room.name == groupName) {
-        _enterRoom(room.id, room.name, '그룹 대화방', '${room.members.length}명 참여 중', isGroup: true, memberCount: room.members.length);
+    // 같은 사람들과 만든 그룹방이 이미 있으면 그 방으로 들어간다
+    final wanted = userIds.toSet();
+    for (final room in _rooms.where((r) => r.type == 'GROUP')) {
+      final others = room.members
+          .where((m) => m.email.toLowerCase() != (_myEmail ?? '').toLowerCase())
+          .map((m) => m.userId)
+          .toSet();
+      if (others.length == wanted.length && others.containsAll(wanted)) {
+        _enterRoom(room.id, room.name, '그룹 채팅', '${room.members.length}명 참여 중', isGroup: true, memberCount: room.members.length);
         return;
       }
     }
@@ -256,12 +247,12 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
       final newRoomId = res['data']['id'] as int;
       if (mounted) {
         _loadRooms();
-        _enterRoom(newRoomId, groupName, '그룹 대화방', '${userIds.length + 1}명 참여 중', isGroup: true, memberCount: userIds.length + 1);
+        _enterRoom(newRoomId, groupName, '그룹 채팅', '${userIds.length + 1}명 참여 중', isGroup: true, memberCount: userIds.length + 1);
       }
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res['message'] ?? '그룹 대화방 생성에 실패했습니다.')),
+          SnackBar(content: Text(res['message'] ?? '그룹 채팅방을 만들지 못했습니다.')),
         );
       }
     }
@@ -283,9 +274,12 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
     ).then((_) => _loadRooms());
   }
 
-  /// 1:1 채팅할 사람 선택 바텀시트
+  /// 대화 상대 선택 바텀시트: 체크박스로 여러 명을 고른다.
+  /// 1명이면 1:1 대화, 2명 이상이면 그룹 채팅방을 만든다.
   void _showContactPicker() {
     if (_contacts.isEmpty) _loadContacts();
+    final Set<int> selectedIds = {};
+    final nameCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -304,9 +298,11 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
                   c.description.contains(searchQuery);
               return matchCat && matchQuery;
             }).toList();
+            final selected = _contacts.where((c) => selectedIds.contains(c.userId)).toList();
 
             return Container(
-              height: MediaQuery.of(context).size.height * 0.75,
+              height: MediaQuery.of(context).size.height * 0.82,
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -321,13 +317,15 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('1:1 대화 상대 선택', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                            SizedBox(height: 2),
-                            Text('대화할 선생님, 원장님, 기사님 또는 학부모님을 선택하세요.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                          ],
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('대화 상대 선택', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                              SizedBox(height: 2),
+                              Text('여러 명을 선택하면 그룹 채팅방이 만들어져요.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                            ],
+                          ),
                         ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
@@ -379,19 +377,7 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
                   // 목록
                   Expanded(
                     child: _isLoadingContacts && _contacts.isEmpty
-                        ? const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                CircularProgressIndicator(),
-                                SizedBox(height: 12),
-                                Text(
-                                  '교직원, 학부모 및 기사님 명단을 불러오는 중입니다...',
-                                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                                ),
-                              ],
-                            ),
-                          )
+                        ? const Center(child: CircularProgressIndicator())
                         : (_contactsError != null && _contacts.isEmpty)
                             ? Center(
                                 child: Column(
@@ -421,70 +407,101 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
                                   ],
                                 ),
                               )
-                        : filteredContacts.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  '검색된 담당자가 없습니다.',
-                                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                                ),
-                              )
-                            : ListView.separated(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            itemCount: filteredContacts.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final contact = filteredContacts[index];
-                              return InkWell(
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  _openDirectRoom(
-                                    name: contact.name,
-                                    targetUserId: contact.userId,
-                                    roleName: contact.roleTitle,
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      CircleAvatar(
-                                        backgroundColor: contact.bgColor,
-                                        child: Icon(contact.icon, color: contact.themeColor, size: 20),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Text(contact.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
-                                                const SizedBox(width: 6),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(color: contact.bgColor, borderRadius: BorderRadius.circular(6)),
-                                                  child: Text(contact.roleTitle, style: TextStyle(color: contact.themeColor, fontSize: 10, fontWeight: FontWeight.bold)),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(contact.description, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                          ],
+                            : filteredContacts.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      '검색된 대화 상대가 없습니다.',
+                                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                    itemCount: filteredContacts.length,
+                                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                                    itemBuilder: (context, index) {
+                                      final c = filteredContacts[index];
+                                      final isChecked = selectedIds.contains(c.userId);
+                                      return CheckboxListTile(
+                                        value: isChecked,
+                                        onChanged: (val) => setModalState(() {
+                                          if (val == true) {
+                                            selectedIds.add(c.userId);
+                                          } else {
+                                            selectedIds.remove(c.userId);
+                                          }
+                                        }),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          side: BorderSide(color: isChecked ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0)),
                                         ),
-                                      ),
-                                      const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF2563EB), size: 20),
-                                    ],
+                                        tileColor: isChecked ? const Color(0xFFEFF6FF) : Colors.white,
+                                        activeColor: const Color(0xFF2563EB),
+                                        secondary: CircleAvatar(
+                                          backgroundColor: c.bgColor,
+                                          radius: 18,
+                                          child: Icon(c.icon, color: c.themeColor, size: 18),
+                                        ),
+                                        title: Text(c.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                        subtitle: Text(c.roleTitle, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                                      );
+                                    },
                                   ),
-                                ),
-                              );
-                            },
+                  ),
+                  // 2명 이상이면 그룹 채팅방 이름 (비우면 참여자 이름으로)
+                  if (selected.length >= 2)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: TextField(
+                        controller: nameCtrl,
+                        decoration: InputDecoration(
+                          labelText: '그룹 채팅방 이름 (선택)',
+                          hintText: _autoGroupName(selected),
+                          isDense: true,
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                        ),
+                      ),
+                    ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.pop(ctx);
+                                  if (selected.length == 1) {
+                                    final c = selected.first;
+                                    _openDirectRoom(name: c.name, targetUserId: c.userId, roleName: c.roleTitle);
+                                  } else {
+                                    final typed = nameCtrl.text.trim();
+                                    _openOrCreateGroupRoom(
+                                      groupName: typed.isNotEmpty ? typed : _autoGroupName(selected),
+                                      userIds: selected.map((c) => c.userId).toList(),
+                                    );
+                                  }
+                                },
+                          icon: Icon(selected.length >= 2 ? Icons.groups_rounded : Icons.chat_bubble_rounded, color: Colors.white),
+                          label: Text(
+                            selected.isEmpty
+                                ? '대화할 상대를 선택하세요'
+                                : (selected.length == 1 ? '${selected.first.name}와 대화하기' : '${selected.length}명과 그룹 채팅 시작'),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                           ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            disabledBackgroundColor: const Color(0xFFCBD5E1),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -492,132 +509,74 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
           },
         );
       },
-    );
+    ).whenComplete(nameCtrl.dispose);
   }
 
-  /// 그룹 대화방 만들기 바텀시트
-  void _showCreateGroupRoomModal() {
-    if (_contacts.isEmpty) _loadContacts();
-    final nameCtrl = TextEditingController(text: '우리 반 학부모 모임');
-    final Set<int> selectedUserIds = {};
+  /// 그룹 채팅방 기본 이름: "김선생님, 박기사님 외 2명"
+  String _autoGroupName(List<ChatContact> members) {
+    final names = members.map((c) => c.name).toList();
+    if (names.length <= 3) return names.join(', ');
+    return '${names.take(2).join(', ')} 외 ${names.length - 2}명';
+  }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          height: MediaQuery.of(context).size.height * 0.82,
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            top: 16,
-            left: 20,
-            right: 20,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(width: 40, height: 4, decoration: BoxDecoration(color: const Color(0xFFCBD5E1), borderRadius: BorderRadius.circular(2))),
+  /// 알림 방(TakeMe 알림·공지사항)은 맨 위에 고정, 그 아래 1:1·그룹 대화를 함께 보여준다
+  Widget _buildRoomsList() {
+    final notiRooms = _rooms.where((r) => r.type == 'NOTIFICATION_SYSTEM').toList()
+      ..sort((a, b) => (a.name == 'TakeMe 알림' ? 0 : 1).compareTo(b.name == 'TakeMe 알림' ? 0 : 1));
+    final chatRooms = _rooms.where((r) => r.type == 'DIRECT' || r.type == 'GROUP').toList();
+
+    return RefreshIndicator(
+      onRefresh: _loadRooms,
+      color: const Color(0xFF2563EB),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // 대화 상대 선택하기
+          InkWell(
+            onTap: _showContactPicker,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFBFDBFE), width: 1.5),
               ),
-              const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: const Row(
                 children: [
-                  const Text('새 그룹 대화방 만들기', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
-                    onPressed: () => Navigator.pop(ctx),
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Color(0xFFEFF6FF),
+                    child: Icon(Icons.person_search_rounded, color: Color(0xFF2563EB), size: 24),
                   ),
+                  SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('대화 상대 선택하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                        SizedBox(height: 2),
+                        Text('한 명은 1:1 대화, 여러 명은 그룹 채팅', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF2563EB), size: 14),
                 ],
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: nameCtrl,
-                decoration: InputDecoration(
-                  labelText: '그룹 대화방 이름',
-                  hintText: '예: 햇살반 학부모 모임, 1호차 등하원 대화방',
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                '참여할 멤버 선택 (${selectedUserIds.length}명 선택됨)',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: _contacts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 6),
-                  itemBuilder: (ctx, idx) {
-                    final c = _contacts[idx];
-                    final isChecked = selectedUserIds.contains(c.userId);
-                    return CheckboxListTile(
-                      value: isChecked,
-                      onChanged: (val) {
-                        setModalState(() {
-                          if (val == true) {
-                            selectedUserIds.add(c.userId);
-                          } else {
-                            selectedUserIds.remove(c.userId);
-                          }
-                        });
-                      },
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: isChecked ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0)),
-                      ),
-                      tileColor: isChecked ? const Color(0xFFEFF6FF) : Colors.white,
-                      activeColor: const Color(0xFF2563EB),
-                      secondary: CircleAvatar(
-                        backgroundColor: c.bgColor,
-                        radius: 18,
-                        child: Icon(c.icon, color: c.themeColor, size: 18),
-                      ),
-                      title: Text(c.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                      subtitle: Text('${c.roleTitle} · ${c.category}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: selectedUserIds.isEmpty
-                      ? null
-                      : () {
-                          final gName = nameCtrl.text.trim().isNotEmpty ? nameCtrl.text.trim() : '그룹 대화방';
-                          Navigator.pop(ctx);
-                          _openOrCreateGroupRoom(
-                            groupName: gName,
-                            userIds: selectedUserIds.toList(),
-                          );
-                        },
-                  icon: const Icon(Icons.groups_rounded, color: Colors.white),
-                  label: Text(
-                    selectedUserIds.isEmpty ? '참여 멤버를 1명 이상 선택하세요' : '${selectedUserIds.length}명과 그룹 대화방 만들기',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 16),
+          if (_loadError != null && _rooms.isEmpty)
+            // 불러오기에 실패했을 때 "대화 없음"으로 보이지 않게 이유를 알려준다
+            _buildEmptyState('대화 목록을 불러오지 못했습니다.', '$_loadError\n화면을 아래로 당겨 다시 시도해 주세요.')
+          else ...[
+            ...notiRooms.map((room) => _buildRoomCard(room, isGroup: false)),
+            if (chatRooms.isEmpty)
+              _buildEmptyState('진행 중인 대화가 없습니다.', '[대화 상대 선택하기]로 대화를 시작하세요.')
+            else
+              ...chatRooms.map((room) => _buildRoomCard(room, isGroup: room.type == 'GROUP')),
+          ],
+        ],
       ),
     );
   }
@@ -635,10 +594,7 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
           children: [
             Icon(Icons.chat_bubble_rounded, color: Color(0xFF2563EB), size: 22),
             SizedBox(width: 8),
-            Text(
-              '대화방 & 메시지',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
-            ),
+            Text('채팅방', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A))),
           ],
         ),
         actions: [
@@ -651,284 +607,10 @@ class _ParentChatRoomListScreenState extends State<ParentChatRoomListScreen> wit
             },
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: const Color(0xFF2563EB),
-          unselectedLabelColor: const Color(0xFF64748B),
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-          indicatorColor: const Color(0xFF2563EB),
-          indicatorWeight: 3,
-          tabs: [
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.person_rounded, size: 18),
-                  const SizedBox(width: 6),
-                  Text('1:1 대화 (${_directRooms.length})'),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.groups_rounded, size: 18),
-                  const SizedBox(width: 6),
-                  Text('그룹 채팅 (${_groupRooms.length})'),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildDirectRoomsTab(),
-                _buildGroupRoomsTab(),
-              ],
-            ),
-    );
-  }
-
-  /// 1:1 대화방 탭
-  Widget _buildDirectRoomsTab() {
-    return RefreshIndicator(
-      onRefresh: _loadRooms,
-      color: const Color(0xFF2563EB),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 상단 액션 카드
-          InkWell(
-            onTap: _showContactPicker,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFBFDBFE), width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(color: Color(0xFFEFF6FF), shape: BoxShape.circle),
-                    child: const Icon(Icons.person_search_rounded, color: Color(0xFF2563EB), size: 24),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('1:1 대화 상대 선택하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                        SizedBox(height: 2),
-                        Text('담임선생님, 원장님, 통학기사님과 안전한 1:1 상담', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF2563EB), size: 14),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('진행 중인 1:1 대화', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-              Text('총 ${_directRooms.length}개', style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-            ],
-          ),
-
-          const SizedBox(height: 10),
-
-          if (_loadError != null && _rooms.isEmpty)
-            // 불러오기에 실패했을 때 "대화 없음"으로 보이지 않게 이유를 알려준다
-            _buildEmptyState('대화 목록을 불러오지 못했습니다.', '$_loadError\n화면을 아래로 당겨 다시 시도해 주세요.')
-          else if (_directRooms.isEmpty)
-            _buildEmptyState('진행 중인 1:1 대화가 없습니다.', '상단 [1:1 대화 상대 선택하기]를 통해 대화를 시작하세요.')
-          else
-            ..._directRooms.map((room) => _buildRoomCard(room, isGroup: false)),
-        ],
-      ),
-    );
-  }
-
-  /// 그룹 채팅 탭
-  Widget _buildGroupRoomsTab() {
-    return RefreshIndicator(
-      onRefresh: _loadRooms,
-      color: const Color(0xFF2563EB),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 안내 문구: 버튼처럼 보이지 않게 회색 글자로만 보여준다
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, size: 18, color: Color(0xFF94A3B8)),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '반별 학부모 단톡방, 셔틀 호차 단톡방에서 함께 이야기할 수 있어요.',
-                    style: TextStyle(color: Color(0xFF64748B), fontSize: 14, height: 1.4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // 빠른 개설/참여 추천 카드
-          Row(
-            children: [
-              Expanded(
-                child: _buildQuickGroupCard(
-                  title: '우리 반 단톡방',
-                  subtitle: '담임선생님 & 학부모',
-                  icon: Icons.school_rounded,
-                  color: const Color(0xFF2563EB),
-                  bgColor: const Color(0xFFEFF6FF),
-                  onTap: () {
-                    final targetIds = _contacts
-                        .where((c) => c.category == '담임·교사' || c.category == '학부모')
-                        .map((c) => c.userId)
-                        .toList();
-                    _openOrCreateGroupRoom(
-                      groupName: '햇살반 학부모 단톡방',
-                      userIds: targetIds.isNotEmpty ? targetIds : [80, 330],
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildQuickGroupCard(
-                  title: '1호차 셔틀 단톡방',
-                  subtitle: '기사님 & 통학부모',
-                  icon: Icons.directions_bus_rounded,
-                  color: const Color(0xFFD97706),
-                  bgColor: const Color(0xFFFFFBEB),
-                  onTap: () {
-                    final targetIds = _contacts
-                        .where((c) => c.category == '통학차량' || c.category == '학부모')
-                        .map((c) => c.userId)
-                        .toList();
-                    _openOrCreateGroupRoom(
-                      groupName: '1호차 셔틀 단톡방',
-                      userIds: targetIds.isNotEmpty ? targetIds : [88, 330],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // 직접 그룹방 개설 버튼
-          InkWell(
-            onTap: _showCreateGroupRoomModal,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF8B5CF6), width: 1.5),
-              ),
-              alignment: Alignment.center,
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add_circle_outline_rounded, color: Color(0xFF7C3AED), size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    '새 그룹 대화방 만들기',
-                    style: TextStyle(color: Color(0xFF7C3AED), fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('참여 중인 그룹 대화방', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-              Text('총 ${_groupRooms.length}개', style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-            ],
-          ),
-
-          const SizedBox(height: 10),
-
-          if (_groupRooms.isEmpty)
-            _buildEmptyState('참여 중인 그룹 대화방이 없습니다.', '위의 추천 단톡방 또는 [새 그룹 대화방 만들기]로 소통을 시작하세요.')
-          else
-            ..._groupRooms.map((room) => _buildRoomCard(room, isGroup: true)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickGroupCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required Color bgColor,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                  Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+          : _buildRoomsList(),
     );
   }
 

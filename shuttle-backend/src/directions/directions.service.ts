@@ -92,17 +92,6 @@ export class DirectionsService {
     const naverClientSecret = this.config.get<string>('NAVER_CLIENT_SECRET') || this.config.get<string>('NCP_CLIENT_SECRET');
     const kakaoApiKey = this.config.get<string>('KAKAO_REST_API_KEY');
 
-    const tryKakao = async () => {
-      if (kakaoApiKey && typeof this.http?.post === 'function') {
-        try {
-          return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
-        } catch (err: any) {
-          this.logger.warn(`[directions] Kakao 길찾기 호출 실패: ${err?.message}`);
-        }
-      }
-      return null;
-    };
-
     const tryNaver = async () => {
       if (naverClientId && naverClientSecret && typeof this.http?.get === 'function' && naverClientId !== 'TEST_KEY') {
         try {
@@ -114,28 +103,13 @@ export class DirectionsService {
       return null;
     };
 
-    // 5단계: 안전 경로는 카카오(추천 + 유턴 회피) 우선 시도 후 실패 시 네이버,
-    // 빠른 경로는 네이버(최단시간 trafast) 우선 시도 후 실패 시 카카오
-    if (mode === 'safe') {
-      if (kakaoApiKey && typeof this.http?.post === 'function') {
-        try {
-          return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
-        } catch (kakaoErr: any) {
-          this.logger.warn(`[directions] Kakao 길찾기 호출 실패: ${kakaoErr?.message}`);
-          const naverResult = await tryNaver();
-          if (naverResult) return naverResult;
-          throw kakaoErr;
-        }
-      }
-      const naverResult = await tryNaver();
-      if (naverResult) return naverResult;
-    } else {
-      const naverResult = await tryNaver();
-      if (naverResult) return naverResult;
+    // 1. 네이버 길찾기 우선 (안전 경로 traoptimal, 빠른 경로 trafast)
+    const naverResult = await tryNaver();
+    if (naverResult) return naverResult;
 
-      if (kakaoApiKey && typeof this.http?.post === 'function') {
-        return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
-      }
+    // 2. 네이버 키가 없거나 실패하면(경유지 15개 초과 등) 카카오 길찾기
+    if (kakaoApiKey && typeof this.http?.post === 'function') {
+      return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
     }
 
     // 3. 직선 보간 안전 폴백 (API 키 미설정 시)

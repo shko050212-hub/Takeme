@@ -15,7 +15,6 @@ class BoardCommunityScreen extends StatefulWidget {
 class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
   List<Map<String, dynamic>> _posts = [];
   bool _isLoading = true;
-  String _selectedCategory = 'ALL'; // 'ALL', 'NOTICE', 'ALBUM', 'COMMUNITY'
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
@@ -56,25 +55,6 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
     }
   }
 
-  List<Map<String, dynamic>> get _filteredPosts {
-    return _posts.where((p) {
-      final title = (p['title'] ?? '').toString();
-      final authorRole = (p['authorRole'] ?? '').toString();
-
-      final List<dynamic> images = p['images'] is List ? p['images'] : [];
-      final hasImage = (p['imageUrl'] != null && p['imageUrl'].toString().isNotEmpty) || images.isNotEmpty;
-
-      if (_selectedCategory == 'NOTICE') {
-        return authorRole == 'ADMIN' || authorRole == 'ACADEMY_ADMIN' || title.contains('공지');
-      } else if (_selectedCategory == 'ALBUM') {
-        return hasImage;
-      } else if (_selectedCategory == 'COMMUNITY') {
-        return authorRole == 'PARENT' || !title.contains('공지');
-      }
-      return true;
-    }).toList();
-  }
-
   void _openDetail(Map<String, dynamic> post) {
     Navigator.push(
       context,
@@ -82,135 +62,6 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
         builder: (_) => BoardDetailScreen(post: post),
       ),
     ).then((_) => _loadPosts());
-  }
-
-  void _showCreatePostModal() {
-    final titleCtrl = TextEditingController();
-    final contentCtrl = TextEditingController();
-    String category = '자유게시판';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-            top: 20,
-            left: 20,
-            right: 20,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      '게시판 글쓰기',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: ['자유게시판', '육아 나눔', '학부모 질문'].map((cat) {
-                    final isSel = category == cat;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(cat, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF475569), fontSize: 12)),
-                        selected: isSel,
-                        selectedColor: const Color(0xFF2563EB),
-                        backgroundColor: const Color(0xFFF1F5F9),
-                        onSelected: (_) => setModalState(() => category = cat),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: titleCtrl,
-                  decoration: InputDecoration(
-                    hintText: '제목을 입력해주세요',
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: contentCtrl,
-                  maxLines: 5,
-                  decoration: InputDecoration(
-                    hintText: '원아 생활, 육아 정보 나눔, 문의사항 등을 자유롭게 작성해주세요.',
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final title = titleCtrl.text.trim();
-                      final content = contentCtrl.text.trim();
-                      if (title.isEmpty || content.isEmpty) return;
-
-                      final user = ApiService().currentUser;
-                      final res = await ApiService().createBoardPost(
-                        title: '[$category] $title',
-                        content: content,
-                        authorName: user?.name ?? '학부모님',
-                        authorRole: 'PARENT',
-                        academyId: user?.academyId,
-                        visibility: 'ALL',
-                      );
-
-                      if (ctx.mounted) {
-                        Navigator.pop(ctx);
-                      }
-                      if (mounted) {
-                        if (res['success'] == true) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('게시글이 등록되었습니다.'), backgroundColor: Color(0xFF10B981)),
-                          );
-                          _loadPosts();
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(res['message'] ?? '게시글 등록 실패'), backgroundColor: Colors.red),
-                          );
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2563EB),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('게시글 등록하기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -222,13 +73,27 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
         elevation: 0,
         backgroundColor: Colors.white,
         centerTitle: false,
-        title: const Row(
+        // 알림장 화면과 같은 모양의 제목 배지
+        title: Row(
           children: [
-            Icon(Icons.dashboard_outlined, color: Color(0xFF2563EB), size: 22),
-            SizedBox(width: 8),
-            Text(
-              '원 게시판 & 소식',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.dashboard_outlined, color: Color(0xFF2563EB), size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    '우리 반 게시판 & 소식',
+                    style: TextStyle(color: Color(0xFF1E40AF), fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -247,17 +112,11 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
           child: Container(color: const Color(0xFFF1F5F9), height: 1),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreatePostModal,
-        backgroundColor: const Color(0xFF2563EB),
-        icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
-        label: const Text('글쓰기', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
           : Column(
               children: [
-                // 검색바 & 카테고리
+                // 검색바
                 Container(
                   color: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -296,22 +155,6 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      // 카테고리 칩
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _buildCatChip('ALL', '전체 (${_posts.length})'),
-                            const SizedBox(width: 8),
-                            _buildCatChip('NOTICE', '📢 공지사항'),
-                            const SizedBox(width: 8),
-                            _buildCatChip('ALBUM', '📸 원아 앨범'),
-                            const SizedBox(width: 8),
-                            _buildCatChip('COMMUNITY', '💬 학부모 소통'),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -323,7 +166,7 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
                   child: RefreshIndicator(
                     onRefresh: _loadPosts,
                     color: const Color(0xFF2563EB),
-                    child: _filteredPosts.isEmpty
+                    child: _posts.isEmpty
                         ? Center(
                             child: SingleChildScrollView(
                               physics: const AlwaysScrollableScrollPhysics(),
@@ -345,7 +188,7 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   const Text(
-                                    '우측 하단 [글쓰기]를 눌러 첫 게시글을 작성해보세요.',
+                                    '유치원에서 올린 글이 여기에 표시됩니다.',
                                     style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                                   ),
                                 ],
@@ -354,37 +197,14 @@ class _BoardCommunityScreenState extends State<BoardCommunityScreen> {
                           )
                         : ListView.separated(
                             padding: const EdgeInsets.all(16),
-                            itemCount: _filteredPosts.length,
+                            itemCount: _posts.length,
                             separatorBuilder: (_, __) => const SizedBox(height: 12),
-                            itemBuilder: (ctx, idx) => _buildPostCard(_filteredPosts[idx]),
+                            itemBuilder: (ctx, idx) => _buildPostCard(_posts[idx]),
                           ),
                   ),
                 ),
               ],
             ),
-    );
-  }
-
-  Widget _buildCatChip(String value, String label) {
-    final isSelected = _selectedCategory == value;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedCategory = value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isSelected ? Colors.transparent : const Color(0xFFE2E8F0)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? Colors.white : const Color(0xFF475569),
-          ),
-        ),
-      ),
     );
   }
 

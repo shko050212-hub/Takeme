@@ -26,10 +26,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   RouteDataModel? _routeData;
 
   bool _isLoading = true;
-  bool _isDriverOperating = false;
-  String? _escortName;
-  String? _escortConfirmedAt;
-  bool _isCheckingIn = false;
   int _unreadNotificationCount = 0;
   int _unreadChatCount = 0;
   Timer? _notificationPollTimer;
@@ -133,19 +129,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       }
     }
 
-    // 동승 확인(escort) 상태
-
-    try {
-      final escortUrl = Uri.parse('${AppConfig.apiHost}/teacher/escort/status');
-      final eRes = await ApiService().getWithAuth(escortUrl);
-      if (eRes.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(eRes.bodyBytes)) as Map<String, dynamic>;
-        _isDriverOperating = data['operating'] == true;
-        _escortName = data['escortName'];
-        _escortConfirmedAt = data['confirmedAt'];
-      }
-    } catch (_) {}
-
     if (mounted) {
       setState(() {
         _students = students;
@@ -175,7 +158,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             setState(() {
               _busLat = lat;
               _busLng = lng;
-              _isDriverOperating = true;
             });
           }
         });
@@ -188,66 +170,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           });
         });
       }
-    }
-  }
-
-  Future<void> _handleEscortCheckIn() async {
-    if (!_isDriverOperating) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('기사님이 운행을 시작하면 누를 수 있어요'),
-          backgroundColor: Color(0xFFEA580C),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isCheckingIn = true);
-    try {
-      final url = Uri.parse('${AppConfig.apiHost}/teacher/escort/check-in');
-      final res = await ApiService().postWithAuth(url, jsonEncode({}));
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes));
-        setState(() {
-          _escortName = data['escortName'] ?? ApiService().currentUser?.name;
-          _escortConfirmedAt = data['confirmedAt'] ?? DateTime.now().toIso8601String();
-        });
-        _flutterTts.speak('동승 확인이 완료되었습니다.');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('동승 확인이 완료되었습니다.'),
-              backgroundColor: Color(0xFF10B981),
-            ),
-          );
-        }
-      } else if (res.statusCode == 409) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('기사님이 운행을 시작하면 누를 수 있어요'),
-              backgroundColor: Color(0xFFEA580C),
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('동승 확인 처리 실패 (${res.statusCode})'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('네트워크 오류: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isCheckingIn = false);
     }
   }
 
@@ -817,18 +739,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     }
   }
 
-  String _formatTime(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      return '$h:$m';
-    } catch (_) {
-      return iso;
-    }
-  }
-
   /// 성별 표시: 서버 값이 MALE/FEMALE/M/F/남/여 어느 것이어도 '남'/'여'로
   String _genderKr(String g) {
     final v = g.trim().toUpperCase();
@@ -1133,14 +1043,26 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                       ),
                     ],
                   ),
-                  if (st.allergies.isNotEmpty)
-                    noteBox('알레르기: ${st.allergies}', const Color(0xFFB91C1C), const Color(0xFFFEF2F2), Icons.warning_amber_rounded),
-                  if (st.parentMessage != null && st.parentMessage!.isNotEmpty)
-                    noteBox('학부모 메시지: ${st.parentMessage}', const Color(0xFF1E40AF), const Color(0xFFEFF6FF), Icons.chat_bubble_outline),
-                  if (st.teacherMemo != null && st.teacherMemo!.isNotEmpty)
-                    noteBox('교사 메모: ${st.teacherMemo}', const Color(0xFF92400E), const Color(0xFFFFFBEB), Icons.sticky_note_2_outlined),
-                  if (!_hasNote(st))
-                    noteBox('등록된 특이사항이 없습니다.', const Color(0xFF64748B), const Color(0xFFF1F5F9), Icons.info_outline),
+                  // 특이사항 칸을 누르면 바로 메모 쓰기
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showStudentMemoDialog(st);
+                    },
+                    child: Column(
+                      children: [
+                        if (st.allergies.isNotEmpty)
+                          noteBox('알레르기: ${st.allergies}', const Color(0xFFB91C1C), const Color(0xFFFEF2F2), Icons.warning_amber_rounded),
+                        if (st.parentMessage != null && st.parentMessage!.isNotEmpty)
+                          noteBox('학부모 메시지: ${st.parentMessage}', const Color(0xFF1E40AF), const Color(0xFFEFF6FF), Icons.chat_bubble_outline),
+                        if (st.teacherMemo != null && st.teacherMemo!.isNotEmpty)
+                          noteBox('교사 메모: ${st.teacherMemo}', const Color(0xFF92400E), const Color(0xFFFFFBEB), Icons.sticky_note_2_outlined),
+                        if (!_hasNote(st))
+                          noteBox('등록된 특이사항이 없습니다. 눌러서 메모를 쓰세요.', const Color(0xFF64748B), const Color(0xFFF1F5F9), Icons.edit_note),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
 
                   // 처리 버튼: 상태마다 할 수 있는 동작만 보여준다
@@ -1488,65 +1410,6 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Row(
               children: [
-                // Escort Button / Badge
-                Expanded(
-                  child: _escortConfirmedAt != null
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF86EFAC)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.verified, size: 18, color: Color(0xFF15803D)),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Tooltip(
-                                  message: _escortName != null && _escortName!.isNotEmpty ? '동승자: $_escortName' : '',
-                                  child: Text(
-                                    '동승 확인됨 · ${_formatTime(_escortConfirmedAt)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 13,
-                                      color: Color(0xFF15803D),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ElevatedButton.icon(
-                          onPressed: _isCheckingIn ? null : _handleEscortCheckIn,
-                          icon: _isCheckingIn
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.airline_seat_recline_normal, color: Colors.white, size: 18),
-                          label: const Text(
-                            '동승 시작',
-                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Colors.white),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isDriverOperating ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            elevation: 0,
-                          ),
-                        ),
-                ),
-
-                const SizedBox(width: 8),
-
                 // 단체 메시지
                 Expanded(
                   child: ElevatedButton.icon(

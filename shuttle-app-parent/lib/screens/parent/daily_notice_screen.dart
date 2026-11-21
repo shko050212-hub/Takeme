@@ -20,13 +20,30 @@ class DailyNoticeScreen extends StatefulWidget {
 class _DailyNoticeScreenState extends State<DailyNoticeScreen> {
   List<Map<String, dynamic>> _notices = [];
   bool _isLoading = true;
-  String _selectedFilter = 'ALL'; // 'ALL', 'TODAY', 'IMPORTANT'
   final Set<int> _confirmedNoticeIds = {}; // 확인 완료한 알림장 ID
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadNotices();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// 검색어가 제목·내용·작성자에 들어 있는 알림장만
+  List<Map<String, dynamic>> get _shownNotices {
+    if (_searchQuery.isEmpty) return _notices;
+    final q = _searchQuery.toLowerCase();
+    return _notices.where((n) {
+      final text = '${n['title'] ?? ''} ${n['content'] ?? ''} ${n['authorName'] ?? ''}'.toLowerCase();
+      return text.contains(q);
+    }).toList();
   }
 
   Future<void> _loadNotices() async {
@@ -60,17 +77,6 @@ class _DailyNoticeScreenState extends State<DailyNoticeScreen> {
     } catch (_) {
       return dateVal.toString();
     }
-  }
-
-  List<Map<String, dynamic>> get _filteredNotices {
-    if (_selectedFilter == 'IMPORTANT') {
-      return _notices.where((n) {
-        final title = (n['title'] ?? '').toString();
-        final content = (n['content'] ?? '').toString();
-        return title.contains('중요') || title.contains('필독') || content.contains('준비물') || n['visibility'] == 'CLASS';
-      }).toList();
-    }
-    return _notices;
   }
 
   void _openDetail(Map<String, dynamic> notice) {
@@ -214,19 +220,50 @@ class _DailyNoticeScreenState extends State<DailyNoticeScreen> {
 
                   const SizedBox(height: 14),
 
-                  // 필터 탭
-                  Row(
-                    children: [
-                      _buildFilterChip('ALL', '전체 알림장 (${_notices.length})'),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('IMPORTANT', '⭐ 중요·준비물'),
-                    ],
+                  // 검색창
+                  Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      textInputAction: TextInputAction.search,
+                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                      decoration: InputDecoration(
+                        hintText: '알림장 제목, 내용 검색',
+                        hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                        prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFF64748B)),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF94A3B8)),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 14),
 
                   // 알림장 피드 목록
-                  if (_filteredNotices.isEmpty)
+                  if (_shownNotices.isEmpty && _searchQuery.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: Text(
+                        "'$_searchQuery' 검색 결과가 없습니다.",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                      ),
+                    )
+                  else if (_notices.isEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 60),
                       alignment: Alignment.center,
@@ -262,35 +299,10 @@ class _DailyNoticeScreenState extends State<DailyNoticeScreen> {
                       ),
                     )
                   else
-                    ..._filteredNotices.map((notice) => _buildNoticeCard(notice)),
+                    ..._shownNotices.map((notice) => _buildNoticeCard(notice)),
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _buildFilterChip(String value, String label) {
-    final isSelected = _selectedFilter == value;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedFilter = value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF0F172A) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? Colors.white : const Color(0xFF64748B),
-          ),
-        ),
-      ),
     );
   }
 

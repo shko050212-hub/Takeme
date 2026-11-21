@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -59,11 +58,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
   final FlutterTts _flutterTts = FlutterTts();
   Timer? _ticker;
 
-  String? _escortName;
-  String? _escortConfirmedAt;
-  DateTime? _drivingStartTime;
-  bool _escort5MinWarned = false;
-  io_client.Socket? _escortSocket;
+  io_client.Socket? _eventSocket; // 통학 변경 승인·알림 이벤트를 받는 소켓
   String? _changeBannerText;
   Timer? _changeBannerTimer;
   int _unreadMessengerCount = 0; // 메신저 안 읽은 수 (TakeMe 알림 포함)
@@ -94,7 +89,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
     _flutterTts.setSpeechRate(0.5);
     _map = NavMapController();
     _nav = DriverNavigator(_map)..init();
-    _initEscortSocket();
+    _initEventSocket();
     _loadUnreadCount();
     SocketService().connect(ApiService().token); // 이미 연결돼 있으면 그대로 둔다 (리스너를 등록하려면 소켓이 먼저 필요)
     SocketService().onRoomUpdated((_) {
@@ -103,32 +98,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
     _notificationPollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadUnreadCount());
     _ticker = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted) return;
-      if (_nav.driving) {
-        _drivingStartTime ??= DateTime.now();
-        if (_escortConfirmedAt == null &&
-            !_escort5MinWarned &&
-            DateTime.now().difference(_drivingStartTime!).inMinutes >= 5) {
-          _escort5MinWarned = true;
-          _flutterTts.speak('주의: 운행 시작 5분이 지났으나 차량선생님 탑승 확인 전입니다.');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ 동승 확인 전: 운행 시작 5분이 경과했습니다. 차량선생님 탑승을 확인해 주세요.'),
-              backgroundColor: _C.orange,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-        setState(() {});
-      } else {
-        _drivingStartTime = null;
-        _escort5MinWarned = false;
-      }
+      if (_nav.driving) setState(() {});
     });
   }
 
-  void _initEscortSocket() {
+  void _initEventSocket() {
     final token = ApiService().token;
-    _escortSocket = io_client.io(
+    _eventSocket = io_client.io(
       AppConfig.apiHost,
       io_client.OptionBuilder()
           .setTransports(['websocket'])
@@ -138,26 +114,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
           .build(),
     );
 
-    _escortSocket!.onConnect((_) {
+    _eventSocket!.onConnect((_) {
       if (_nav.vehicleId != null) {
-        _escortSocket!.emit('joinVehicleRoom', {'vehicleId': _nav.vehicleId});
+        _eventSocket!.emit('joinVehicleRoom', {'vehicleId': _nav.vehicleId});
       }
-      _fetchEscortStatus();
     });
 
-    _escortSocket!.on('escortConfirmed', (data) {
-      if (!mounted) return;
-      _loadUnreadCount();
-      setState(() {
-        if (data is Map) {
-          _escortName = data['escortName']?.toString();
-          _escortConfirmedAt = data['confirmedAt']?.toString() ?? DateTime.now().toIso8601String();
-        }
-      });
-      _flutterTts.speak('동승 확인되었습니다: ${_escortName ?? "차량선생님"}');
-    });
-
-    _escortSocket!.on('changeRequestDecided', (data) {
+    _eventSocket!.on('changeRequestDecided', (data) {
       if (!mounted) return;
       _loadUnreadCount();
       if (data is Map) {
@@ -189,33 +152,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
       }
     });
 
-    _escortSocket!.on('notificationReceived', (_) {
+    _eventSocket!.on('notificationReceived', (_) {
       if (mounted) _loadUnreadCount();
     });
-  }
-
-  Future<void> _fetchEscortStatus() async {
-    try {
-      final vid = _nav.vehicleId;
-      final url = Uri.parse('${AppConfig.apiHost}/teacher/escort/status${vid != null ? '?vehicleId=$vid' : ''}');
-      final res = await ApiService().getWithAuth(url);
-      if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes));
-        if (mounted) {
-          setState(() {
-            _escortName = data['escortName'];
-            _escortConfirmedAt = data['confirmedAt'];
-          });
-        }
-      }
-    } catch (_) {}
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _nav.refreshOverlayPermission();
-      _fetchEscortStatus();
       _loadUnreadCount();
     }
   }
@@ -227,8 +172,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
     _notificationPollTimer?.cancel();
     _changeBannerTimer?.cancel();
     _flutterTts.stop();
-    _escortSocket?.disconnect();
-    _escortSocket = null;
+    _eventSocket?.disconnect();
+    _eventSocket = null;
     _nav.dispose();
     super.dispose();
   }
@@ -256,49 +201,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
   /// 운행 종료 확인 창 — 법적 의무인 "차량 내부 확인 완료" 체크 한 번을 거쳐야 종료 가능
   Future<void> _confirmStop() async {
     _map.setInteractive(false);
-
-    if (_escortConfirmedAt == null && !_nav.testMode) {
-      final proceedWithoutEscort = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => PointerInterceptor(
-          child: AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: _C.orange, size: 22),
-                SizedBox(width: 8),
-                Text('차량선생님 확인 전', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: _C.orange)),
-              ],
-            ),
-            content: const Text(
-              '차량선생님 탑승 확인이 완료되지 않았습니다.\n동승자 확인 없이 종료할까요?',
-              style: TextStyle(fontSize: 14, color: _C.slate800, height: 1.4),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('취소', style: TextStyle(color: _C.slate600, fontWeight: FontWeight.w700)),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _C.orange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('종료 진행', style: TextStyle(fontWeight: FontWeight.w800)),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (proceedWithoutEscort != true) {
-        _map.setInteractive(true);
-        return;
-      }
-      if (!mounted) return;
-    }
 
     bool interiorChecked = false;
     final ok = await showDialog<bool>(
@@ -763,8 +665,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
                 Positioned(left: 12, top: 146, child: _speedAndSafetyCluster()),
                 // 우측 상단: 길게 눌러 작동하는 SOS 긴급 버튼
                 Positioned(right: 12, top: 12, child: _sosLongPressButton()),
-                // 우측 상단 SOS 아래: 동승 확인 배지
-                Positioned(right: 12, top: 56, child: _escortBadge()),
               ],
               // 차량선생님 "출발하셔도 됩니다" 실시간 신호 배너
               if (_nav.driving && _nav.departSignalBanner != null)
@@ -966,47 +866,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
         ),
       ),
     );
-  }
-
-  /// 운행 중 차량선생님 탑승 확인 상태 배지
-  Widget _escortBadge() {
-    final confirmed = _escortConfirmedAt != null;
-    final timeStr = _escortConfirmedAt != null ? _formatEscortTime(_escortConfirmedAt!) : '';
-    final label = confirmed
-        ? '동승: ${_escortName ?? "교사"} $timeStr'
-        : '동승 확인 전';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: confirmed ? const Color(0xFF059669) : _C.orange,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white, width: 1.5),
-        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(confirmed ? Icons.verified : Icons.warning_amber_rounded, color: Colors.white, size: 14),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatEscortTime(String iso) {
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      return '$h:$m';
-    } catch (_) {
-      return iso;
-    }
   }
 
   Widget _menu() {

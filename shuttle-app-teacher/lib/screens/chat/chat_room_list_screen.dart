@@ -510,7 +510,7 @@ class _ChatRoomListScreenState extends State<ChatRoomListScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          '메신저 대화',
+          '대화방 & 메시지',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
         ),
         actions: [
