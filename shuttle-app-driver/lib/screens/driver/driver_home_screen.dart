@@ -1398,119 +1398,51 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with WidgetsBinding
     );
   }
 
-  /// 정류장 진행 패널 (하단 바 바로 위, 운전 중에도 읽히게 크게)
-  /// - 다음 정류장 / 남은 정류장 수 / 방금 도착한 정류장
-  /// - 정류장마다 도착(✓)·건너뜀(!)·남음(번호)을 색과 기호로 함께 표시
+  /// 정류장 진행 패널 (하단 바 바로 위): 한 줄로 작게
+  /// - 왼쪽: 다음 정류장 이름 (없으면 '유치원으로 이동')
+  /// - 오른쪽: 남은 정류장 수
   /// - 도착은 위치(GPS)로 자동 판정한다 (기사가 직접 누르는 도착 처리는 없다)
   Widget _stopProgressPanel() {
     final list = _nav.activeStops;
     if (list.isEmpty) return const SizedBox.shrink();
     final next = _nav.nextStop;
-    final current = _nav.currentStop;
     final remaining = _nav.remainingStopCount;
-    final skipped = _nav.skippedCount;
-
-    Widget dot(int i) {
-      final s = list[i];
-      final isNext = identical(s, next);
-      Color bg;
-      Widget child;
-      if (s.skipped) {
-        bg = _C.orange;
-        child = const Icon(Icons.priority_high, size: 16, color: Colors.white, semanticLabel: '건너뜀');
-      } else if (s.passed) {
-        bg = _C.green;
-        child = const Icon(Icons.check, size: 16, color: Colors.white, semanticLabel: '도착');
-      } else {
-        bg = isNext ? _C.blue : _C.slate300;
-        child = Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900));
-      }
-      return Container(
-        width: isNext ? 30 : 24,
-        height: isNext ? 30 : 24,
-        margin: const EdgeInsets.only(right: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: bg,
-          shape: BoxShape.circle,
-          border: isNext ? Border.all(color: _C.blueDark, width: 2) : null,
-        ),
-        child: child,
-      );
-    }
 
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, -2))],
       ),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(next != null ? '다음 정류장' : '정류장 완료',
-                        style: const TextStyle(fontSize: 14, color: _C.slate600, fontWeight: FontWeight.w700)),
-                    Text(
-                      next?.name ?? '유치원으로 이동',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: _C.slate800, height: 1.2),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(color: _C.blueBg, borderRadius: BorderRadius.circular(12)),
-                child: Text('남은 $remaining곳',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _C.blue)),
-              ),
-            ],
-          ),
-          if (current != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              '방금: ${current.name}',
+          Text(next != null ? '다음' : '완료',
+              style: const TextStyle(fontSize: 14, color: _C.slate600, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              next?.name ?? '유치원으로 이동',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 15, color: _C.slate600, fontWeight: FontWeight.w600),
-            ),
-          ],
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 32,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: list.length,
-              itemBuilder: (_, i) => Center(child: dot(i)),
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _C.slate800, height: 1.2),
             ),
           ),
-          if (skipped > 0) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded, size: 20, color: _C.orange),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '건너뛴 정류장 $skipped곳 · 계획 순서와 달라요',
-                    style: const TextStyle(fontSize: 15, color: _C.orange, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: _C.blueBg, borderRadius: BorderRadius.circular(10)),
+            child: Text.rich(
+              TextSpan(children: [
+                const TextSpan(text: '남은 ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                TextSpan(text: '$remaining', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                const TextSpan(text: '곳', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              ]),
+              style: const TextStyle(color: _C.blue, height: 1.1),
+              semanticsLabel: '남은 정류장 $remaining곳',
             ),
-          ],
-          const SizedBox(height: 10),
+          ),
         ],
       ),
     );

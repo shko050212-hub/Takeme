@@ -3780,39 +3780,91 @@ export class RoutingService {
     return { success: true };
   }
 
-  async toggleBoardPostLike(id: number, userIdStr?: string) {
-    const post = await this.getBoardPostById(id);
-    const uid = userIdStr || 'admin';
-    let liked = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
+  /**
+   * 좋아요 누르기/취소
+   * - 글을 볼 수 있는 사람만 가능 (다른 기관·다른 반 학부모는 getBoardPostById 에서 막힌다)
+   * - 누른 사람은 로그인 계정으로 정한다 (앱이 보낸 userId 는 로그인 정보가 없을 때만 사용)
+   */
+  async toggleBoardPostLike(id: number, viewer?: { sub?: number; role?: string; academyId?: number | null }, fallbackUid?: string) {
+    const post = await this.getBoardPostById(id, viewer);
+    const uid = viewer?.sub ? String(viewer.sub) : (fallbackUid || 'admin');
+    let liked = Array.isArray(post.likedUserIds) ? post.likedUserIds.map(String) : [];
     const exists = liked.includes(uid);
+    let likeCount = post.likeCount || 0;
     if (exists) {
       liked = liked.filter(u => u !== uid);
-      post.likeCount = Math.max(0, post.likeCount - 1);
+      likeCount = Math.max(0, likeCount - 1);
     } else {
       liked.push(uid);
-      post.likeCount = (post.likeCount || 0) + 1;
+      likeCount += 1;
     }
-    post.likedUserIds = liked;
-    await this.boardPostRepository.save(post);
-    return { likeCount: post.likeCount, isLiked: !exists };
+    // getBoardPostById 는 사진 주소를 임시 주소로 바꿔 돌려주므로, 글 전체를 저장하지 않고 좋아요 칸만 고친다
+    await this.boardPostRepository.update(id, { likedUserIds: liked, likeCount });
+    return { likeCount, isLiked: !exists };
   }
 
+  /**
+   * 댓글 쓰기
+   * - 글을 볼 수 있는 사람만 가능: 학부모는 전체 공개 글과 내 아이 반 글에만 쓸 수 있다
+   * - 학부모·학생 댓글은 표시 역할을 앱이 보낸 값과 상관없이 PARENT/STUDENT 로 고정한다 (교직원 사칭 방지)
+   */
   async addBoardComment(postId: number, body: {
     content: string;
     authorName?: string;
     authorRole?: string;
-  }) {
-    const post = await this.getBoardPostById(postId);
+  }, viewer?: { sub?: number; role?: string; academyId?: number | null }) {
+    const post = await this.getBoardPostById(postId, viewer);
+    const content = String(body?.content ?? '').trim();
+    if (!content) throw new BadRequestException('댓글 내용을 입력해 주세요.');
+    if (content.length > 1000) throw new BadRequestException('댓글은 1000자까지 쓸 수 있습니다.');
+
+    let authorName = (body?.authorName || '').toString().trim() || '원장선생님';
+    let authorRole = (body?.authorRole || '').toString().trim() || 'ADMIN';
+    if (viewer?.sub) {
+      const user = await this.userRepository.findOne({ where: { id: viewer.sub } });
+      if (user && (user.role === UserRole.PARENT || user.role === UserRole.STUDENT)) {
+        authorRole = user.role === UserRole.PARENT ? 'PARENT' : 'STUDENT';
+        authorName = ((body?.authorName || user.name || '학부모').toString().trim()).slice(0, 30);
+      } else if (user) {
+        if (!body?.authorName && user.name) authorName = user.name;
+        if (!body?.authorRole && user.role) authorRole = String(user.role);
+      }
+    }
+
     const comment = this.boardCommentRepository.create({
-      post,
-      content: body.content,
-      authorName: body.authorName || '원장선생님',
-      authorRole: body.authorRole || 'ADMIN',
-    } as any);
+      post: { id: post.id } as BoardPost,
+      content,
+      authorName: authorName.slice(0, 100),
+      authorRole: authorRole.slice(0, 50),
+      authorUserId: viewer?.sub ?? null,
+    });
     return this.boardCommentRepository.save(comment);
   }
 
-  async deleteBoardComment(commentId: number) {
+  /**
+   * 댓글 지우기
+   * - 학부모·학생: 본인이 쓴 댓글만
+   * - 교직원: 같은 기관 글의 댓글만 (최고관리자는 모두)
+   */
+  async deleteBoardComment(commentId: number, viewer?: { sub?: number; role?: string; academyId?: number | null }) {
+    const comment = await this.boardCommentRepository.findOne({
+      where: { id: commentId },
+      relations: { post: { academy: true } },
+    });
+    if (!comment) return { success: true };
+    if (viewer?.sub && viewer.role !== 'SUPER_ADMIN') {
+      const isFamily = viewer.role === UserRole.PARENT || viewer.role === UserRole.STUDENT;
+      if (isFamily) {
+        if (comment.authorUserId == null || Number(comment.authorUserId) !== Number(viewer.sub)) {
+          throw new ForbiddenException('본인이 쓴 댓글만 지울 수 있습니다.');
+        }
+      } else {
+        const postAcademyId = comment.post?.academy?.id;
+        if (postAcademyId && viewer.academyId && Number(postAcademyId) !== Number(viewer.academyId)) {
+          throw new ForbiddenException('다른 기관의 댓글은 지울 수 없습니다.');
+        }
+      }
+    }
     await this.boardCommentRepository.delete(commentId);
     return { success: true };
   }

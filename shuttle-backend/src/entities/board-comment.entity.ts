@@ -18,6 +18,10 @@ export class BoardComment {
   @Column({ type: 'text' })
   content: string;
 
+  // 댓글을 쓴 계정 (본인 댓글만 지울 수 있게 확인용). 예전 댓글은 비어 있다.
+  @Column({ type: 'int', nullable: true })
+  authorUserId: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

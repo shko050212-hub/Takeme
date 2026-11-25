@@ -28,4 +28,10 @@ export class DirectionsRequestDto {
     description: 'safe: 추천 경로 + 유턴 회피 (기본값), fast: 최단 시간',
   })
   mode?: RouteMode;
+
+  @ApiPropertyOptional({
+    example: 90,
+    description: '차량 진행 방향 (북쪽 0도 기준 시계방향 0~359). 운행 중 재탐색할 때만 보낸다.',
+  })
+  heading?: number;
 }

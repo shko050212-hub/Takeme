@@ -70,6 +70,24 @@ String formatDistance(double m) {
   return '${(m / 1000).toStringAsFixed(1)}km';
 }
 
+/// p 에서 [bearing] 방향(북쪽 0도, 시계 방향)으로 [meters] 만큼 떨어진 지점 (짧은 거리용 근사)
+GeoPoint offsetPoint(GeoPoint p, double bearing, double meters) {
+  const r = 6371000.0;
+  final b = _rad(bearing);
+  final dLat = meters * math.cos(b) / r;
+  final dLng = meters * math.sin(b) / (r * math.cos(_rad(p.lat)));
+  return GeoPoint(p.lat + dLat * 180 / math.pi, p.lng + dLng * 180 / math.pi);
+}
+
+/// 경로가 처음 [minMeters] 이상 나아가는 방향. 출발점 근처의 짧은 연결선에 흔들리지 않게 한다.
+double? startBearing(List<GeoPoint> path, {double minMeters = 25}) {
+  if (path.length < 2) return null;
+  for (var i = 1; i < path.length; i++) {
+    if (distanceM(path.first, path[i]) >= minMeters) return bearingDeg(path.first, path[i]);
+  }
+  return distanceM(path.first, path.last) > 3 ? bearingDeg(path.first, path.last) : null;
+}
+
 /// a → b 진행 방향 (북쪽 0도, 시계 방향)
 double bearingDeg(GeoPoint a, GeoPoint b) {
   final lat1 = _rad(a.lat), lat2 = _rad(b.lat), dLng = _rad(b.lng - a.lng);

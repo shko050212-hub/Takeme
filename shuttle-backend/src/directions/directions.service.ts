@@ -66,6 +66,11 @@ export class DirectionsService {
 
     const mode: RouteMode = req?.mode === 'fast' ? 'fast' : 'safe';
     const criteria = ROUTE_CRITERIA[mode];
+    // 차량 진행 방향 (카카오 길찾기 출발지 angle 로 전달, 네이버는 지원하지 않음)
+    const rawHeading = Number(req?.heading);
+    const heading = req?.heading != null && Number.isFinite(rawHeading)
+      ? ((Math.round(rawHeading) % 360) + 360) % 360
+      : undefined;
 
     // 출발지·도착지와 30m 이내로 중복되거나 연속 중복되는 경유지 자동 필터링
     const waypoints: LatLngDto[] = [];
@@ -113,7 +118,7 @@ export class DirectionsService {
 
     // 2. 네이버 키가 없거나 실패하면(경유지 15개 초과 등) 카카오 길찾기
     if (kakaoApiKey && typeof this.http?.post === 'function') {
-      return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey);
+      return await this.fetchKakaoRoute(origin, destination, waypoints, mode, kakaoApiKey, heading);
     }
 
     // 3. 직선 보간 안전 폴백 (API 키 미설정 시)
@@ -205,10 +210,12 @@ export class DirectionsService {
     waypoints: LatLngDto[],
     mode: RouteMode,
     apiKey: string,
+    heading?: number,
   ) {
     const criteria = ROUTE_CRITERIA[mode];
     const body = {
-      origin: { x: String(origin.lng), y: String(origin.lat) },
+      // angle: 출발지에서 차량이 향하는 방향. 주면 카카오가 차 방향을 고려해 출발 경로를 잡는다.
+      origin: { x: String(origin.lng), y: String(origin.lat), ...(heading !== undefined ? { angle: heading } : {}) },
       destination: { x: String(destination.lng), y: String(destination.lat) },
       waypoints: waypoints.map(w => ({ x: String(w.lng), y: String(w.lat) })),
       priority: criteria.priority,

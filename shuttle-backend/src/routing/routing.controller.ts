@@ -510,21 +510,21 @@ export class RoutingController {
   @Post('board/posts/:id/like')
   async toggleBoardPostLike(
     @Param('id') id: string,
+    @AuthUser() user?: JwtPayload,
     @Headers('x-user-id') userIdHeader?: string,
     @Body('userId') userIdBody?: string,
   ) {
-    const uid = userIdHeader || userIdBody;
-    return this.routingService.toggleBoardPostLike(Number(id), uid);
+    return this.routingService.toggleBoardPostLike(Number(id), user, userIdHeader || userIdBody);
   }
 
   @Post('board/posts/:id/comments')
-  async addBoardComment(@Param('id') id: string, @Body() body: any) {
-    return this.routingService.addBoardComment(Number(id), body);
+  async addBoardComment(@Param('id') id: string, @Body() body: any, @AuthUser() user?: JwtPayload) {
+    return this.routingService.addBoardComment(Number(id), body, user);
   }
 
   @Delete('board/posts/:postId/comments/:commentId')
-  async deleteBoardComment(@Param('commentId') commentId: string) {
-    return this.routingService.deleteBoardComment(Number(commentId));
+  async deleteBoardComment(@Param('commentId') commentId: string, @AuthUser() user?: JwtPayload) {
+    return this.routingService.deleteBoardComment(Number(commentId), user);
   }
 
   @Post('student/:id/note')

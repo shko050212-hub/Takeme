@@ -831,7 +831,7 @@ class DriverNavigator extends ChangeNotifier {
     return _RouteInput(remaining.sublist(0, remaining.length - 1), remaining.last.point);
   }
 
-  Future<RoutePlan> _fetchPlan(RouteMode m, GeoPoint origin, _RouteInput input) async {
+  Future<RoutePlan> _fetchPlan(RouteMode m, GeoPoint origin, _RouteInput input, {double? headingDeg}) async {
     var effectiveOrigin = origin;
     if (input.waypoints.isNotEmpty && distanceM(origin, input.destination) < 25) {
       effectiveOrigin = GeoPoint(origin.lat + 0.0002, origin.lng + 0.0002);
@@ -848,6 +848,7 @@ class DriverNavigator extends ChangeNotifier {
       'destination': input.destination.toJson(),
       'waypoints': input.waypoints.take(30).map((s) => s.point.toJson()).toList(),
       'mode': m.key,
+      if (headingDeg != null) 'heading': headingDeg.round() % 360,
     });
     if (raw is! Map<String, dynamic>) {
       throw NavException('경로 서버 응답 형식이 올바르지 않습니다.');
@@ -1031,8 +1032,15 @@ class DriverNavigator extends ChangeNotifier {
     rerouting = true;
     notifyListeners();
     try {
-      final plan = await _fetchPlan(mode, pos, input);
+      // 달리는 중이면 차가 향하는 방향을 함께 보내고, 뒤로 출발하는 경로는 한 번 더 따져 본다
+      final h = heading;
+      final moving = driving && speedKmh >= _movingKmh && h != null;
+      var plan = await _fetchPlan(mode, pos, input, headingDeg: moving ? h : null);
       if (seq != _routeSeq) return;
+      if (moving) {
+        plan = await _preferSensibleStart(plan, pos, h, input);
+        if (seq != _routeSeq) return;
+      }
       _activate(plan, fit: fit);
       routeWarning = null;
     } catch (e) {
@@ -1049,6 +1057,67 @@ class DriverNavigator extends ChangeNotifier {
     }
   }
 
+  // 재탐색 방향 판단 기준
+  static const double _movingKmh = 10; // 이 속도 이상일 때만 "앞으로 달리는 중"으로 본다
+  static const double _backwardDeg = 120; // 차 방향과 이만큼 어긋나면 "뒤로 출발하는 경로"
+  static const double _probeAheadM = 60; // 비교용으로 차 앞쪽 이만큼에서 다시 경로를 받는다
+  static const double _uTurnMinSavingS = 90; // 뒤로 도는 경로를 고르려면 최소 이만큼(초) 빨라야 한다
+  static const double _uTurnMinSavingRatio = 0.15; // …그리고 전체 시간의 15% 이상
+
+  /// 달리는 중인데 새 경로가 차 뒤쪽으로 출발하면(유턴·반대 방향), 차 앞쪽에서 출발하는 경로도 받아 비교한다.
+  /// - 유턴·반대 방향이 정말 빠르면(1분 30초 이상이면서 15% 이상) 그 경로를 그대로 쓴다.
+  /// - 앞쪽 출발 경로도 결국 뒤로 돌라고 하면(막다른 길 등) 그 경로가 맞으므로 그대로 쓴다.
+  /// - 그 밖에는 차가 가던 방향으로 이어지는 경로를 쓴다. (말도 안 되게 뒤로 돌리는 재탐색 방지)
+  Future<RoutePlan> _preferSensibleStart(RoutePlan plan, GeoPoint pos, double h, _RouteInput input) async {
+    final start = startBearing(plan.path);
+    if (start == null || _angleDiff(start, h) < _backwardDeg) return plan;
+
+    final ahead = offsetPoint(pos, h, _probeAheadM);
+    final RoutePlan fwd;
+    try {
+      fwd = await _fetchPlan(plan.mode, ahead, input, headingDeg: h);
+    } catch (e) {
+      debugPrint('[nav] 앞쪽 출발 경로 조회 실패, 받은 경로 사용: $e');
+      return plan;
+    }
+    final fwdStart = startBearing(fwd.path);
+    if (fwdStart != null && _angleDiff(fwdStart, h) >= _backwardDeg) {
+      debugPrint('[nav] 앞쪽에서 출발해도 뒤로 돌라고 함 → 유턴 경로 사용');
+      return plan;
+    }
+    final speedMps = math.max(3.0, speedKmh / 3.6);
+    final fwdTotalS = fwd.durationS + _probeAheadM / speedMps;
+    final savingS = fwdTotalS - plan.durationS;
+    if (savingS >= math.max(_uTurnMinSavingS, fwdTotalS * _uTurnMinSavingRatio)) {
+      debugPrint('[nav] 유턴 경로가 ${savingS.round()}초 빠름 → 유턴 경로 사용');
+      return plan;
+    }
+    debugPrint('[nav] 유턴 경로 이득 ${savingS.round()}초뿐 → 가던 방향 경로 사용');
+    return _withLeadIn(fwd, pos);
+  }
+
+  /// 앞쪽에서 받은 경로 앞에 현재 위치를 붙여, 차가 경로 시작점까지 자연스럽게 이어지게 한다.
+  RoutePlan _withLeadIn(RoutePlan p, GeoPoint pos) {
+    final path = [pos, ...p.path];
+    final leadM = distanceM(pos, p.path.first);
+    for (final g in p.guides) {
+      g.pathIndex += 1;
+    }
+    return RoutePlan(
+      mode: p.mode,
+      origin: pos,
+      path: path,
+      cum: cumulativeDistances(path),
+      guides: p.guides,
+      distanceM: p.distanceM + leadM,
+      durationS: p.durationS + leadM / math.max(3.0, speedKmh / 3.6),
+      turnCount: p.turnCount,
+      traffic: [for (final t in p.traffic) TrafficSegment(t.from + 1, t.to + 1, t.state)],
+      criteriaFromServer: p.criteriaFromServer,
+      provider: p.provider,
+    );
+  }
+
   double? _roadBearingAt(List<GeoPoint> path, int index) {
     if (path.length < 2) return null;
     final startIdx = math.min(math.max(index, 0), path.length - 1);
@@ -1062,8 +1131,12 @@ class DriverNavigator extends ChangeNotifier {
 
   void _activate(RoutePlan plan, {bool fit = false}) {
     active = plan;
+    // 달리는 중에는 실제 진행 방향(GPS)을 그대로 둔다.
+    // 새 경로의 첫 방향으로 덮어쓰면, 유턴 경로를 받았을 때 화살표가 뒤로 돌아
+    // 바로 "진행 방향 어긋남"으로 다시 재탐색하는 반복이 생긴다.
     final initialRoadHeading = _roadBearingAt(plan.path, 0);
-    if (initialRoadHeading != null) {
+    final keepGpsHeading = driving && speedKmh >= _movingKmh && heading != null;
+    if (initialRoadHeading != null && !keepGpsHeading) {
       heading = initialRoadHeading;
     }
     var from = 0;
