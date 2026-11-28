@@ -672,6 +672,13 @@ export class RoutingController {
     return this.routingService.saveLegalExpiry(vehicleId, body);
   }
 
+  @Post('legal-expiry/notify')
+  async notifyLegalExpiries(
+    @Body() body: { vehicleId?: number; academyId?: number; notifications?: any[]; force?: boolean },
+  ) {
+    return this.routingService.notifyLegalExpiries(body);
+  }
+
   @SetMetadata('isPublic', true)
   @Post('students/reset-absent')
   async resetAllAbsentStudents() {

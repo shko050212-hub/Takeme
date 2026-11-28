@@ -645,3 +645,39 @@ export function getStaffNotifications(role = 'all') {
     return [];
   }
 }
+
+/**
+ * 기사·교사 모바일 앱 및 관리자에게 법정 서류/안전 교육 만료 임박 푸시 알림 즉시 발송
+ */
+export async function sendStaffExpiryNotificationsToServer(notifications, academyId) {
+  try {
+    const list = notifications || getStaffNotifications('all');
+    if (!list || list.length === 0) {
+      return { success: false, message: '발송할 만료 임박 알림 내역이 없습니다.' };
+    }
+
+    const res = await fetch(`${API_BASE_URL}/routing/legal-expiry/notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        academyId: academyId && academyId !== 'all' ? Number(academyId) : undefined,
+        notifications: list,
+        force: true, // 관리자가 수동 발송 요청 시 당일 중복 제한 해제하고 즉시 발송
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.message || '서버 푸시 발송 요청에 실패했습니다.');
+    }
+
+    return await res.json();
+  } catch (err) {
+    console.error('기사/교사 만료 알림 서버 전송 실패:', err);
+    throw err;
+  }
+}
+

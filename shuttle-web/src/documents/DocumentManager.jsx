@@ -15,6 +15,7 @@ import {
   getExpiryNotificationSchedule,
   syncStaffExpiryNotifications,
   getStaffNotifications,
+  sendStaffExpiryNotificationsToServer,
 } from './documentStorage';
 import { openPrintDocument } from './pdfDocumentGenerator';
 import { API_BASE_URL } from '../config';
@@ -68,6 +69,46 @@ export default function DocumentManager({
   const [staffNotiSummary, setStaffNotiSummary] = useState({ driverNotifications: [], teacherNotifications: [], allCount: 0 });
   const [showStaffNotiModal, setShowStaffNotiModal] = useState(false);
   const [staffNotiRoleFilter, setStaffNotiRoleFilter] = useState('all'); // 'all' | 'driver' | 'teacher'
+  const [isSendingPush, setIsSendingPush] = useState(false);
+  const [pushStatusMessage, setPushStatusMessage] = useState(null); // { type: 'success' | 'error', text: '' }
+
+  const handleSendPushToStaff = async () => {
+    const list =
+      staffNotiRoleFilter === 'driver'
+        ? staffNotiSummary.driverNotifications
+        : staffNotiRoleFilter === 'teacher'
+        ? staffNotiSummary.teacherNotifications
+        : [...(staffNotiSummary.driverNotifications || []), ...(staffNotiSummary.teacherNotifications || [])];
+
+    if (!list || list.length === 0) {
+      alert('발송할 대상 만료 알림이 없습니다.');
+      return;
+    }
+
+    if (!window.confirm(`현재 알림 목록 ${list.length}건을 대상 기사·교사 앱 및 관리자에게 지금 즉시 푸시 발송하시겠습니까?`)) {
+      return;
+    }
+
+    setIsSendingPush(true);
+    setPushStatusMessage(null);
+    try {
+      const targetAcademyId = academyId || currentUser?.academyId;
+      const res = await sendStaffExpiryNotificationsToServer(list, targetAcademyId);
+      setPushStatusMessage({
+        type: 'success',
+        text: `✓ ${res.sentCount ?? list.length}건의 만료 알림 푸시가 기사/교사 앱(및 관리자)으로 성공적으로 발송되었습니다!`,
+      });
+      setTimeout(() => setPushStatusMessage(null), 6000);
+    } catch (err) {
+      console.error('푸시 발송 실패:', err);
+      setPushStatusMessage({
+        type: 'error',
+        text: `발송 실패: ${err.message || '서버 통신 오류'}`,
+      });
+    } finally {
+      setIsSendingPush(false);
+    }
+  };
 
   // Sub Navigation Tabs: 'templates' (법정 서식 자동 발급) | 'expiry' (만료일 신호등 현황) | 'documents' (등록 서류 보관함) | 'attendance' (원아 출결서류)
   const [activeSubTab, setActiveSubTab] = useState('templates');
@@ -2137,16 +2178,51 @@ export default function DocumentManager({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-medium">
-                * 만료일이 갱신(수정)되면 기사 및 교사 앱 알림도 실시간으로 즉시 동기화됩니다.
-              </span>
-              <button
-                onClick={() => setShowStaffNotiModal(false)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xs transition-colors"
-              >
-                확인 완료
-              </button>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex flex-col text-left w-full sm:w-auto">
+                <span className="text-slate-500 font-medium">
+                  * 평일 오전 9:30에 만료 임박(D-14 매일, D-60 주1회) 건이 기사·교사 앱으로 자동 발송됩니다.
+                </span>
+                {pushStatusMessage && (
+                  <span className={`text-xs font-bold mt-1.5 ${pushStatusMessage.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {pushStatusMessage.text}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={handleSendPushToStaff}
+                  disabled={isSendingPush || (!staffNotiSummary.driverNotifications?.length && !staffNotiSummary.teacherNotifications?.length)}
+                  className={`px-4 py-2 font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isSendingPush || (!staffNotiSummary.driverNotifications?.length && !staffNotiSummary.teacherNotifications?.length)
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200'
+                  }`}
+                >
+                  {isSendingPush ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-1.5 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      발송 중...
+                    </>
+                  ) : (
+                    <>
+                      <span>📲</span>
+                      <span>기사·교사 앱으로 지금 즉시 푸시 발송</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStaffNotiModal(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  닫기
+                </button>
+              </div>
             </div>
           </div>
         </div>,

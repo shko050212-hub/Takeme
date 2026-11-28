@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
@@ -45,7 +45,9 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 @Injectable()
-export class RoutingService {
+export class RoutingService implements OnModuleInit {
+  private legalExpiryNotifiedCooldown = new Map<string, string>(); // key: ${today}_${vehicleId}_${itemKey}_${userId}, value: ISOString
+  private lastScheduledExpiryCheckDate = '';
 
   constructor(
     @InjectRepository(Vehicle)
@@ -4957,6 +4959,313 @@ export class RoutingService {
       success: true,
       message: `${res.affected || 0}명의 결석 처리 원아를 탑승 대기(WAITING) 상태로 복구했습니다.`,
       affected: res.affected || 0,
+    };
+  }
+
+  // --- 법정서류 및 안전교육 만료 자동 알림 스케줄러 & 즉시 발송 ---
+  onModuleInit() {
+    // 서버 기동 10초 후 첫 스케줄 체크 1회 시도
+    setTimeout(() => {
+      this.checkLegalExpirySchedule().catch((err) => {
+        console.error('[LegalExpiryScheduler] 초기 체크 에러:', err);
+      });
+    }, 10000);
+
+    // 15분 주기로 KST 기준 평일 오전 9:30 자동 검사
+    setInterval(() => {
+      this.checkLegalExpirySchedule().catch((err) => {
+        console.error('[LegalExpiryScheduler] 정기 스케줄 에러:', err);
+      });
+    }, 15 * 60 * 1000);
+  }
+
+  private async checkLegalExpirySchedule() {
+    const now = new Date();
+    // KST = UTC + 9시간
+    const kstOffset = 9 * 60;
+    const kst = new Date(now.getTime() + (kstOffset + now.getTimezoneOffset()) * 60000);
+    const dayOfWeek = kst.getDay(); // 0: 일, 1: 월, ..., 5: 금, 6: 토
+    const hours = kst.getHours();
+    const minutes = kst.getMinutes();
+    const todayStr = kst.toISOString().split('T')[0];
+
+    // 평일(월~금) 오전 09:30 이후 당일 1회 자동 실행
+    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+    const isMorningTime = hours > 9 || (hours === 9 && minutes >= 30);
+
+    if (isWeekday && isMorningTime && this.lastScheduledExpiryCheckDate !== todayStr) {
+      console.log(`[LegalExpiryScheduler] ${todayStr} KST 평일 오전 9:30 법정 서류/안전교육 만료 검사 실행`);
+      this.lastScheduledExpiryCheckDate = todayStr;
+      await this.notifyLegalExpiries({ force: false });
+    }
+  }
+
+  async notifyLegalExpiries(params: {
+    vehicleId?: number;
+    academyId?: number;
+    notifications?: any[];
+    force?: boolean;
+  }) {
+    const now = new Date();
+    const kstOffset = 9 * 60;
+    const kst = new Date(now.getTime() + (kstOffset + now.getTimezoneOffset()) * 60000);
+    const todayStr = kst.toISOString().split('T')[0];
+    const isMonday = kst.getDay() === 1;
+    const force = !!params.force;
+
+    let sentCount = 0;
+    const logs: string[] = [];
+
+    // 1. 웹 관리자 페이지에서 생성한 알림 목록이 명시적으로 전달된 경우
+    if (Array.isArray(params.notifications) && params.notifications.length > 0) {
+      for (const noti of params.notifications) {
+        const vehicleId = Number(noti.busId);
+        if (!vehicleId) continue;
+
+        const vehicle = await this.vehicleRepository.findOne({
+          where: { id: vehicleId },
+          relations: { driverUser: true, teacherUser: true, academy: true },
+        });
+        if (!vehicle) continue;
+
+        const targetRole = noti.targetRole; // 'driver' | 'teacher'
+        let targetUser = targetRole === 'driver' ? vehicle.driverUser : vehicle.teacherUser;
+        const fallbackRoleLabel = targetRole === 'driver' ? '운전기사' : '동승교사';
+
+        // 기사/교사 미배정인 경우 -> 해당 학원/유치원 관리자에게 대체 전송하여 사각지대 방지
+        if (!targetUser) {
+          if (vehicle.academy?.id) {
+            const adminUsers = await this.userRepository.find({
+              where: {
+                academy: { id: vehicle.academy.id },
+                role: In([UserRole.ACADEMY_ADMIN, UserRole.ADMIN]),
+              },
+            });
+            for (const admin of adminUsers) {
+              const cdKey = `admin_${todayStr}_${vehicle.id}_${noti.itemKey}_${admin.id}`;
+              if (!force && this.legalExpiryNotifiedCooldown.has(cdKey)) continue;
+
+              const title = `[미배정 차량 주의] ${vehicle.busNumber || '차량'} ${noti.itemLabel} 만료 임박`;
+              const body = `${vehicle.busNumber || '차량'}(${vehicle.plateNumber || '미등록'})에 ${fallbackRoleLabel}가 미배정 상태입니다. ${noti.itemLabel} 만료일(${noti.expiryDate})이 ${noti.daysRemaining < 0 ? '만료되었습니다' : `D-${noti.daysRemaining}일 남았습니다`}. 서류 갱신 및 배정을 확인해주세요.`;
+
+              if (this.pushHandler) {
+                await this.pushHandler(
+                  [admin.id],
+                  title,
+                  body,
+                  { type: 'safety_expiry', vehicleId: vehicle.id, itemKey: noti.itemKey, expiryDate: noti.expiryDate },
+                  'notice',
+                ).catch((err) => console.error('Push error (admin):', err));
+              }
+
+              const notiRecord = this.notificationRepository.create({
+                recipient: admin,
+                recipientRole: admin.role,
+                type: 'VEHICLE_ALERT',
+                vehicle,
+                academy: vehicle.academy,
+                message: `${title} - ${body}`,
+              });
+              await this.notificationRepository.save(notiRecord).catch(() => {});
+
+              this.legalExpiryNotifiedCooldown.set(cdKey, new Date().toISOString());
+              sentCount++;
+              logs.push(`원장/관리자 대체 발송: ${vehicle.busNumber}호 ${noti.itemLabel} -> ${admin.name || admin.email}`);
+            }
+          }
+          continue;
+        }
+
+        // 대상 기사 또는 교사가 배정된 경우
+        const cdKey = `${todayStr}_${vehicle.id}_${noti.itemKey}_${targetUser.id}`;
+        if (!force && this.legalExpiryNotifiedCooldown.has(cdKey)) {
+          continue; // 오늘 이미 발송 완료
+        }
+
+        const title = `${noti.titlePrefix || '[만료 임박]'} ${vehicle.busNumber || ''}호 ${noti.itemLabel}`;
+        const body = noti.message || `${vehicle.busNumber || ''}호 ${noti.itemLabel} 만료일이 도래했습니다. 확인 바랍니다.`;
+
+        if (this.pushHandler) {
+          await this.pushHandler(
+            [targetUser.id],
+            title,
+            body,
+            { type: 'safety_expiry', vehicleId: vehicle.id, itemKey: noti.itemKey, expiryDate: noti.expiryDate },
+            'notice',
+          ).catch((err) => console.error('Push error (staff):', err));
+        }
+
+        const notiRecord = this.notificationRepository.create({
+          recipient: targetUser,
+          recipientRole: targetUser.role,
+          type: 'VEHICLE_ALERT',
+          vehicle,
+          academy: vehicle.academy,
+          message: `${title} - ${body}`,
+        });
+        await this.notificationRepository.save(notiRecord).catch(() => {});
+
+        this.legalExpiryNotifiedCooldown.set(cdKey, new Date().toISOString());
+        sentCount++;
+        logs.push(`${targetRole === 'driver' ? '기사' : '교사'} 발송: ${vehicle.busNumber}호 ${noti.itemLabel} -> ${targetUser.name || targetUser.email}`);
+      }
+
+      return {
+        success: true,
+        sentCount,
+        message: `${sentCount}건의 법정 서류/안전 교육 푸시 알림이 발송되었습니다.`,
+        logs,
+      };
+    }
+
+    // 2. 스케줄러 자동 검사 또는 DB 기반 직접 계산 검사
+    const qb = this.legalExpiryRepository.createQueryBuilder('exp')
+      .leftJoinAndSelect('exp.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.driverUser', 'driverUser')
+      .leftJoinAndSelect('vehicle.teacherUser', 'teacherUser')
+      .leftJoinAndSelect('vehicle.academy', 'academy');
+
+    if (params.vehicleId) {
+      qb.andWhere('exp.vehicleId = :vId', { vId: params.vehicleId });
+    }
+    if (params.academyId) {
+      qb.andWhere('(exp.academyId = :acId OR vehicle.academyId = :acId)', { acId: params.academyId });
+    }
+
+    const expList = await qb.getMany();
+
+    const itemsConfig = [
+      { key: 'insuranceExpiry', label: '종합보험', roles: ['driver', 'teacher'] },
+      { key: 'inspectionExpiry', label: '정기안전검사', roles: ['driver', 'teacher'] },
+      { key: 'driverEduExpiry', label: '운전자 안전교육', roles: ['driver'] },
+      { key: 'companionEduExpiry', label: '동승자 안전교육', roles: ['teacher'] },
+    ];
+
+    for (const exp of expList) {
+      const vehicle = exp.vehicle;
+      if (!vehicle) continue;
+
+      for (const item of itemsConfig) {
+        const dateStr = (exp as any)[item.key];
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+
+        const targetDate = new Date(`${dateStr}T00:00:00+09:00`);
+        const todayDate = new Date(`${todayStr}T00:00:00+09:00`);
+        const days = Math.ceil((targetDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        let shouldNotify = false;
+        let urgency = 'info';
+        let titlePrefix = '';
+
+        if (days < 0) {
+          // 만료 경과 (매일 알림)
+          shouldNotify = true;
+          urgency = 'expired';
+          titlePrefix = `[법정서류 만료 (+${Math.abs(days)}일)]`;
+        } else if (days <= 14) {
+          // 2주 이내: 매일 알림
+          shouldNotify = true;
+          urgency = days === 0 ? 'dday' : 'urgent';
+          titlePrefix = days === 0 ? '[법정서류 D-Day 오늘 만료]' : `[긴급 매일알림 D-${days}]`;
+        } else if (days <= 30) {
+          // 1개월 이내: 주 1회(월요일) 발송 (강제 발송 시 즉시 발송)
+          shouldNotify = isMonday || force;
+          urgency = 'warning';
+          titlePrefix = `[만료임박 주간알림 D-${days}]`;
+        } else if (days <= 60) {
+          // 2개월 이내: 주 1회(월요일) 발송 (강제 발송 시 즉시 발송)
+          shouldNotify = isMonday || force;
+          urgency = 'notice';
+          titlePrefix = `[주의 주간알림 D-${days}]`;
+        }
+
+        if (!shouldNotify) continue;
+
+        const message = `${titlePrefix} ${vehicle.busNumber || '차량'}(${vehicle.plateNumber || '미등록'}) ${item.label} 만료일(${dateStr})이 ${days < 0 ? `지났습니다(+${Math.abs(days)}일)` : days === 0 ? '오늘입니다' : `${days}일 남았습니다`}. 서류 갱신 및 이수를 확인해주세요.`;
+
+        // 대상 역할별 발송
+        for (const role of item.roles) {
+          const targetUser = role === 'driver' ? vehicle.driverUser : vehicle.teacherUser;
+          const fallbackRoleLabel = role === 'driver' ? '운전기사' : '동승교사';
+
+          if (!targetUser) {
+            // 미배정 시 원장/관리자 대체 발송
+            if (vehicle.academy?.id) {
+              const adminUsers = await this.userRepository.find({
+                where: {
+                  academy: { id: vehicle.academy.id },
+                  role: In([UserRole.ACADEMY_ADMIN, UserRole.ADMIN]),
+                },
+              });
+              for (const admin of adminUsers) {
+                const cdKey = `admin_${todayStr}_${vehicle.id}_${item.key}_${admin.id}`;
+                if (!force && this.legalExpiryNotifiedCooldown.has(cdKey)) continue;
+
+                const title = `[미배정 차량 주의] ${vehicle.busNumber || '차량'} ${item.label} 만료 임박`;
+                const adminBody = `${vehicle.busNumber || '차량'}(${vehicle.plateNumber || '미등록'})에 ${fallbackRoleLabel}가 미배정 상태입니다. ${item.label} 만료일(${dateStr})이 ${days < 0 ? '만료되었습니다' : `D-${days}일 남았습니다`}. 갱신 및 배정을 확인해주세요.`;
+
+                if (this.pushHandler) {
+                  await this.pushHandler(
+                    [admin.id],
+                    title,
+                    adminBody,
+                    { type: 'safety_expiry', vehicleId: vehicle.id, itemKey: item.key, expiryDate: dateStr },
+                    'notice',
+                  ).catch(() => {});
+                }
+
+                const notiRecord = this.notificationRepository.create({
+                  recipient: admin,
+                  recipientRole: admin.role,
+                  type: 'VEHICLE_ALERT',
+                  vehicle,
+                  academy: vehicle.academy,
+                  message: `${title} - ${adminBody}`,
+                });
+                await this.notificationRepository.save(notiRecord).catch(() => {});
+
+                this.legalExpiryNotifiedCooldown.set(cdKey, new Date().toISOString());
+                sentCount++;
+              }
+            }
+          } else {
+            // 기사/교사 발송
+            const cdKey = `${todayStr}_${vehicle.id}_${item.key}_${targetUser.id}`;
+            if (!force && this.legalExpiryNotifiedCooldown.has(cdKey)) continue;
+
+            const title = `${titlePrefix} ${vehicle.busNumber || '차량'} ${item.label}`;
+
+            if (this.pushHandler) {
+              await this.pushHandler(
+                [targetUser.id],
+                title,
+                message,
+                { type: 'safety_expiry', vehicleId: vehicle.id, itemKey: item.key, expiryDate: dateStr },
+                'notice',
+              ).catch(() => {});
+            }
+
+            const notiRecord = this.notificationRepository.create({
+              recipient: targetUser,
+              recipientRole: targetUser.role,
+              type: 'VEHICLE_ALERT',
+              vehicle,
+              academy: vehicle.academy,
+              message: `${title} - ${message}`,
+            });
+            await this.notificationRepository.save(notiRecord).catch(() => {});
+
+            this.legalExpiryNotifiedCooldown.set(cdKey, new Date().toISOString());
+            sentCount++;
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      sentCount,
+      message: `${sentCount}건의 법정 서류/안전 교육 푸시 알림이 발송되었습니다.`,
     };
   }
 }
